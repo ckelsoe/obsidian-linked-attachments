@@ -52,7 +52,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: 'Access key',
-						desc: 'The S3 access key ID. Held in the device secret store, never in data.json. Use a key scoped to only this bucket.',
+						desc: 'Create or select the secret holding your S3 access key ID. Enter the value in the secure picker; only the secret name is saved to data.json. Use a key scoped to only this bucket.',
 						searchable: false,
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
@@ -68,7 +68,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Secret access key',
-						desc: 'The S3 secret access key. Held in the device secret store, never in data.json.',
+						desc: 'Create or select the secret holding your S3 secret access key. Enter the value in the secure picker; only the secret name is saved to data.json.',
 						searchable: false,
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
