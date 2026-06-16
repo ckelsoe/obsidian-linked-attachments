@@ -1,0 +1,15 @@
+/* Linked Attachments plugin styles. */
+
+.linked-attachments-secret-status {
+	margin-top: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.linked-attachments-secret-status.linked-attachments-secret-status-ok {
+	color: var(--text-success);
+}
+
+.linked-attachments-secret-status.linked-attachments-secret-status-error {
+	color: var(--text-error);
+}
