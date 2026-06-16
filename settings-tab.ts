@@ -1,6 +1,6 @@
-import { App, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
+import { App, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
-import { runSecretStorageProbe, SecretStore } from './credentials';
+import { SecretStore } from './credentials';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
@@ -83,10 +83,10 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: 'Secret storage check',
-						desc: 'Confirm this device can store and read back a secret, and whether both credentials are present.',
+						name: 'Status',
+						desc: 'Whether secret storage is available on this platform and whether both credentials are linked.',
 						searchable: false,
-						render: (setting: Setting) => { this.renderSecretStorageRow(setting); },
+						render: (setting: Setting) => { this.renderStatusRow(setting); },
 					},
 				],
 			},
@@ -104,48 +104,38 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		await this.plugin.saveSettings();
 	}
 
-	private renderSecretStorageRow(setting: Setting): void {
-		setting.addButton((btn) =>
-			btn
-				.setButtonText('Check secret storage')
-				.onClick(() => { this.runProbe(); }),
-		);
+	private renderStatusRow(setting: Setting): void {
 		this.statusEl = setting.descEl.createDiv({ cls: 'linked-attachments-secret-status' });
 		this.refreshCredentialStatus();
 	}
 
-	// AC-G6 (desktop): prove setSecret -> getSecret round-trips on this platform,
-	// and record whether the API is even present. Mobile G6 is a separate later
-	// device probe; this reports only what the running platform supports.
-	private runProbe(): void {
+	// Read-only check: is the secret storage API present on this platform, and are
+	// both credentials linked. It performs NO writes, so it never creates a stored
+	// secret. (The desktop setSecret/getSecret round-trip, AC-G6, was confirmed
+	// once; the API has no remove method, so a write-probe would leave an
+	// un-deletable entry behind.)
+	private secretStorageAvailable(): boolean {
 		const raw: unknown = this.app.secretStorage;
-		const present =
+		return (
 			typeof raw === 'object' &&
 			raw !== null &&
-			typeof (raw as SecretStore).setSecret === 'function';
-
-		if (!present) {
-			const detail = 'Secret storage API is not available on this platform.';
-			new Notice(`Linked Attachments: ${detail}`);
-			this.setStatus(detail, 'error');
-			return;
-		}
-
-		const nonce = `probe-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
-		const result = runSecretStorageProbe(this.app.secretStorage, nonce);
-		new Notice(`Linked Attachments: ${result.detail}`);
-		this.setStatus(result.detail, result.roundTripOk ? 'ok' : 'error');
+			typeof (raw as SecretStore).getSecret === 'function'
+		);
 	}
 
 	private refreshCredentialStatus(): void {
 		if (this.statusEl === null) {
 			return;
 		}
+		if (!this.secretStorageAvailable()) {
+			this.setStatus('Secret storage is not available on this platform.', 'error');
+			return;
+		}
 		const ready = this.plugin.credentials.hasCompleteCredentials();
 		this.setStatus(
 			ready
-				? 'Both credentials are stored on this device.'
-				: 'Credentials incomplete: enter both an access key and a secret access key above.',
+				? 'Secret storage available. Both credentials are linked on this device.'
+				: 'Secret storage available. Link both an access key and a secret access key above.',
 			ready ? 'ok' : 'neutral',
 		);
 	}
