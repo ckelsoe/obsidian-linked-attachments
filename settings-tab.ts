@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { SecretStore } from './credentials';
+import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
@@ -52,7 +53,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: 'Access key',
-						desc: 'Create or select the secret holding your S3 access key ID. Enter the value in the secure picker; only the secret name is saved to data.json. Use a key scoped to only this bucket.',
+						desc: `Click Link, then Add secret, and name it "${DEFAULT_ACCESS_KEY_SECRET_ID}". Paste your S3 access key ID as the value. Only the secret name is saved to data.json; the value stays in the device secret store. Use a key scoped to only this bucket.`,
 						searchable: false,
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
@@ -68,7 +69,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Secret access key',
-						desc: 'Create or select the secret holding your S3 secret access key. Enter the value in the secure picker; only the secret name is saved to data.json.',
+						desc: `Click Link, then Add secret, and name it "${DEFAULT_SECRET_KEY_SECRET_ID}". Paste your S3 secret access key as the value. Only the secret name is saved to data.json; the value stays in the device secret store.`,
 						searchable: false,
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
