@@ -148,6 +148,17 @@ async function sha256Hex(input: string): Promise<string> {
 	return toHex(new Uint8Array(digest));
 }
 
+// Base64 of the SHA-256 digest, the form S3 wants for the x-amz-checksum-sha256
+// header (the header value is base64, not hex).
+export async function sha256Base64(input: string): Promise<string> {
+	const digest = await crypto.subtle.digest('SHA-256', utf8(input));
+	let binary = '';
+	for (const b of new Uint8Array(digest)) {
+		binary += String.fromCharCode(b);
+	}
+	return btoa(binary);
+}
+
 async function hmac(key: Uint8Array<ArrayBuffer>, data: string): Promise<Uint8Array<ArrayBuffer>> {
 	const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 	return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, utf8(data)));

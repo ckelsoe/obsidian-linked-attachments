@@ -15,18 +15,71 @@ export interface ConnectionTestResult {
 	detail: string;
 }
 
-// Builds the ListObjectsV2 URL for the bucket. Listing the bucket is the cheapest
-// request that exercises the full credential + endpoint + region + bucket path:
-// a 200 proves all four, and an error code says which one is wrong.
-export function buildListUrl(config: S3ConnectionConfig): string {
+// Resolves the request origin and the path prefix for the bucket. Path style keeps
+// the bucket in the path (/bucket); virtual-hosted moves it into the host.
+export function baseUrl(config: S3ConnectionConfig): { origin: string; pathPrefix: string } {
 	const endpoint = config.endpoint.replace(/\/+$/, '');
-	const query = 'list-type=2&max-keys=1';
 	if (config.addressingStyle === 'path') {
-		return `${endpoint}/${config.bucket}?${query}`;
+		return { origin: endpoint, pathPrefix: `/${config.bucket}` };
 	}
 	const url = new URL(endpoint);
 	url.host = `${config.bucket}.${url.host}`;
-	return `${url.origin}/?${query}`;
+	return { origin: url.origin, pathPrefix: '' };
+}
+
+// Builds the ListObjectsV2 URL for the bucket. Listing is the cheapest request that
+// exercises the full credential + endpoint + region + bucket path: a 200 proves all
+// four, and an error code says which one is wrong.
+export function buildListUrl(config: S3ConnectionConfig): string {
+	return buildObjectListUrl(config, null, 1, null);
+}
+
+// URL for a single object key. Keys are split on '/' so each path segment is a
+// segment in the URL; the signer applies the canonical encoding for the signature.
+export function objectUrl(config: S3ConnectionConfig, key: string): string {
+	const { origin, pathPrefix } = baseUrl(config);
+	return `${origin}${pathPrefix}/${key}`;
+}
+
+// ListObjectsV2 URL with optional prefix, page size, and continuation token.
+export function buildObjectListUrl(
+	config: S3ConnectionConfig,
+	prefix: string | null,
+	maxKeys: number,
+	continuationToken: string | null,
+): string {
+	const { origin, pathPrefix } = baseUrl(config);
+	const params = new URLSearchParams();
+	params.set('list-type', '2');
+	params.set('max-keys', String(maxKeys));
+	if (prefix !== null && prefix.length > 0) {
+		params.set('prefix', prefix);
+	}
+	if (continuationToken !== null && continuationToken.length > 0) {
+		params.set('continuation-token', continuationToken);
+	}
+	const path = pathPrefix.length > 0 ? pathPrefix : '/';
+	return `${origin}${path}?${params.toString()}`;
+}
+
+// --- ListObjectsV2 XML parsing (regex; the responses are small and flat) -------
+
+export function parseListedKeys(xml: string): string[] {
+	const keys: string[] = [];
+	const re = /<Key>([^<]+)<\/Key>/g;
+	let match: RegExpExecArray | null;
+	while ((match = re.exec(xml)) !== null) {
+		const key = match[1];
+		if (key !== undefined) {
+			keys.push(key);
+		}
+	}
+	return keys;
+}
+
+export function parseXmlTag(xml: string, tag: string): string | null {
+	const match = new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(xml);
+	return match?.[1] ?? null;
 }
 
 // Turns the HTTP status + S3 error body into a human verdict. S3 returns errors as

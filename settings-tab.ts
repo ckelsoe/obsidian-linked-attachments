@@ -1,13 +1,16 @@
-import { App, ButtonComponent, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
 import { testConnection } from './s3-connection';
+import { runRemoteTransportProbe } from './probe-remote-transport';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
 	private statusEl: HTMLElement | null = null;
 	private testButton: ButtonComponent | null = null;
+	private probeStatusEl: HTMLElement | null = null;
+	private transportButton: ButtonComponent | null = null;
 
 	constructor(app: App, plugin: LinkedAttachmentsPlugin) {
 		super(app, plugin);
@@ -102,6 +105,12 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						desc: `Also write debug-level detail to the log. Every bucket interaction, warning, and error is logged regardless. Log file: ${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}/audit.jsonl`,
 						control: { type: 'toggle', key: 'debugLogging' },
 					},
+					{
+						name: 'Remote transport probe',
+						desc: 'Run PUT, HEAD, GET, range-GET, list, and DELETE against your bucket to validate transport, checksums, and pagination (AC-G1/G2/G3). Writes and deletes temporary objects under a linked-attachments-probe/ prefix; results go to the log.',
+						searchable: false,
+						render: (setting: Setting) => { this.renderTransportProbeRow(setting); },
+					},
 				],
 			},
 		];
@@ -175,11 +184,64 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	}
 
 	private setStatus(text: string, kind: 'ok' | 'error' | 'neutral'): void {
-		if (this.statusEl === null) {
+		this.applyStatus(this.statusEl, text, kind);
+	}
+
+	private setProbeStatus(text: string, kind: 'ok' | 'error' | 'neutral'): void {
+		this.applyStatus(this.probeStatusEl, text, kind);
+	}
+
+	private applyStatus(el: HTMLElement | null, text: string, kind: 'ok' | 'error' | 'neutral'): void {
+		if (el === null) {
 			return;
 		}
-		this.statusEl.setText(text);
-		this.statusEl.toggleClass('linked-attachments-secret-status-ok', kind === 'ok');
-		this.statusEl.toggleClass('linked-attachments-secret-status-error', kind === 'error');
+		el.setText(text);
+		el.toggleClass('linked-attachments-secret-status-ok', kind === 'ok');
+		el.toggleClass('linked-attachments-secret-status-error', kind === 'error');
+	}
+
+	private renderTransportProbeRow(setting: Setting): void {
+		setting.addButton((btn) => {
+			this.transportButton = btn;
+			btn.setButtonText('Run transport probe').onClick(() => { void this.runTransportProbe(); });
+		});
+		this.probeStatusEl = setting.descEl.createDiv({ cls: 'linked-attachments-secret-status' });
+	}
+
+	// AC-G1/G2/G3: PUT/HEAD/GET/range/list/DELETE against the bucket. The live
+	// result and per-op detail go to the audit log; a summary shows here. Guarded so
+	// a failure surfaces as a status line rather than an unhandled rejection.
+	private async runTransportProbe(): Promise<void> {
+		const creds = this.plugin.credentials.getCredentials();
+		if (creds === null) {
+			this.setProbeStatus('Link both credentials first.', 'error');
+			return;
+		}
+		const s = this.plugin.settings;
+		if (s.endpoint.length === 0 || s.bucket.length === 0) {
+			this.setProbeStatus('Set the endpoint and bucket above first.', 'error');
+			return;
+		}
+
+		this.transportButton?.setDisabled(true);
+		this.setProbeStatus('Running transport probe...', 'neutral');
+		const runId = String(Date.now());
+		this.plugin.logger.info('Remote transport probe started.', { runId, bucket: s.bucket });
+		try {
+			const result = await runRemoteTransportProbe(
+				{ config: { endpoint: s.endpoint, region: s.region, bucket: s.bucket, addressingStyle: s.addressingStyle }, creds, audit: this.plugin.logger },
+				runId,
+			);
+			const passed = result.checks.filter((c) => c.pass).length;
+			const lines = result.checks.map((c) => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}: ${c.detail}`).concat(result.notes);
+			new Notice(`Transport probe ${result.ok ? 'PASS' : 'FAIL'}\n${lines.join('\n')}`, 20000);
+			this.setProbeStatus(`${result.ok ? 'PASS' : 'FAIL'} - ${passed}/${result.checks.length} checks. See the log for per-operation detail.`, result.ok ? 'ok' : 'error');
+			this.plugin.logger.info('Remote transport probe finished.', { runId, ok: result.ok, checks: result.checks, notes: result.notes });
+		} catch (error) {
+			this.setProbeStatus(`Transport probe failed: ${describeError(error)}`, 'error');
+			this.plugin.logger.error('Remote transport probe threw.', { runId, error: describeError(error) });
+		} finally {
+			this.transportButton?.setDisabled(false);
+		}
 	}
 }

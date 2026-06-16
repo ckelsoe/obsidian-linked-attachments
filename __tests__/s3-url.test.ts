@@ -1,4 +1,42 @@
-import { buildListUrl, classifyListResult } from '../s3-url';
+import { buildListUrl, classifyListResult, objectUrl, buildObjectListUrl, parseListedKeys, parseXmlTag } from '../s3-url';
+
+describe('objectUrl', () => {
+	it('path style puts bucket and key in the path', () => {
+		expect(objectUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }, 'a/b/c.txt'))
+			.toBe('https://s3.us-east-1.amazonaws.com/b/a/b/c.txt');
+	});
+	it('virtual-hosted puts bucket in the host and key in the path', () => {
+		expect(objectUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'virtual-hosted' }, 'k.txt'))
+			.toBe('https://b.s3.us-east-1.amazonaws.com/k.txt');
+	});
+});
+
+describe('buildObjectListUrl', () => {
+	it('includes prefix, max-keys, and continuation token', () => {
+		const url = buildObjectListUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }, 'pre/fix/', 1, 'tok123');
+		expect(url.startsWith('https://s3.us-east-1.amazonaws.com/b?')).toBe(true);
+		expect(url).toContain('list-type=2');
+		expect(url).toContain('max-keys=1');
+		expect(url).toContain('prefix=pre%2Ffix%2F');
+		expect(url).toContain('continuation-token=tok123');
+	});
+});
+
+describe('ListObjectsV2 XML parsing', () => {
+	const xml =
+		'<ListBucketResult><IsTruncated>true</IsTruncated>' +
+		'<Contents><Key>p/a.txt</Key></Contents>' +
+		'<Contents><Key>p/b.txt</Key></Contents>' +
+		'<NextContinuationToken>tok==</NextContinuationToken></ListBucketResult>';
+	it('extracts keys in order', () => {
+		expect(parseListedKeys(xml)).toEqual(['p/a.txt', 'p/b.txt']);
+	});
+	it('reads scalar tags and returns null when absent', () => {
+		expect(parseXmlTag(xml, 'IsTruncated')).toBe('true');
+		expect(parseXmlTag(xml, 'NextContinuationToken')).toBe('tok==');
+		expect(parseXmlTag(xml, 'Missing')).toBeNull();
+	});
+});
 
 describe('buildListUrl', () => {
 	it('path style puts the bucket in the path', () => {
