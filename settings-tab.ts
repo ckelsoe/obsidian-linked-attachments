@@ -1,11 +1,13 @@
-import { App, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
+import { App, ButtonComponent, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
-import { SecretStore } from './credentials';
+import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
+import { testConnection } from './s3-connection';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
 	private statusEl: HTMLElement | null = null;
+	private testButton: ButtonComponent | null = null;
 
 	constructor(app: App, plugin: LinkedAttachmentsPlugin) {
 		super(app, plugin);
@@ -62,7 +64,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 									.onChange(async (id) => {
 										this.plugin.settings.accessKeyIdSecretName = id;
 										await this.plugin.saveSettings();
-										this.refreshCredentialStatus();
+										this.refreshCredentialHint();
 									}),
 							);
 						},
@@ -78,16 +80,16 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 									.onChange(async (id) => {
 										this.plugin.settings.secretAccessKeySecretName = id;
 										await this.plugin.saveSettings();
-										this.refreshCredentialStatus();
+										this.refreshCredentialHint();
 									}),
 							);
 						},
 					},
 					{
-						name: 'Status',
-						desc: 'Whether secret storage is available on this platform and whether both credentials are linked.',
+						name: 'Connection',
+						desc: 'Verify the endpoint, region, bucket, and credentials by listing the bucket.',
 						searchable: false,
-						render: (setting: Setting) => { this.renderStatusRow(setting); },
+						render: (setting: Setting) => { this.renderConnectionTestRow(setting); },
 					},
 				],
 			},
@@ -105,40 +107,57 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		await this.plugin.saveSettings();
 	}
 
-	private renderStatusRow(setting: Setting): void {
+	private renderConnectionTestRow(setting: Setting): void {
+		setting.addButton((btn) => {
+			this.testButton = btn;
+			btn.setButtonText('Test connection').onClick(() => { void this.runConnectionTest(); });
+		});
 		this.statusEl = setting.descEl.createDiv({ cls: 'linked-attachments-secret-status' });
-		this.refreshCredentialStatus();
+		this.refreshCredentialHint();
 	}
 
-	// Read-only check: is the secret storage API present on this platform, and are
-	// both credentials linked. It performs NO writes, so it never creates a stored
-	// secret. (The desktop setSecret/getSecret round-trip, AC-G6, was confirmed
-	// once; the API has no remove method, so a write-probe would leave an
-	// un-deletable entry behind.)
-	private secretStorageAvailable(): boolean {
-		const raw: unknown = this.app.secretStorage;
-		return (
-			typeof raw === 'object' &&
-			raw !== null &&
-			typeof (raw as SecretStore).getSecret === 'function'
-		);
-	}
-
-	private refreshCredentialStatus(): void {
+	// Pre-test hint shown before the user presses the button or links the keys.
+	private refreshCredentialHint(): void {
 		if (this.statusEl === null) {
-			return;
-		}
-		if (!this.secretStorageAvailable()) {
-			this.setStatus('Secret storage is not available on this platform.', 'error');
 			return;
 		}
 		const ready = this.plugin.credentials.hasCompleteCredentials();
 		this.setStatus(
 			ready
-				? 'Secret storage available. Both credentials are linked on this device.'
-				: 'Secret storage available. Link both an access key and a secret access key above.',
-			ready ? 'ok' : 'neutral',
+				? 'Both credentials linked. Press Test connection to verify against your bucket.'
+				: 'Link both an access key and a secret access key above.',
+			'neutral',
 		);
+	}
+
+	// Signs and sends a ListObjectsV2 against the bucket; the live result is the
+	// authoritative validation of the credentials and configuration. Guarded so a
+	// failure shows as a status line rather than an unhandled rejection.
+	private async runConnectionTest(): Promise<void> {
+		const creds = this.plugin.credentials.getCredentials();
+		if (creds === null) {
+			this.setStatus('Link both credentials first.', 'error');
+			return;
+		}
+		const s = this.plugin.settings;
+		if (s.endpoint.length === 0 || s.bucket.length === 0) {
+			this.setStatus('Set the endpoint and bucket above first.', 'error');
+			return;
+		}
+
+		this.testButton?.setDisabled(true);
+		this.setStatus('Testing connection...', 'neutral');
+		try {
+			const result = await testConnection(
+				{ endpoint: s.endpoint, region: s.region, bucket: s.bucket, addressingStyle: s.addressingStyle },
+				creds,
+			);
+			this.setStatus(result.detail, result.ok ? 'ok' : 'error');
+		} catch (error) {
+			this.setStatus(`Connection test failed: ${describeError(error)}`, 'error');
+		} finally {
+			this.testButton?.setDisabled(false);
+		}
 	}
 
 	private setStatus(text: string, kind: 'ok' | 'error' | 'neutral'): void {
