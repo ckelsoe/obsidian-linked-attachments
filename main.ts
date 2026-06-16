@@ -1,4 +1,4 @@
-import { Plugin } from 'obsidian';
+import { Notice, Plugin } from 'obsidian';
 import {
 	LinkedAttachmentsSettings,
 	DEFAULT_SETTINGS,
@@ -7,6 +7,7 @@ import {
 } from './settings';
 import { CredentialStore } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
+import { runPointerRoundTripProbe } from './pointer-roundtrip-probe';
 
 // Plugin entry point. Per the workspace code-structure rules this class is wiring
 // only: lifecycle, settings persistence, and constructing the services. The
@@ -27,6 +28,30 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		}));
 
 		this.addSettingTab(new LinkedAttachmentsSettingTab(this.app, this));
+
+		// AC-G4 probe. Spike scaffolding: runs the pointer round-trip oracle in a
+		// scratch folder and reports the verdict. Removed when the spike closes.
+		this.addCommand({
+			id: 'probe-pointer-round-trip',
+			name: 'Probe pointer round trip',
+			callback: () => { void this.runPointerProbe(); },
+		});
+	}
+
+	// Guarded so a probe failure surfaces as a notice and a console error rather
+	// than an unhandled rejection.
+	private async runPointerProbe(): Promise<void> {
+		try {
+			const result = await runPointerRoundTripProbe(this.app);
+			const lines = result.checks.map((c) => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}: ${c.detail}`);
+			new Notice(`AC-G4 ${result.ok ? 'PASS' : 'FAIL'}\n${lines.join('\n')}`, 15000);
+			if (!result.ok) {
+				console.error('Linked Attachments AC-G4 probe:', result);
+			}
+		} catch (error) {
+			new Notice('Pointer round-trip probe failed. See the console for details.');
+			console.error('Linked Attachments: pointer round-trip probe failed.', error);
+		}
 	}
 
 	async loadSettings(): Promise<void> {

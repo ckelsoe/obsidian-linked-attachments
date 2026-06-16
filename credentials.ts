@@ -142,6 +142,6 @@ export function runSecretStorageProbe(store: SecretStore, nonce: string): Secret
 	}
 }
 
-function describeError(error: unknown): string {
+export function describeError(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
