@@ -24,7 +24,7 @@ export default tseslint.config(
 	},
 	...obsidianmd.configs.recommended,
 	{
-		files: ["__tests__/**/*.ts"],
+		files: ["__tests__/**/*.ts", "src/**/*.test.ts"],
 		languageOptions: {
 			globals: {
 				...globals.jest,
