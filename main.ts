@@ -1,5 +1,10 @@
 import { Plugin } from 'obsidian';
-import { LinkedAttachmentsSettings, DEFAULT_SETTINGS } from './settings';
+import {
+	LinkedAttachmentsSettings,
+	DEFAULT_SETTINGS,
+	DEFAULT_ACCESS_KEY_SECRET_ID,
+	DEFAULT_SECRET_KEY_SECRET_ID,
+} from './settings';
 import { CredentialStore } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 
@@ -27,6 +32,16 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const raw = (await this.loadData()) as Partial<LinkedAttachmentsSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
+
+		// A data.json saved by an earlier build may carry empty secret names.
+		// Coalesce them back to the namespaced defaults so the picker and the
+		// credential reads always have a canonical name to use.
+		if (this.settings.accessKeyIdSecretName.length === 0) {
+			this.settings.accessKeyIdSecretName = DEFAULT_ACCESS_KEY_SECRET_ID;
+		}
+		if (this.settings.secretAccessKeySecretName.length === 0) {
+			this.settings.secretAccessKeySecretName = DEFAULT_SECRET_KEY_SECRET_ID;
+		}
 	}
 
 	async saveSettings(): Promise<void> {
