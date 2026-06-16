@@ -15,9 +15,9 @@ describe('default secret IDs', () => {
 		expect(DEFAULT_ACCESS_KEY_SECRET_ID).not.toBe(DEFAULT_SECRET_KEY_SECRET_ID);
 	});
 
-	it('are namespaced with the plugin ID to avoid colliding with other plugins', () => {
-		expect(DEFAULT_ACCESS_KEY_SECRET_ID.startsWith('linked-attachments-')).toBe(true);
-		expect(DEFAULT_SECRET_KEY_SECRET_ID.startsWith('linked-attachments-')).toBe(true);
+	it('carry the "la-" prefix to reduce collisions in the shared secret store', () => {
+		expect(DEFAULT_ACCESS_KEY_SECRET_ID.startsWith('la-')).toBe(true);
+		expect(DEFAULT_SECRET_KEY_SECRET_ID.startsWith('la-')).toBe(true);
 	});
 
 	it('are wired into the default settings the plugin loads', () => {
