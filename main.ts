@@ -54,12 +54,13 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// Guarded so a probe failure surfaces as a notice and a console error rather
 	// than an unhandled rejection.
 	private async runPointerProbe(): Promise<void> {
-		this.logger.info('Pointer round-trip probe started.');
+		const runId = String(Date.now());
+		this.logger.info('Pointer round-trip probe started.', { runId });
 		try {
-			const result = await runPointerRoundTripProbe(this.app);
-			const lines = result.checks.map((c) => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}: ${c.detail}`);
+			const result = await runPointerRoundTripProbe(this.app, runId);
+			const lines = result.checks.map((c) => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}: ${c.detail}`).concat(result.notes);
 			new Notice(`AC-G4 ${result.ok ? 'PASS' : 'FAIL'}\n${lines.join('\n')}`, 15000);
-			this.logger.info('Pointer round-trip probe finished.', { ok: result.ok, checks: result.checks });
+			this.logger.info('Pointer round-trip probe finished.', { runId, ok: result.ok, checks: result.checks, notes: result.notes });
 		} catch (error) {
 			new Notice('Pointer round-trip probe failed. See the log for details.');
 			this.logger.error('Pointer round-trip probe threw.', { error: describeError(error) });
