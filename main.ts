@@ -9,6 +9,14 @@ import { CredentialStore } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { runPointerRoundTripProbe } from './pointer-roundtrip-probe';
 
+// One-time rename: earlier builds defaulted the secret names to the long
+// linked-attachments-* form. Map a saved long default to the current short name so
+// the field matches the instructions without the user re-linking.
+const RENAMED_SECRET_IDS: Record<string, string> = {
+	'linked-attachments-access-key-id': DEFAULT_ACCESS_KEY_SECRET_ID,
+	'linked-attachments-secret-access-key': DEFAULT_SECRET_KEY_SECRET_ID,
+};
+
 // Plugin entry point. Per the workspace code-structure rules this class is wiring
 // only: lifecycle, settings persistence, and constructing the services. The
 // credential logic lives in CredentialStore; the UI lives in the settings tab.
@@ -58,9 +66,19 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		const raw = (await this.loadData()) as Partial<LinkedAttachmentsSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
 
+		// Map a saved old-default secret name to its current short name.
+		const renamedAccess = RENAMED_SECRET_IDS[this.settings.accessKeyIdSecretName];
+		if (renamedAccess !== undefined) {
+			this.settings.accessKeyIdSecretName = renamedAccess;
+		}
+		const renamedSecret = RENAMED_SECRET_IDS[this.settings.secretAccessKeySecretName];
+		if (renamedSecret !== undefined) {
+			this.settings.secretAccessKeySecretName = renamedSecret;
+		}
+
 		// A data.json saved by an earlier build may carry empty secret names.
-		// Coalesce them back to the namespaced defaults so the picker and the
-		// credential reads always have a canonical name to use.
+		// Coalesce them back to the default names so the picker and the credential
+		// reads always have a canonical name to use.
 		if (this.settings.accessKeyIdSecretName.length === 0) {
 			this.settings.accessKeyIdSecretName = DEFAULT_ACCESS_KEY_SECRET_ID;
 		}
