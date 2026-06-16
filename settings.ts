@@ -20,6 +20,9 @@ export interface LinkedAttachmentsSettings {
 	addressingStyle: S3AddressingStyle;
 	accessKeyIdSecretName: string;
 	secretAccessKeySecretName: string;
+	// When on, debug-level app events are also written to the log. The bucket audit
+	// trail, warnings, and errors are logged regardless of this setting.
+	debugLogging: boolean;
 }
 
 export const DEFAULT_SETTINGS: LinkedAttachmentsSettings = {
@@ -31,4 +34,5 @@ export const DEFAULT_SETTINGS: LinkedAttachmentsSettings = {
 	addressingStyle: 'virtual-hosted',
 	accessKeyIdSecretName: DEFAULT_ACCESS_KEY_SECRET_ID,
 	secretAccessKeySecretName: DEFAULT_SECRET_KEY_SECRET_ID,
+	debugLogging: false,
 };

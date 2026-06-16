@@ -5,9 +5,10 @@ import {
 	DEFAULT_ACCESS_KEY_SECRET_ID,
 	DEFAULT_SECRET_KEY_SECRET_ID,
 } from './settings';
-import { CredentialStore } from './credentials';
+import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { runPointerRoundTripProbe } from './pointer-roundtrip-probe';
+import { Logger } from './logger';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -23,9 +24,13 @@ const RENAMED_SECRET_IDS: Record<string, string> = {
 export default class LinkedAttachmentsPlugin extends Plugin {
 	settings!: LinkedAttachmentsSettings;
 	credentials!: CredentialStore;
+	logger!: Logger;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+
+		this.logger = new Logger(this.app, this.manifest.id, () => this.settings.debugLogging);
+		this.logger.info('Plugin loaded.', { version: this.manifest.version });
 
 		// Obsidian's SecretStorage is assignable to our structural SecretStore. The
 		// store reads the secret NAMES from live settings via a getter, so changing
@@ -49,16 +54,15 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// Guarded so a probe failure surfaces as a notice and a console error rather
 	// than an unhandled rejection.
 	private async runPointerProbe(): Promise<void> {
+		this.logger.info('Pointer round-trip probe started.');
 		try {
 			const result = await runPointerRoundTripProbe(this.app);
 			const lines = result.checks.map((c) => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}: ${c.detail}`);
 			new Notice(`AC-G4 ${result.ok ? 'PASS' : 'FAIL'}\n${lines.join('\n')}`, 15000);
-			if (!result.ok) {
-				console.error('Linked Attachments AC-G4 probe:', result);
-			}
+			this.logger.info('Pointer round-trip probe finished.', { ok: result.ok, checks: result.checks });
 		} catch (error) {
-			new Notice('Pointer round-trip probe failed. See the console for details.');
-			console.error('Linked Attachments: pointer round-trip probe failed.', error);
+			new Notice('Pointer round-trip probe failed. See the log for details.');
+			this.logger.error('Pointer round-trip probe threw.', { error: describeError(error) });
 		}
 	}
 

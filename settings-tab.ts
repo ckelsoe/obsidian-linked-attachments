@@ -93,6 +93,17 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 				],
 			},
+			{
+				type: 'group',
+				heading: 'Diagnostics',
+				items: [
+					{
+						name: 'Debug logging',
+						desc: `Also write debug-level detail to the log. Every bucket interaction, warning, and error is logged regardless. Log file: ${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}/audit.jsonl`,
+						control: { type: 'toggle', key: 'debugLogging' },
+					},
+				],
+			},
 		];
 	}
 
@@ -147,12 +158,15 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 
 		this.testButton?.setDisabled(true);
 		this.setStatus('Testing connection...', 'neutral');
+		this.plugin.logger.info('Connection test started.', { bucket: s.bucket, addressingStyle: s.addressingStyle });
 		try {
 			const result = await testConnection(
 				{ endpoint: s.endpoint, region: s.region, bucket: s.bucket, addressingStyle: s.addressingStyle },
 				creds,
+				this.plugin.logger,
 			);
 			this.setStatus(result.detail, result.ok ? 'ok' : 'error');
+			this.plugin.logger.info('Connection test finished.', { ok: result.ok, detail: result.detail });
 		} catch (error) {
 			this.setStatus(`Connection test failed: ${describeError(error)}`, 'error');
 		} finally {
