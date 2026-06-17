@@ -10,6 +10,8 @@ import { ladderVerifier } from '../offload/verify';
 import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
 import { rewriteEmbedsInNotes, RewriteDirection } from '../scan/embed-rewrite';
 import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
+import { scanReconcile, linkUnlinked, ReconcileFinding } from '../reconcile/scanner';
+import { buildManifestFromPointers, PointerSource } from '../manifest/manifest';
 import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
@@ -66,6 +68,45 @@ export class AttachmentService {
 		const key = `${prefix}/.linked-attachments/rehearsal-${nonce}.txt`;
 		const payload = new TextEncoder().encode(`Linked Attachments round-trip rehearsal ${nonce}`);
 		return runTrustRehearsal({ backend: this.backend(config), key, payload, onStage });
+	}
+
+	// Reconciliation scan (the moat): diff the vault's pointers against what is in
+	// the bucket into the four outcomes (healthy / broken / unlinked / drift).
+	// Strictly read-only - LIST, and HEAD only when deep is asked for.
+	async reconcile(deep = false): Promise<ReconcileFinding[]> {
+		const config = this.getConfig();
+		const sources: PointerSource[] = [];
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (frontmatter === undefined || !('la_version' in frontmatter)) {
+				continue;
+			}
+			try {
+				const record = decodePointer(await this.app.vault.read(file)).record;
+				sources.push({ pointerPath: file.path, record });
+			} catch {
+				// not a valid pointer; skip
+			}
+		}
+		const manifest = buildManifestFromPointers(sources);
+		return scanReconcile(this.backend(config), Object.values(manifest.entries), { deep });
+	}
+
+	// The single v1 remediation: create pointers for the unlinked candidates. Broken
+	// and drift findings are never touched (resolver is v2).
+	async linkFindings(findings: ReconcileFinding[]): Promise<{ created: number; failed: number }> {
+		const pointers = linkUnlinked(findings, {}, { bucket: this.getConfig().bucket, newId: () => generateId(), now: () => new Date().toISOString() });
+		let created = 0;
+		let failed = 0;
+		for (const pointer of pointers) {
+			try {
+				await this.writePointer(pointer.pointerPath, encodePointer(pointer.record, ''));
+				created++;
+			} catch {
+				failed++;
+			}
+		}
+		return { created, failed };
 	}
 
 	// Adopt-from-bucket: LIST under an optional prefix and classify each object

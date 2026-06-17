@@ -99,3 +99,13 @@
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
+
+.linked-attachments-reconcile-group {
+	margin-top: var(--size-4-3);
+}
+
+.linked-attachments-reconcile-felt {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin: 0 0 var(--size-2-2) 0;
+}

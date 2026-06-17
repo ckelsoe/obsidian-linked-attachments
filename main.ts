@@ -13,6 +13,7 @@ import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 import { BatchOffloadModal } from './src/ui/batch-offload-modal';
 import { AdoptModal } from './src/ui/adopt-modal';
+import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { decodePointer } from './src/pointer/codec';
 
@@ -85,6 +86,24 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				if (!checking) {
 					new TrustRehearsalModal(this.app, this.attachments, (error) => {
 						this.logger.error('Trust rehearsal threw.', { error: describeError(error) });
+					}).open();
+				}
+				return true;
+			},
+		});
+
+		// Reconcile: diff the vault's pointers against the bucket (the four outcomes).
+		this.addCommand({
+			id: 'reconcile-with-storage',
+			name: 'Reconcile with storage',
+			checkCallback: (checking: boolean): boolean => {
+				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+				if (!ready) {
+					return false;
+				}
+				if (!checking) {
+					new ReconcileModal(this.app, this.attachments, (error) => {
+						this.logger.error('Reconcile threw.', { error: describeError(error) });
 					}).open();
 				}
 				return true;

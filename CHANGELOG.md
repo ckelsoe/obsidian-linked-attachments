@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Reconcile with storage: a new command scans your pointer notes against what is actually in your bucket and groups the results into four plain-language outcomes - healthy, not yet linked, changed in the bucket, and missing object - with one safe action: link the unlinked objects into your vault. It only reads; it never deletes or overwrites anything in the bucket.
+
 ## [0.2.0] - 2026-06-17
 
 ### Added
