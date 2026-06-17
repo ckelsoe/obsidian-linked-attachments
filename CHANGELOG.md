@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-06-17
+
 ### Added
 - Round-trip rehearsal: a "Rehearse a round-trip on a test file" command exercises your bucket end to end on a throwaway object and shows each step pass in turn - uploaded, verified byte-for-byte, retrieved, and matches the original - so you can confirm your storage works before trusting it with a real file. The throwaway object is cleaned up automatically and nothing in your vault is touched.
 - Offload preview: before a file is offloaded, a dry-run preview shows exactly where it will go - the destination bucket and key, the pointer note path, and the size - with nothing moved until you confirm. The preview is computed by the same logic that performs the offload, so what you see is what gets committed.
