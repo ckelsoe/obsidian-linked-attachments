@@ -31,6 +31,15 @@ export default tseslint.config(
 			},
 		},
 	},
+	{
+		// Live integration harnesses run in Node (no Obsidian runtime, no browser
+		// CORS), so they intentionally use the global fetch to reach the bucket.
+		// Production plugin code uses requestUrl; these files are never bundled.
+		files: ["src/**/*.live.test.ts"],
+		rules: {
+			"no-restricted-globals": "off",
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",
@@ -43,5 +52,6 @@ export default tseslint.config(
 		"package-lock.json",
 		"tsconfig.json",
 		"jest.config.cjs",
+		"jest.integration.config.cjs",
 	]),
 );

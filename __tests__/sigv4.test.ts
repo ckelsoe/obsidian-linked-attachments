@@ -43,4 +43,25 @@ describe('signRequest (AWS S3 GET Object known-answer)', () => {
 		// host, x-amz-content-sha256, x-amz-date are always signed.
 		expect(signed.headers.authorization).toContain('SignedHeaders=host;x-amz-content-sha256;x-amz-date');
 	});
+
+	// A precomputed payload hash (used for binary PUT, where the bytes are hashed
+	// once at offload as the content identity) must produce the same signature as
+	// hashing the equivalent body string.
+	it('accepts a precomputed payload hash equivalent to hashing the body', async () => {
+		const common = {
+			method: 'PUT',
+			url: 'https://examplebucket.s3.amazonaws.com/test.txt',
+			region: 'us-east-1',
+			service: 's3',
+			accessKeyId: 'AKIAIOSFODNN7EXAMPLE',
+			secretAccessKey: 'wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY',
+			amzDate: '20130524T000000Z',
+		} as const;
+		// sha256("hello") in hex.
+		const helloHash = '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824';
+		const viaBody = await signRequest({ ...common, body: 'hello' });
+		const viaHash = await signRequest({ ...common, payloadHashHex: helloHash });
+		expect(viaHash.headers['x-amz-content-sha256']).toBe(helloHash);
+		expect(viaHash.headers.authorization).toBe(viaBody.headers.authorization);
+	});
 });

@@ -9,6 +9,9 @@ module.exports = {
 	roots: ['<rootDir>'],
 	testEnvironment: 'node',
 	testMatch: ['**/__tests__/**/*.test.ts', '**/src/**/*.test.ts'],
+	// Live integration tests (*.live.test.ts) hit a real bucket and are excluded
+	// from the default run. They run only via `npm run test:integration`.
+	testPathIgnorePatterns: ['/node_modules/', '\\.live\\.test\\.ts$'],
 	transform: {
 		'^.+\\.ts$': ['ts-jest', {
 			tsconfig: {

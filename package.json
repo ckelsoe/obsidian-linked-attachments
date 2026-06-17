@@ -9,6 +9,7 @@
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint . --max-warnings 0 && node scripts/check-submission.mjs",
 		"test": "jest",
+		"test:integration": "node --env-file-if-exists=.env node_modules/jest/bin/jest.js --config jest.integration.config.cjs --runInBand",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],

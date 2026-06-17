@@ -17,6 +17,12 @@ main.js
 # obsidian
 data.json
 
+# Local credentials for the gated live integration test (NEVER commit).
+# .env.example is the safe, committed schema; real values live only in .env.
+.env
+.env.local
+!.env.example
+
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
 

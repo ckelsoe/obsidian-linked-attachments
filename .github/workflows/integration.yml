@@ -1,0 +1,32 @@
+name: Live integration (R2)
+
+# Manual only. Runs the gated live round-trip against a real bucket using
+# repository secrets. The default CI (ci.yml) never runs these tests, so this
+# does not gate merges; it is here for on-demand live verification. If the R2_*
+# secrets are not set, the live test self-skips and the job still passes.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+      - run: npm ci
+      - name: Live round-trip against R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_REGION: ${{ secrets.R2_REGION }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ADDRESSING: ${{ secrets.R2_ADDRESSING }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_TEST_PREFIX: ${{ secrets.R2_TEST_PREFIX }}
+        run: npm run test:integration

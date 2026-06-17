@@ -25,6 +25,11 @@ export interface SignInput {
 	headers?: Record<string, string>;
 	// Request payload. Defaults to empty. The connection test sends no body.
 	body?: string;
+	// Precomputed lowercase-hex SHA-256 of the payload, used instead of hashing
+	// `body`. The binary PUT path passes the file's content sha256 (already computed
+	// at offload as the identity) here, so a binary body is fully signed without a
+	// string copy and without UNSIGNED-PAYLOAD. Takes precedence over `body`.
+	payloadHashHex?: string;
 	// Test seam: fixed timestamp (YYYYMMDDTHHMMSSZ). Defaults to now.
 	amzDate?: string;
 }
@@ -40,7 +45,7 @@ export async function signRequest(input: SignInput): Promise<SignedRequest> {
 	const amzDate = input.amzDate ?? currentAmzDate();
 	const dateStamp = amzDate.slice(0, 8);
 	const body = input.body ?? '';
-	const payloadHash = await sha256Hex(body);
+	const payloadHash = input.payloadHashHex ?? (await sha256Hex(body));
 
 	// Assemble the headers that go into the signature. host, x-amz-content-sha256,
 	// and x-amz-date are always signed; any extras are merged in lowercased.

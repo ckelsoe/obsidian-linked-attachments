@@ -82,6 +82,59 @@ export function parseXmlTag(xml: string, tag: string): string | null {
 	return match?.[1] ?? null;
 }
 
+export interface ListedObject {
+	key: string;
+	size: number;
+	etag: string;
+	lastModified: string | null;
+}
+
+// Parse the <Contents> entries of a ListObjectsV2 response into key/size/etag/
+// lastModified. The reconciliation scanner and adopt need size and etag, not just
+// the key. ETag is XML-escaped in the listing (&quot;...&quot;); it is unescaped
+// to the raw quoted form S3 returns on a HEAD.
+export function parseListContents(xml: string): ListedObject[] {
+	const objects: ListedObject[] = [];
+	const re = /<Contents>([\s\S]*?)<\/Contents>/g;
+	let match: RegExpExecArray | null;
+	while ((match = re.exec(xml)) !== null) {
+		const block = match[1] ?? '';
+		const key = parseXmlTag(block, 'Key');
+		if (key === null) {
+			continue;
+		}
+		objects.push({
+			key,
+			size: Number(parseXmlTag(block, 'Size') ?? '0'),
+			etag: unescapeXml(parseXmlTag(block, 'ETag') ?? ''),
+			lastModified: parseXmlTag(block, 'LastModified'),
+		});
+	}
+	return objects;
+}
+
+// The <CommonPrefixes> values of a delimited listing (folder-like grouping).
+export function parseCommonPrefixes(xml: string): string[] {
+	const prefixes: string[] = [];
+	const re = /<CommonPrefixes>[\s\S]*?<Prefix>([^<]*)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g;
+	let match: RegExpExecArray | null;
+	while ((match = re.exec(xml)) !== null) {
+		if (match[1] !== undefined) {
+			prefixes.push(unescapeXml(match[1]));
+		}
+	}
+	return prefixes;
+}
+
+function unescapeXml(value: string): string {
+	return value
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&amp;/g, '&');
+}
+
 // Turns the HTTP status + S3 error body into a human verdict. S3 returns errors as
 // XML with a <Code> element; the code is far more useful than the bare status.
 export function classifyListResult(status: number, bodyText: string, bucket: string): ConnectionTestResult {

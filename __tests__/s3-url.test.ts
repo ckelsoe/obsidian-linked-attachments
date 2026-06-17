@@ -1,4 +1,28 @@
-import { buildListUrl, classifyListResult, objectUrl, buildObjectListUrl, parseListedKeys, parseXmlTag } from '../s3-url';
+import { buildListUrl, classifyListResult, objectUrl, buildObjectListUrl, parseListedKeys, parseXmlTag, parseListContents, parseCommonPrefixes } from '../s3-url';
+
+describe('parseListContents', () => {
+	const xml =
+		'<ListBucketResult>' +
+		'<Contents><Key>p/a.pdf</Key><Size>1024</Size><ETag>&quot;abc123&quot;</ETag><LastModified>2026-06-16T12:00:00.000Z</LastModified></Contents>' +
+		'<Contents><Key>p/b.pdf</Key><Size>2048</Size><ETag>&quot;def456&quot;</ETag><LastModified>2026-06-16T13:00:00.000Z</LastModified></Contents>' +
+		'<CommonPrefixes><Prefix>p/sub/</Prefix></CommonPrefixes>' +
+		'</ListBucketResult>';
+
+	it('extracts key, size, and unescaped etag per object', () => {
+		const objects = parseListContents(xml);
+		expect(objects).toHaveLength(2);
+		expect(objects[0]).toEqual({ key: 'p/a.pdf', size: 1024, etag: '"abc123"', lastModified: '2026-06-16T12:00:00.000Z' });
+		expect(objects[1]?.size).toBe(2048);
+	});
+
+	it('extracts common prefixes', () => {
+		expect(parseCommonPrefixes(xml)).toEqual(['p/sub/']);
+	});
+
+	it('returns an empty array for a listing with no contents', () => {
+		expect(parseListContents('<ListBucketResult></ListBucketResult>')).toEqual([]);
+	});
+});
 
 describe('objectUrl', () => {
 	it('path style puts bucket and key in the path', () => {
