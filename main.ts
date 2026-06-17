@@ -1,4 +1,4 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Plugin, TFile } from 'obsidian';
 import {
 	LinkedAttachmentsSettings,
 	DEFAULT_SETTINGS,
@@ -9,6 +9,7 @@ import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { runPointerRoundTripProbe } from './pointer-roundtrip-probe';
 import { Logger } from './logger';
+import { AttachmentService } from './src/service/attachment-service';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -25,6 +26,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	settings!: LinkedAttachmentsSettings;
 	credentials!: CredentialStore;
 	logger!: Logger;
+	attachments!: AttachmentService;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -42,6 +44,62 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 		this.addSettingTab(new LinkedAttachmentsSettingTab(this.app, this));
 
+		this.attachments = new AttachmentService(this.app, this.credentials, () => ({
+			endpoint: this.settings.endpoint,
+			region: this.settings.region,
+			bucket: this.settings.bucket,
+			addressingStyle: this.settings.addressingStyle,
+		}));
+
+		// Offload the active file (an attachment opened in a tab) to storage.
+		this.addCommand({
+			id: 'offload-active-file',
+			name: 'Offload the active file to storage',
+			checkCallback: (checking: boolean): boolean => {
+				const file = this.app.workspace.getActiveFile();
+				if (file === null) {
+					return false;
+				}
+				if (!checking) {
+					void this.runOffload(file);
+				}
+				return true;
+			},
+		});
+
+		// Restore the active pointer note (a *.md pointer) back to the vault.
+		this.addCommand({
+			id: 'restore-active-pointer',
+			name: 'Restore the active pointer note',
+			checkCallback: (checking: boolean): boolean => {
+				const file = this.app.workspace.getActiveFile();
+				if (file === null || file.extension !== 'md') {
+					return false;
+				}
+				if (!checking) {
+					void this.runRestore(file);
+				}
+				return true;
+			},
+		});
+
+		// A right-click "Offload to storage" affordance on a non-markdown file.
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFile) || file.extension === 'md') {
+					return;
+				}
+				menu.addItem((item) => {
+					item
+						.setTitle('Offload to storage')
+						.setIcon('upload-cloud')
+						.onClick(() => {
+							void this.runOffload(file);
+						});
+				});
+			}),
+		);
+
 		// AC-G4 probe. Spike scaffolding: runs the pointer round-trip oracle in a
 		// scratch folder and reports the verdict. Removed when the spike closes.
 		this.addCommand({
@@ -49,6 +107,63 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			name: 'Probe pointer round trip',
 			callback: () => { void this.runPointerProbe(); },
 		});
+	}
+
+	// Offload a file: verified upload, then the local original goes to system trash
+	// (recoverable). Guarded so any failure is a notice + a logged error, never an
+	// unhandled rejection, and never a removed file without a verified cloud copy.
+	private async runOffload(file: TFile): Promise<void> {
+		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
+			new Notice('Set the endpoint and bucket in settings first.');
+			return;
+		}
+		if (!this.credentials.hasCompleteCredentials()) {
+			new Notice('Add your storage credentials in settings first.');
+			return;
+		}
+		new Notice(`Offloading ${file.name}...`);
+		this.logger.info('Offload started.', { path: file.path });
+		try {
+			const result = await this.attachments.offload(file);
+			if (result.ok) {
+				new Notice(result.removed ? `Offloaded ${file.name}. The local file was moved to trash.` : `Offloaded ${file.name}. The local file was kept (not yet at the delete-gate tier).`);
+				this.logger.info('Offload finished.', { path: file.path, removed: result.removed, tier: result.record?.verificationTier });
+			} else {
+				new Notice(`Offload of ${file.name} did not complete: ${result.error ?? 'unknown error'}. Your file was not removed.`);
+				this.logger.warn('Offload did not complete.', { path: file.path, stage: result.reachedStage, error: result.error });
+			}
+		} catch (error) {
+			new Notice(`Offload of ${file.name} failed. See the log for details.`);
+			this.logger.error('Offload threw.', { path: file.path, error: describeError(error) });
+		}
+	}
+
+	// Restore a pointer note: download, verify the bytes against the recorded hash,
+	// write the file back, and remove the pointer. Guarded.
+	private async runRestore(pointer: TFile): Promise<void> {
+		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
+			new Notice('Set the endpoint and bucket in settings first.');
+			return;
+		}
+		if (!this.credentials.hasCompleteCredentials()) {
+			new Notice('Add your storage credentials in settings first.');
+			return;
+		}
+		new Notice(`Restoring from ${pointer.name}...`);
+		this.logger.info('Restore started.', { path: pointer.path });
+		try {
+			const result = await this.attachments.restore(pointer);
+			if (result.ok) {
+				new Notice(`Restored ${result.restoredPath ?? 'the file'}.`);
+				this.logger.info('Restore finished.', { pointer: pointer.path, restoredPath: result.restoredPath });
+			} else {
+				new Notice(`Restore did not complete: ${result.error ?? 'unknown error'}.`);
+				this.logger.warn('Restore did not complete.', { pointer: pointer.path, error: result.error });
+			}
+		} catch (error) {
+			new Notice(`Restore from ${pointer.name} failed. See the log for details.`);
+			this.logger.error('Restore threw.', { pointer: pointer.path, error: describeError(error) });
+		}
 	}
 
 	// Guarded so a probe failure surfaces as a notice and a console error rather
