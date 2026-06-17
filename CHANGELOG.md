@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-17
+
 ### Added
 - Clean up incomplete uploads: the reconcile view can now find and abort dropped multipart uploads in your bucket, which otherwise sit there invisibly accruing storage cost. (A one-time bucket lifecycle rule is still the recommended durable backstop.)
 - Honest auth errors: when an offload or restore fails because your storage keys are stale on this device, you now get a plain "re-enter them in settings; nothing was changed" message instead of a raw 403, and the failure is told apart from an ordinary network error.
