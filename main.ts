@@ -16,6 +16,7 @@ import { AdoptModal } from './src/ui/adopt-modal';
 import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
+import { formatPointerReference } from './src/ui/pointer-reference';
 import { decodePointer } from './src/pointer/codec';
 
 // One-time rename: earlier builds defaulted the secret names to the long
@@ -187,6 +188,17 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 									void this.showPointerStatus(file);
 								});
 						});
+						// The mobile affordance: copy the bucket + key + honest size/
+						// format so the user can open the object in their own S3 app.
+						// Useful on desktop too (paste into an S3 browser).
+						menu.addItem((item) => {
+							item
+								.setTitle('Copy storage reference')
+								.setIcon('clipboard-copy')
+								.onClick(() => {
+									void this.copyPointerReference(file);
+								});
+						});
 					}
 					return;
 				}
@@ -250,6 +262,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		} catch (error) {
 			new Notice('Resume failed. See the log for details.');
 			this.logger.error('Resume threw.', { error: describeError(error) });
+		}
+	}
+
+	// Copy a pointer's storage reference (bucket, key, honest size/format) to the
+	// clipboard so the user can open the object in their own S3 app. This is the v1
+	// mobile bridge - the plugin does not do in-app mobile transport.
+	private async copyPointerReference(pointer: TFile): Promise<void> {
+		try {
+			const record = decodePointer(await this.app.vault.read(pointer)).record;
+			await navigator.clipboard.writeText(formatPointerReference(record));
+			new Notice('Storage reference copied. Open it in your S3 app.');
+		} catch (error) {
+			new Notice('Could not copy the storage reference. See the log for details.');
+			this.logger.warn('Copy reference failed.', { path: pointer.path, error: describeError(error) });
 		}
 	}
 

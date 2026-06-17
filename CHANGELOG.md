@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Open on mobile: a "Copy storage reference" action on any pointer note copies the file's name, honest size and format, and the exact bucket and key, so you can open the object in your own S3 app on a phone (where the plugin does not transfer files itself). It works on desktop too for pasting into an S3 browser.
+
 ## [1.0.0] - 2026-06-17
 
 ### Added

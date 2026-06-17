@@ -1,5 +1,5 @@
 import { formatPointerReference } from './pointer-reference';
-import { PointerRecord, VerificationTier } from '../pointer/codec';
+import { PointerRecord } from '../pointer/codec';
 
 // The mobile pointer affordance (spec section 3 mobile / section 4 v1): v1 does not
 // do in-app mobile transport, so what it owes the mobile user is a pointer that
@@ -21,7 +21,7 @@ const record = (over: Partial<PointerRecord> = {}): PointerRecord => ({
 	byteSize: 5 * 1024 * 1024,
 	contentType: 'application/pdf',
 	copyState: 'offloaded',
-	verificationTier: 'content' as VerificationTier,
+	verificationTier: 'content',
 	remoteChecksum: null,
 	checksumAlgo: 'sha256',
 	partSize: null,
