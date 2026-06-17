@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Embeds follow the file: when you offload an attachment, every note that embeds it is rewritten to transclude the pointer note instead, so the embed keeps working; restoring reverses it. Page anchors and captions are preserved, and embeds inside code blocks are left alone.
+
 ## [0.1.0] - 2026-06-17
 
 ### Added

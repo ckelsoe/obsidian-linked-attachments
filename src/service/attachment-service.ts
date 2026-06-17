@@ -8,6 +8,7 @@ import { offloadFile, OffloadDeps, OffloadResult } from '../offload/pipeline';
 import { planOffload, OffloadPlan } from '../offload/plan';
 import { ladderVerifier } from '../offload/verify';
 import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
+import { rewriteEmbedsInNotes, RewriteDirection } from '../scan/embed-rewrite';
 import { decodePointer, PointerRecord } from '../pointer/codec';
 import { sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
@@ -67,6 +68,9 @@ export class AttachmentService {
 	async offload(file: TFile): Promise<OffloadResult> {
 		const config = this.getConfig();
 		const bytes = new Uint8Array(await this.app.vault.readBinary(file));
+		// Capture the notes that embed this attachment BEFORE the pipeline trashes
+		// the original, so the rewrite can run against a stable backlink set.
+		const embeddingNotes = this.notesLinking(file.path);
 		const deps: OffloadDeps = {
 			backend: this.backend(config),
 			bucket: config.bucket,
@@ -77,7 +81,15 @@ export class AttachmentService {
 			now: () => new Date().toISOString(),
 			verify: ladderVerifier,
 		};
-		return offloadFile({ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) }, deps);
+		const result = await offloadFile({ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) }, deps);
+		// Only after the pointer is committed: rewrite ![[file.ext]] -> ![[file.ext.md]]
+		// so the embeds transclude the pointer. A rewrite failure is non-fatal - the
+		// file is already safely offloaded; the embeds simply still point at the raw
+		// name (which resolves to the pointer by Obsidian's basename rule anyway).
+		if (result.ok) {
+			await this.rewriteEmbeds(file.name, embeddingNotes, 'to-pointer');
+		}
+		return result;
 	}
 
 	async restore(pointer: TFile): Promise<RestoreResult> {
@@ -101,8 +113,14 @@ export class AttachmentService {
 			return { ok: false, restoredPath: null, error: 'downloaded bytes do not match the recorded hash; not writing' };
 		}
 
+		// Capture the notes embedding the pointer before it is removed.
+		const embeddingNotes = this.notesLinking(pointer.path);
+
 		await this.ensureParentFolder(record.originalPath);
 		await this.app.vault.createBinary(record.originalPath, toArrayBuffer(bytes));
+		// Rewrite ![[file.ext.md]] -> ![[file.ext]] while the pointer still exists, so
+		// no embed is left dangling between the rewrite and the pointer removal.
+		await this.rewriteEmbeds(record.originalName, embeddingNotes, 'to-attachment');
 		await this.app.fileManager.trashFile(pointer);
 		return { ok: true, restoredPath: record.originalPath, error: null };
 	}
@@ -115,6 +133,44 @@ export class AttachmentService {
 		return config.vaultPrefix !== undefined && config.vaultPrefix.length > 0
 			? config.vaultPrefix
 			: this.app.vault.getName();
+	}
+
+	// The markdown notes whose resolved links include targetPath. Obsidian's
+	// metadataCache already resolved every embed, so this is the backlink set for an
+	// attachment (offload) or a pointer (restore) without re-scanning the vault.
+	private notesLinking(targetPath: string): string[] {
+		const sources: string[] = [];
+		const resolved = this.app.metadataCache.resolvedLinks;
+		for (const source of Object.keys(resolved)) {
+			if (source.endsWith('.md') && targetPath in (resolved[source] ?? {})) {
+				sources.push(source);
+			}
+		}
+		return sources;
+	}
+
+	// Read the given notes, rewrite the embeds in the requested direction, and write
+	// back only those that changed. Best-effort: a failure is logged by the caller's
+	// guard and never undoes a completed offload/restore.
+	private async rewriteEmbeds(attachmentName: string, sourcePaths: string[], direction: RewriteDirection): Promise<number> {
+		if (sourcePaths.length === 0) {
+			return 0;
+		}
+		const notes: Array<{ path: string; content: string }> = [];
+		for (const path of sourcePaths) {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				notes.push({ path, content: await this.app.vault.read(file) });
+			}
+		}
+		const { rewrites, embedsRewritten } = rewriteEmbedsInNotes(notes, attachmentName, direction);
+		for (const rewrite of rewrites) {
+			const file = this.app.vault.getAbstractFileByPath(rewrite.path);
+			if (file instanceof TFile) {
+				await this.app.vault.modify(file, rewrite.content);
+			}
+		}
+		return embedsRewritten;
 	}
 
 	private backend(config: AttachmentServiceConfig): S3Backend {
