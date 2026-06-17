@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Verify-before-delete safety gate: before any local file is removed, the plugin confirms the cloud copy by the strongest available method (a server-side checksum, an MD5 match, or downloading and re-hashing the bytes) and refuses to delete unless that confirmation meets a configurable bar. A drifted or missing object never authorizes a deletion.
 - Offload engine: moves a file to the bucket in a strict safe order (upload, then confirm the cloud copy byte-for-byte, then write the pointer note, then remove the local original only after all of that succeeds). Any failure leaves your original file untouched, and a half-finished earlier attempt is re-checked rather than trusted, so a file is never deleted unless its verified copy exists in the bucket.
 - Local text extraction for searchability: for text-bearing files (PDF, EPUB, DOCX, and similar) the plugin can keep a local copy of the document text so vault search still works after the file is offloaded. Scanned documents with no text layer are marked explicitly rather than left silently empty, so a search miss is never misleading.
 - Manifest cache: a fast index of every offloaded object, rebuilt from the pointer notes (the source of truth) or, as a recovery path, from the bucket listing. The cached copy is always discardable: a corrupted manifest is rejected and rebuilt rather than trusted, and the pointer notes win any disagreement.
