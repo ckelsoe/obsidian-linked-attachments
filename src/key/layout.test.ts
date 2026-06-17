@@ -32,6 +32,12 @@ function baseRecord(): PointerRecord {
 	};
 }
 
+// A 64-char lowercase-hex sha256, built from primitives that exist across
+// fast-check versions (v4 removed fc.hexaString).
+const hex64 = fc
+	.array(fc.integer({ min: 0, max: 15 }), { minLength: 64, maxLength: 64 })
+	.map((nibbles) => nibbles.map((n) => n.toString(16)).join(''));
+
 function hasControlChar(value: string): boolean {
 	for (const ch of value) {
 		const code = ch.charCodeAt(0);
@@ -100,8 +106,8 @@ describe('key layout property tests (la-p1-04)', () => {
 	it('prop_reupload_is_additive', () => {
 		fc.assert(
 			fc.property(
-				fc.hexaString({ minLength: 64, maxLength: 64 }),
-				fc.hexaString({ minLength: 64, maxLength: 64 }),
+				hex64,
+				hex64,
 				(oldHash, newHash) => {
 					fc.pre(oldHash.slice(0, 6) !== newHash.slice(0, 6));
 					const input = { vaultPrefix: 'v', originalPath: 'budget/2026.xlsx' };
@@ -119,7 +125,7 @@ describe('key layout property tests (la-p1-04)', () => {
 	// prop_deterministic :: key derivation is a pure function of its inputs.
 	it('prop_deterministic', () => {
 		fc.assert(
-			fc.property(fc.string(), fc.hexaString({ minLength: 64, maxLength: 64 }), (path, hash) => {
+			fc.property(fc.string(), hex64, (path, hash) => {
 				const a = layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash });
 				const b = layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash });
 				expect(a.key).toBe(b.key);
