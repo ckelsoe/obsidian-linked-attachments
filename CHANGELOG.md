@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-17
+
 ### Added
 - Trust badges everywhere it matters: an offload now reports the tier it reached (Verified / Found / Asserted) and whether the original was actually trashed, a "Check storage status" item on any pointer note shows its current trust badge, and the round-trip rehearsal is reachable from settings as well as the command palette.
 - Adopt from bucket: a new "Adopt files from storage" command lists objects already in your bucket under an optional prefix, shows them by filename in a checklist (hiding ones you already track and flagging name collisions), and creates pointer notes for the ones you tick. The scan is list-only and never downloads anything; adopted files are marked catalogued, not yet byte-verified. A paste-a-key field adopts a single object directly.
