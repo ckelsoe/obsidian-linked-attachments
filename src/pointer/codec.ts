@@ -236,6 +236,12 @@ function extractExtras(fm: Record<string, unknown>): Record<string, unknown> {
 
 function requireString(fm: Record<string, unknown>, key: string): string {
 	const value = fm[key];
+	// Obsidian's Properties UI unquotes a timestamp, which js-yaml's default schema
+	// then parses as a Date. Coerce it back to the ISO string we wrote (tolerate the
+	// reformatting rather than reject an equivalent value).
+	if (value instanceof Date) {
+		return value.toISOString();
+	}
 	if (typeof value !== 'string') {
 		throw new PointerParseError(`field ${key} is required and must be a string`);
 	}
@@ -246,6 +252,9 @@ function nullableString(fm: Record<string, unknown>, key: string): string | null
 	const value = fm[key];
 	if (value === null || value === undefined) {
 		return null;
+	}
+	if (value instanceof Date) {
+		return value.toISOString();
 	}
 	if (typeof value !== 'string') {
 		throw new PointerParseError(`field ${key} must be a string or null`);

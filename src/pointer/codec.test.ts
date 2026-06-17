@@ -116,6 +116,46 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 		expect(decoded.record).toEqual(record);
 	});
 
+	// AC7 :: Obsidian's Properties UI rewrites frontmatter - it unquotes a timestamp
+	// (which js-yaml's default schema then parses as a Date) and renders null as an
+	// empty value. The codec must still decode such a pointer (spec section 10:
+	// validate the envelope, tolerate sloppy values).
+	it('test_tolerates_obsidian_reformatted_frontmatter', () => {
+		const reformatted = [
+			'---',
+			'la_version: 1',
+			'la_id: la-x',
+			'la_hash: c0f0c5',
+			'la_bucket: s3-dev-test',
+			'la_key: e/x--c0f0c5.epub',
+			'la_key_kind: hash',
+			'la_original_name: x.epub',
+			'la_original_ext: epub',
+			'la_original_path: e/x.epub',
+			'la_byte_size: 421804',
+			'la_content_type: application/epub+zip',
+			'la_copy_state: offloaded',
+			'la_verification_tier: content',
+			'la_remote_checksum: wPDFHeKaWod6m/5lhXNlwkS/fGZLZ2S54AwAXvk0xvI=',
+			'la_checksum_algo: sha256',
+			'la_part_size:',
+			'la_part_count:',
+			'la_offloaded_at: 2026-06-17T19:59:42.633Z', // UNQUOTED -> js-yaml Date
+			'la_source_version:',
+			'la_supersedes:',
+			'---',
+			'<!-- la:managed:start -->',
+			'[Open x](obsidian://x)',
+			'<!-- la:managed:end -->',
+			'',
+		].join('\n');
+		const decoded = decodePointer(reformatted);
+		expect(decoded.record.offloadedAt).toBe('2026-06-17T19:59:42.633Z');
+		expect(decoded.record.partSize).toBeNull();
+		expect(decoded.record.key).toBe('e/x--c0f0c5.epub');
+		expect(decoded.record.hash).toBe('c0f0c5');
+	});
+
 	// AC6 :: non-la_ frontmatter keys (e.g. user tags) survive the round-trip.
 	it('test_extra_frontmatter_preserved', () => {
 		const record = fullRecord();
