@@ -7,7 +7,6 @@ import {
 } from './settings';
 import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
-import { runPointerRoundTripProbe } from './pointer-roundtrip-probe';
 import { Logger } from './logger';
 import { AttachmentService } from './src/service/attachment-service';
 
@@ -100,13 +99,6 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			}),
 		);
 
-		// AC-G4 probe. Spike scaffolding: runs the pointer round-trip oracle in a
-		// scratch folder and reports the verdict. Removed when the spike closes.
-		this.addCommand({
-			id: 'probe-pointer-round-trip',
-			name: 'Probe pointer round trip',
-			callback: () => { void this.runPointerProbe(); },
-		});
 	}
 
 	// Offload a file: verified upload, then the local original goes to system trash
@@ -163,22 +155,6 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		} catch (error) {
 			new Notice(`Restore from ${pointer.name} failed. See the log for details.`);
 			this.logger.error('Restore threw.', { pointer: pointer.path, error: describeError(error) });
-		}
-	}
-
-	// Guarded so a probe failure surfaces as a notice and a console error rather
-	// than an unhandled rejection.
-	private async runPointerProbe(): Promise<void> {
-		const runId = String(Date.now());
-		this.logger.info('Pointer round-trip probe started.', { runId });
-		try {
-			const result = await runPointerRoundTripProbe(this.app, runId);
-			const lines = result.checks.map((c) => `${c.pass ? 'PASS' : 'FAIL'} ${c.name}: ${c.detail}`).concat(result.notes);
-			new Notice(`AC-G4 ${result.ok ? 'PASS' : 'FAIL'}\n${lines.join('\n')}`, 15000);
-			this.logger.info('Pointer round-trip probe finished.', { runId, ok: result.ok, checks: result.checks, notes: result.notes });
-		} catch (error) {
-			new Notice('Pointer round-trip probe failed. See the log for details.');
-			this.logger.error('Pointer round-trip probe threw.', { error: describeError(error) });
 		}
 	}
 
