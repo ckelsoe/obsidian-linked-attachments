@@ -15,6 +15,7 @@ import { BatchOffloadModal } from './src/ui/batch-offload-modal';
 import { AdoptModal } from './src/ui/adopt-modal';
 import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
+import { classifyError } from './src/storage/error-state';
 import { decodePointer } from './src/pointer/codec';
 
 // One-time rename: earlier builds defaulted the secret names to the long
@@ -294,11 +295,14 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		this.logger.info('Offload started.', { path: file.path });
 		try {
 			const result = await this.attachments.offload(file);
-			new Notice(offloadOutcomeLine(file.name, result));
 			if (result.ok) {
+				new Notice(offloadOutcomeLine(file.name, result));
 				this.logger.info('Offload finished.', { path: file.path, removed: result.removed, tier: result.record?.verificationTier });
 			} else {
-				this.logger.warn('Offload did not complete.', { path: file.path, stage: result.reachedStage, error: result.error });
+				// An auth failure gets the honest "stale keys" message, not a raw error.
+				const state = classifyError(result.error);
+				new Notice(state.isAuth ? state.message : offloadOutcomeLine(file.name, result));
+				this.logger.warn('Offload did not complete.', { path: file.path, stage: result.reachedStage, error: result.error, authFailure: state.isAuth });
 			}
 		} catch (error) {
 			new Notice(`Offload of ${file.name} failed. See the log for details.`);
@@ -325,12 +329,14 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				new Notice(`Restored ${result.restoredPath ?? 'the file'}.`);
 				this.logger.info('Restore finished.', { pointer: pointer.path, restoredPath: result.restoredPath });
 			} else {
-				new Notice(`Restore did not complete: ${result.error ?? 'unknown error'}.`);
-				this.logger.warn('Restore did not complete.', { pointer: pointer.path, error: result.error });
+				const state = classifyError(result.error);
+				new Notice(state.isAuth ? state.message : `Restore did not complete: ${result.error ?? 'unknown error'}.`);
+				this.logger.warn('Restore did not complete.', { pointer: pointer.path, error: result.error, authFailure: state.isAuth });
 			}
 		} catch (error) {
-			new Notice(`Restore from ${pointer.name} failed. See the log for details.`);
-			this.logger.error('Restore threw.', { pointer: pointer.path, error: describeError(error) });
+			const state = classifyError(error);
+			new Notice(state.isAuth ? state.message : `Restore from ${pointer.name} failed. See the log for details.`);
+			this.logger.error('Restore threw.', { pointer: pointer.path, error: describeError(error), authFailure: state.isAuth });
 		}
 	}
 
