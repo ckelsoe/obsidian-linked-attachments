@@ -142,7 +142,14 @@ describe('K1 text-extract failure injection (la-p1-06)', () => {
 
 	// A non-Error throw is still captured with a reason.
 	it('fault_non_error_throw_captured', async () => {
-		const weird: TextExtractor = { extract: () => Promise.reject('plain string failure') };
+		// A non-Error thrown value (typed unknown so it genuinely hits the
+		// String(error) branch of the catch, not the error.message branch).
+		const nonError: unknown = 'plain string failure';
+		const weird: TextExtractor = {
+			extract: () => {
+				throw nonError;
+			},
+		};
 		const result = await extractText('pdf', bytes('x'), weird);
 		expect(result.state).toBe('failed');
 		expect(result.reason).toContain('plain string failure');

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Local text extraction for searchability: for text-bearing files (PDF, EPUB, DOCX, and similar) the plugin can keep a local copy of the document text so vault search still works after the file is offloaded. Scanned documents with no text layer are marked explicitly rather than left silently empty, so a search miss is never misleading.
 - Manifest cache: a fast index of every offloaded object, rebuilt from the pointer notes (the source of truth) or, as a recovery path, from the bucket listing. The cached copy is always discardable: a corrupted manifest is rejected and rebuilt rather than trusted, and the pointer notes win any disagreement.
 - Readable storage keys: an offloaded file is stored under a key that mirrors its vault path with a short content-hash suffix (for example `charles-main/books/Romans/Cranfield--9f86d0.pdf`), so the object is easy to find in any S3 browser. The key is fixed when the file is offloaded and never changes on a later rename; re-uploading different bytes creates a new versioned key rather than overwriting the old one.
 - Reference scanner: finds note embeds that point at an attachment in either link form, rewrites them to target the pointer note on offload and back to the file on restore (preserving captions and page anchors), ignores embeds inside code blocks, and conservatively flags references it does not manage so an attachment is never deleted while something still points at it.
