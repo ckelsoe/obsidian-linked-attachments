@@ -17,6 +17,7 @@
 	"devDependencies": {
 		"@eslint/js": "^9.39.2",
 		"@types/jest": "^30.0.0",
+		"@types/js-yaml": "^4.0.9",
 		"@types/node": "^24.0.7",
 		"esbuild": "^0.28.1",
 		"eslint": "^9.39.2",
@@ -40,5 +41,8 @@
 		"brace-expansion@2": "^2.0.3",
 		"js-yaml": "^4.2.0",
 		"@babel/core": "^7.29.6"
+	},
+	"dependencies": {
+		"js-yaml": "^4.2.0"
 	}
 }
