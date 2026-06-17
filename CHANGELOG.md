@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Reference scanner: finds note embeds that point at an attachment in either link form, rewrites them to target the pointer note on offload and back to the file on restore (preserving captions and page anchors), ignores embeds inside code blocks, and conservatively flags references it does not manage so an attachment is never deleted while something still points at it.
 - Pointer note codec: read and write the machine fields in a pointer's frontmatter, regenerate the open link without touching the user's notes, and preserve any other frontmatter (such as tags) across edits. The pointer's identity is always read from frontmatter, never from the body, so the body is always safe to edit.
 - StorageBackend interface and an in-memory MemoryBackend (the tier-0 test stand-in): typed put/get/head/delete/list verbs, two-axis capability flags, server-side checksum validation on upload, and a content-addressed sha256 helper. The seam every offload and reconciliation module is built against.
 - Plugin scaffold from the workspace standard template (CI, release, lint, and scorecard tooling).
