@@ -1,4 +1,5 @@
-import { App, TFile } from 'obsidian';
+import { App, TFile, requestUrl } from 'obsidian';
+import { signRequest } from '../../sigv4';
 import { S3AddressingStyle, CredentialStore } from '../../credentials';
 import { S3ConnectionConfig } from '../../s3-url';
 import { S3Backend } from '../storage/s3-backend';
@@ -13,6 +14,7 @@ import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
 import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItems, OffloadJournal, JournalStage } from '../offload/journal';
 import { scanReconcile, linkUnlinked, ReconcileFinding } from '../reconcile/scanner';
 import { buildManifestFromPointers, PointerSource } from '../manifest/manifest';
+import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
 import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
@@ -91,6 +93,13 @@ export class AttachmentService {
 		}
 		const manifest = buildManifestFromPointers(sources);
 		return scanReconcile(this.backend(config), Object.values(manifest.entries), { deep });
+	}
+
+	// Find and abort incomplete multipart uploads, stopping same-session billing from
+	// a dropped upload (spec Path 10). The durable backstop is the bucket's
+	// AbortIncompleteMultipartUpload lifecycle rule (a one-time console step).
+	async cleanupIncompleteUploads(): Promise<CleanupResult> {
+		return cleanupIncompleteUploads(this.multipartTransport());
 	}
 
 	// The single v1 remediation: create pointers for the unlinked candidates. Broken
@@ -383,6 +392,36 @@ export class AttachmentService {
 			}
 		}
 		return journals;
+	}
+
+	// A signed transport for the multipart LIST/ABORT verbs, which the S3Backend does
+	// not expose. Signs each request with SigV4 over requestUrl, like the connection
+	// test. The host header is dropped (the client sets it from the URL).
+	private multipartTransport(): MultipartTransport {
+		const config = this.getConfig();
+		const send = async (method: 'GET' | 'DELETE', url: string): Promise<{ status: number; text: string }> => {
+			const creds = this.credentials.getCredentials();
+			if (creds === null) {
+				throw new Error('credentials are not configured');
+			}
+			const signed = await signRequest({
+				method,
+				url,
+				region: config.region.length > 0 ? config.region : 'us-east-1',
+				service: 's3',
+				accessKeyId: creds.accessKeyId,
+				secretAccessKey: creds.secretAccessKey,
+			});
+			const headers = { ...signed.headers };
+			delete headers.host;
+			const response = await requestUrl({ url: signed.url, method, headers, throw: false });
+			return { status: response.status, text: response.text };
+		};
+		const s3Config = { endpoint: config.endpoint, region: config.region, bucket: config.bucket, addressingStyle: config.addressingStyle };
+		return {
+			list: () => send('GET', buildListUploadsUrl(s3Config)),
+			abort: (key, uploadId) => send('DELETE', buildAbortUploadUrl(s3Config, key, uploadId)),
+		};
 	}
 
 	private backend(config: AttachmentServiceConfig): S3Backend {

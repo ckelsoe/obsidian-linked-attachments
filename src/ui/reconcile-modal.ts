@@ -26,7 +26,9 @@ export class ReconcileModal extends Modal {
 		contentEl.empty();
 		this.setTitle('Reconcile with storage');
 		contentEl.createEl('p', { text: 'Compare your pointer notes against what is actually in your bucket. This only reads; it never deletes or overwrites anything.' });
-		new Setting(contentEl).addButton((button) => button.setButtonText('Scan').setCta().onClick(() => { void this.runScan(); }));
+		new Setting(contentEl)
+			.addButton((button) => button.setButtonText('Scan').setCta().onClick(() => { void this.runScan(); }))
+			.addButton((button) => button.setButtonText('Clean up incomplete uploads').onClick(() => { void this.runCleanup(); }));
 		this.resultsEl = contentEl.createDiv();
 	}
 
@@ -83,6 +85,20 @@ export class ReconcileModal extends Modal {
 					.setCta()
 					.onClick(() => { void this.runLink(); }),
 			);
+		}
+	}
+
+	private async runCleanup(): Promise<void> {
+		try {
+			const result = await this.service.cleanupIncompleteUploads();
+			if (result.found === 0) {
+				new Notice('No incomplete uploads were found.');
+			} else {
+				new Notice(`Aborted ${result.aborted} incomplete upload(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}.`);
+			}
+		} catch (error) {
+			this.onError(error);
+			new Notice('Could not clean up incomplete uploads. See the log for details.');
 		}
 	}
 

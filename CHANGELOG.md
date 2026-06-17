@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Clean up incomplete uploads: the reconcile view can now find and abort dropped multipart uploads in your bucket, which otherwise sit there invisibly accruing storage cost. (A one-time bucket lifecycle rule is still the recommended durable backstop.)
 - Honest auth errors: when an offload or restore fails because your storage keys are stale on this device, you now get a plain "re-enter them in settings; nothing was changed" message instead of a raw 403, and the failure is told apart from an ordinary network error.
 - Crash-safe batch offload: each batch now writes a small session journal that records every file's progress and is deleted when the batch finishes. If Obsidian or your machine dies mid-batch, the journal survives, and a new "Resume an interrupted offload" command finishes the files that did not complete (re-checking anything already uploaded rather than trusting it). A corrupted journal is discarded, never acted on.
 - Reconcile with storage: a new command scans your pointer notes against what is actually in your bucket and groups the results into four plain-language outcomes - healthy, not yet linked, changed in the bucket, and missing object - with one safe action: link the unlinked objects into your vault. It only reads; it never deletes or overwrites anything in the bucket.
