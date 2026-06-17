@@ -1,8 +1,8 @@
-import { encodePointer, extractExtension, PointerRecord, VerificationTier } from '../pointer/codec';
-import { layoutHashKey } from '../key/layout';
-import { sha256Base64, sha256Hex } from '../hash/sha256';
+import { encodePointer, PointerRecord, VerificationTier } from '../pointer/codec';
+import { sha256Base64 } from '../hash/sha256';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { StorageBackend } from '../storage/backend';
+import { planOffload } from './plan';
 
 // The offload pipeline (spec section 4 / 7.7, with the section 10 safety
 // invariants). The O6 order is a data-loss firewall:
@@ -92,11 +92,11 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	const verify = deps.verify ?? checksumVerifier;
 	const canRemove = deps.canRemoveOriginal ?? defaultCanRemoveOriginal;
 
-	const hash = await sha256Hex(file.bytes);
+	// The preview module is the single source of the key/pointerPath/hash
+	// derivation, so the committed pointer matches what a dry-run showed.
+	const plan = await planOffload(file, { vaultPrefix: deps.vaultPrefix, bucket: deps.bucket });
+	const { hash, key, pointerPath } = plan;
 	const checksumBase64 = await sha256Base64(file.bytes);
-	const { key } = layoutHashKey({ vaultPrefix: deps.vaultPrefix, originalPath: file.path, hash });
-	const name = basename(file.path);
-	const pointerPath = `${file.path}.md`;
 
 	const record: PointerRecord = {
 		laVersion: 1,
@@ -104,11 +104,11 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 		hash,
 		bucket: deps.bucket,
 		key,
-		keyKind: 'hash',
-		originalName: name,
-		originalExt: extractExtension(name),
+		keyKind: plan.keyKind,
+		originalName: plan.originalName,
+		originalExt: plan.originalExt,
 		originalPath: file.path,
-		byteSize: file.bytes.length,
+		byteSize: plan.byteSize,
 		contentType: file.contentType,
 		copyState: 'offloaded',
 		verificationTier: 'asserted',
@@ -130,7 +130,7 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 				[OBJECT_METADATA_KEYS.sha256]: hash,
 				[OBJECT_METADATA_KEYS.id]: record.id,
 				[OBJECT_METADATA_KEYS.originalPath]: file.path,
-				[OBJECT_METADATA_KEYS.originalName]: name,
+				[OBJECT_METADATA_KEYS.originalName]: plan.originalName,
 				[OBJECT_METADATA_KEYS.byteSize]: String(file.bytes.length),
 				[OBJECT_METADATA_KEYS.contentType]: file.contentType,
 			},
@@ -178,11 +178,6 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 
 function failure(reachedStage: OffloadStage, record: PointerRecord, pointerPath: string, error: string): OffloadResult {
 	return { ok: false, reachedStage, removed: false, record, pointerPath, error };
-}
-
-function basename(path: string): string {
-	const slash = path.lastIndexOf('/');
-	return slash >= 0 ? path.slice(slash + 1) : path;
 }
 
 function describe(error: unknown): string {

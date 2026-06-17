@@ -5,6 +5,7 @@ import { S3Backend } from '../storage/s3-backend';
 import { requestUrlTransport } from '../storage/requesturl-transport';
 import { toArrayBuffer } from '../storage/body';
 import { offloadFile, OffloadDeps, OffloadResult } from '../offload/pipeline';
+import { planOffload, OffloadPlan } from '../offload/plan';
 import { ladderVerifier } from '../offload/verify';
 import { decodePointer, PointerRecord } from '../pointer/codec';
 import { sha256Hex } from '../hash/sha256';
@@ -37,13 +38,25 @@ export class AttachmentService {
 		private readonly getConfig: () => AttachmentServiceConfig,
 	) {}
 
+	// B7 dry-run: compute where the file would go without uploading anything. The
+	// preview modal renders this; the offload below derives the same key from the
+	// same module, so the preview never disagrees with the commit.
+	async planOffload(file: TFile): Promise<OffloadPlan> {
+		const config = this.getConfig();
+		const bytes = new Uint8Array(await this.app.vault.readBinary(file));
+		return planOffload(
+			{ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) },
+			{ vaultPrefix: this.resolveVaultPrefix(config), bucket: config.bucket },
+		);
+	}
+
 	async offload(file: TFile): Promise<OffloadResult> {
 		const config = this.getConfig();
 		const bytes = new Uint8Array(await this.app.vault.readBinary(file));
 		const deps: OffloadDeps = {
 			backend: this.backend(config),
 			bucket: config.bucket,
-			vaultPrefix: config.vaultPrefix !== undefined && config.vaultPrefix.length > 0 ? config.vaultPrefix : this.app.vault.getName(),
+			vaultPrefix: this.resolveVaultPrefix(config),
 			writePointer: (path, content) => this.writePointer(path, content),
 			trashOriginal: (path) => this.trashPath(path),
 			newId: () => generateId(),
@@ -81,6 +94,14 @@ export class AttachmentService {
 	}
 
 	// --- internals --------------------------------------------------------------
+
+	// The bucket key prefix that mirrors this vault; an explicit setting wins,
+	// else the vault name. Shared by plan and offload so the key matches.
+	private resolveVaultPrefix(config: AttachmentServiceConfig): string {
+		return config.vaultPrefix !== undefined && config.vaultPrefix.length > 0
+			? config.vaultPrefix
+			: this.app.vault.getName();
+	}
 
 	private backend(config: AttachmentServiceConfig): S3Backend {
 		const s3Config: S3ConnectionConfig = {

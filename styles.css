@@ -13,3 +13,20 @@
 .linked-attachments-secret-status.linked-attachments-secret-status-error {
 	color: var(--text-error);
 }
+
+.linked-attachments-plan {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: var(--size-2-1) var(--size-4-3);
+	margin: var(--size-4-2) 0;
+}
+
+.linked-attachments-plan-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.linked-attachments-plan-value {
+	font-family: var(--font-monospace);
+	word-break: break-all;
+}

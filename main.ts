@@ -9,6 +9,7 @@ import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { Logger } from './logger';
 import { AttachmentService } from './src/service/attachment-service';
+import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -116,9 +117,9 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	}
 
-	// Offload a file: verified upload, then the local original goes to system trash
-	// (recoverable). Guarded so any failure is a notice + a logged error, never an
-	// unhandled rejection, and never a removed file without a verified cloud copy.
+	// Offload a file. First show a dry-run preview (B7) of where it will go; nothing
+	// moves until the user confirms. Guarded so a failure computing the preview is a
+	// notice + a logged error, never an unhandled rejection.
 	private async runOffload(file: TFile): Promise<void> {
 		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
 			new Notice('Set the endpoint and bucket in settings first.');
@@ -128,6 +129,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			new Notice('Add your storage credentials in settings first.');
 			return;
 		}
+		try {
+			const plan = await this.attachments.planOffload(file);
+			new OffloadPreviewModal(this.app, plan, () => {
+				void this.executeOffload(file);
+			}).open();
+		} catch (error) {
+			new Notice(`Could not prepare the offload of ${file.name}. See the log for details.`);
+			this.logger.error('Offload preview failed.', { path: file.path, error: describeError(error) });
+		}
+	}
+
+	// Run the verified upload, then the local original goes to system trash
+	// (recoverable). Never removes a file without a verified cloud copy.
+	private async executeOffload(file: TFile): Promise<void> {
 		new Notice(`Offloading ${file.name}...`);
 		this.logger.info('Offload started.', { path: file.path });
 		try {
