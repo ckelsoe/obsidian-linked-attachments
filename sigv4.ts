@@ -104,7 +104,7 @@ async function deriveSigningKey(secret: string, dateStamp: string, region: strin
 
 // AWS UriEncode: unreserved = A-Za-z0-9-_.~ ; everything else percent-encoded,
 // uppercase hex. encodeURIComponent leaves !'()* unencoded, so finish those.
-function encodeRfc3986(segment: string): string {
+export function encodeRfc3986(segment: string): string {
 	return encodeURIComponent(segment).replace(
 		/[!'()*]/g,
 		(c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
@@ -115,7 +115,22 @@ function canonicalUri(pathname: string): string {
 	if (pathname === '' || pathname === '/') {
 		return '/';
 	}
-	return pathname.split('/').map(encodeRfc3986).join('/');
+	// `new URL().pathname` is already percent-encoded (WHATWG rules), so encoding
+	// each segment again would double-encode a key with spaces or unicode (e.g.
+	// "%20" -> "%2520"), producing a signature over a different path than the one
+	// the server receives. Decode each segment first, then apply the single AWS
+	// RFC3986 encoding, so the signed path matches the sent path exactly.
+	return pathname.split('/').map((segment) => encodeRfc3986(safeDecode(segment))).join('/');
+}
+
+function safeDecode(segment: string): string {
+	try {
+		return decodeURIComponent(segment);
+	} catch {
+		// A malformed escape (a literal % that is not an escape) cannot be decoded;
+		// sign the segment as-is rather than throw.
+		return segment;
+	}
 }
 
 function canonicalQueryString(params: URLSearchParams): string {

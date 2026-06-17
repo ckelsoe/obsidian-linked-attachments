@@ -1,4 +1,5 @@
 import { S3AddressingStyle } from './credentials';
+import { encodeRfc3986 } from './sigv4';
 
 // Pure S3 request-shaping and response-classification. No `obsidian` import, so it
 // is unit-testable. The actual network call lives in s3-connection.ts.
@@ -34,11 +35,14 @@ export function buildListUrl(config: S3ConnectionConfig): string {
 	return buildObjectListUrl(config, null, 1, null);
 }
 
-// URL for a single object key. Keys are split on '/' so each path segment is a
-// segment in the URL; the signer applies the canonical encoding for the signature.
+// URL for a single object key. Each path segment is percent-encoded once with the
+// AWS RFC3986 rule, so a key with spaces or unicode is sent in exactly the form the
+// signer canonicalizes (the '/' separators are preserved). Encoding here, not
+// relying on the HTTP client, keeps the sent path and the signed path identical.
 export function objectUrl(config: S3ConnectionConfig, key: string): string {
 	const { origin, pathPrefix } = baseUrl(config);
-	return `${origin}${pathPrefix}/${key}`;
+	const encodedKey = key.split('/').map(encodeRfc3986).join('/');
+	return `${origin}${pathPrefix}/${encodedKey}`;
 }
 
 // ListObjectsV2 URL with optional prefix, page size, and continuation token.

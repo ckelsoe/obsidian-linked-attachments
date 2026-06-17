@@ -110,4 +110,20 @@ describeLive('S3Backend live round-trip on R2 (la-p3-11, gated)', () => {
 		await backend.delete(key);
 		await expect(backend.head(key)).rejects.toBeInstanceOf(ObjectNotFoundError);
 	});
+
+	// Regression: a key with spaces (and unicode) must sign correctly. The original
+	// bug double-encoded the path, producing HTTP 403 SignatureDoesNotMatch.
+	it('round-trips a key containing spaces and unicode', async () => {
+		const spaceKey = `${prefix}Ancient Book Of Jasher café ${Date.now()}.bin`;
+		const data = new TextEncoder().encode('payload behind a spaced, accented key');
+		try {
+			await backend.put(spaceKey, data, data.length, { checksumSha256: await sha256Base64(data) });
+			const head = await backend.head(spaceKey);
+			expect(head.size).toBe(data.length);
+			const got = await backend.get(spaceKey);
+			expect(new Uint8Array(await got.arrayBuffer())).toEqual(data);
+		} finally {
+			await backend.delete(spaceKey).catch(() => undefined);
+		}
+	});
 });

@@ -33,6 +33,10 @@ describe('objectUrl', () => {
 		expect(objectUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'virtual-hosted' }, 'k.txt'))
 			.toBe('https://b.s3.us-east-1.amazonaws.com/k.txt');
 	});
+	it('percent-encodes spaces and unicode once per segment, preserving slashes', () => {
+		expect(objectUrl({ endpoint: 'https://s3.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }, 'epub-test/Ancient Book café.epub'))
+			.toBe('https://s3.amazonaws.com/b/epub-test/Ancient%20Book%20caf%C3%A9.epub');
+	});
 });
 
 describe('buildObjectListUrl', () => {
