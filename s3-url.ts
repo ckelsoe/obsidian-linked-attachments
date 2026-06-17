@@ -150,9 +150,21 @@ export function classifyListResult(status: number, bodyText: string, bucket: str
 	return { ok: false, detail: `HTTP ${status}${code ? ` (${code})` : ''}. ${interpret(status, code)}` };
 }
 
+// The likely-cause copy for a request that never got an HTTP response (the host
+// could not be reached, or the browser blocked it). The classifier above only
+// sees responses; this is its no-response sibling. Naming CORS, offline, and a
+// wrong endpoint in plain words is the A3 onboarding floor: the test button is
+// the only teacher before the v2 setup wizard exists.
+export function describeNetworkFailure(): string {
+	return 'Could not reach the endpoint. Likely causes: you are offline, the endpoint URL is wrong, or the request was blocked (a CORS or firewall block).';
+}
+
 function interpret(status: number, code: string): string {
 	if (code === 'SignatureDoesNotMatch') {
 		return 'The secret access key is likely wrong.';
+	}
+	if (code === 'RequestTimeTooSkewed') {
+		return 'Your device clock is too far off from the server. Set the system clock to sync automatically, then retry.';
 	}
 	if (code === 'InvalidAccessKeyId') {
 		return 'The access key ID is not recognized.';

@@ -2,7 +2,7 @@ import { requestUrl } from 'obsidian';
 import { signRequest } from './sigv4';
 import { S3Credentials } from './credentials';
 import { AuditSink } from './logger';
-import { S3ConnectionConfig, ConnectionTestResult, buildListUrl, classifyListResult } from './s3-url';
+import { S3ConnectionConfig, ConnectionTestResult, buildListUrl, classifyListResult, describeNetworkFailure } from './s3-url';
 
 // Signs and sends a ListObjectsV2 against the configured bucket to validate the
 // whole connection (credentials + endpoint + region + bucket) in one request.
@@ -52,6 +52,6 @@ export async function testConnection(config: S3ConnectionConfig, creds: S3Creden
 			outcome: 'error',
 			detail: 'network error or unreachable host',
 		});
-		return { ok: false, detail: 'Could not reach the endpoint (network error or unreachable host).' };
+		return { ok: false, detail: describeNetworkFailure() };
 	}
 }
