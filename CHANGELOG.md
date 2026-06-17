@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Round-trip rehearsal: a "Rehearse a round-trip on a test file" command exercises your bucket end to end on a throwaway object and shows each step pass in turn - uploaded, verified byte-for-byte, retrieved, and matches the original - so you can confirm your storage works before trusting it with a real file. The throwaway object is cleaned up automatically and nothing in your vault is touched.
 - Offload preview: before a file is offloaded, a dry-run preview shows exactly where it will go - the destination bucket and key, the pointer note path, and the size - with nothing moved until you confirm. The preview is computed by the same logic that performs the offload, so what you see is what gets committed.
 - Clearer connection-test failures: a clock-skew error now tells you to fix your device clock, and an unreachable endpoint names the likely causes in plain words (offline, wrong endpoint, or a blocked request) instead of a bare network error.
 - Offload and restore from the desktop: an "Offload the active file to storage" command and a right-click "Offload to storage" on an attachment upload the file to your bucket, confirm the cloud copy, write a pointer note beside it, and move the original to trash. "Restore the active pointer note" downloads the object, checks the bytes against the recorded hash, writes the file back, and removes the pointer. The original is never removed unless its verified copy exists in the bucket.

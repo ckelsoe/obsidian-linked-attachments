@@ -10,6 +10,7 @@ import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { Logger } from './logger';
 import { AttachmentService } from './src/service/attachment-service';
 import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
+import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -62,6 +63,25 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				}
 				if (!checking) {
 					void this.runOffload(file);
+				}
+				return true;
+			},
+		});
+
+		// S6 first-file trust check: rehearse a full round-trip on a throwaway object
+		// so the user can confirm their bucket works before trusting a real file.
+		this.addCommand({
+			id: 'rehearse-round-trip',
+			name: 'Rehearse a round-trip on a test file',
+			checkCallback: (checking: boolean): boolean => {
+				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+				if (!ready) {
+					return false;
+				}
+				if (!checking) {
+					new TrustRehearsalModal(this.app, this.attachments, (error) => {
+						this.logger.error('Trust rehearsal threw.', { error: describeError(error) });
+					}).open();
 				}
 				return true;
 			},

@@ -7,6 +7,7 @@ import { toArrayBuffer } from '../storage/body';
 import { offloadFile, OffloadDeps, OffloadResult } from '../offload/pipeline';
 import { planOffload, OffloadPlan } from '../offload/plan';
 import { ladderVerifier } from '../offload/verify';
+import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
 import { decodePointer, PointerRecord } from '../pointer/codec';
 import { sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
@@ -48,6 +49,19 @@ export class AttachmentService {
 			{ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) },
 			{ vaultPrefix: this.resolveVaultPrefix(config), bucket: config.bucket },
 		);
+	}
+
+	// S6 first-file trust check: run the four-stage round-trip on a throwaway object
+	// against the user's real bucket, so they can watch upload -> verify -> retrieve
+	// -> match succeed before trusting a real file. The throwaway key and payload are
+	// random; the rehearsal cleans the object up itself.
+	async rehearseTrust(onStage?: (stage: TrustStage) => void): Promise<TrustRehearsalResult> {
+		const config = this.getConfig();
+		const prefix = this.resolveVaultPrefix(config);
+		const nonce = generateId();
+		const key = `${prefix}/.linked-attachments/rehearsal-${nonce}.txt`;
+		const payload = new TextEncoder().encode(`Linked Attachments round-trip rehearsal ${nonce}`);
+		return runTrustRehearsal({ backend: this.backend(config), key, payload, onStage });
 	}
 
 	async offload(file: TFile): Promise<OffloadResult> {

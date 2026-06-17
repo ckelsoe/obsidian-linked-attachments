@@ -30,3 +30,45 @@
 	font-family: var(--font-monospace);
 	word-break: break-all;
 }
+
+.linked-attachments-ladder {
+	margin: var(--size-4-2) 0;
+}
+
+.linked-attachments-ladder-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: var(--size-4-3);
+	padding: var(--size-2-2) 0;
+	border-bottom: var(--border-width) solid var(--background-modifier-border);
+}
+
+.linked-attachments-ladder-status {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.linked-attachments-ladder-status.linked-attachments-ladder-status-passed {
+	color: var(--text-success);
+}
+
+.linked-attachments-ladder-status.linked-attachments-ladder-status-failed {
+	color: var(--text-error);
+}
+
+.linked-attachments-ladder-verdict {
+	margin-top: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+}
+
+.linked-attachments-ladder-verdict.linked-attachments-ladder-verdict-ok {
+	color: var(--text-success);
+}
+
+.linked-attachments-ladder-verdict.linked-attachments-ladder-verdict-error {
+	color: var(--text-error);
+}
