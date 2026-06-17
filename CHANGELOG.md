@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Manifest cache: a fast index of every offloaded object, rebuilt from the pointer notes (the source of truth) or, as a recovery path, from the bucket listing. The cached copy is always discardable: a corrupted manifest is rejected and rebuilt rather than trusted, and the pointer notes win any disagreement.
 - Readable storage keys: an offloaded file is stored under a key that mirrors its vault path with a short content-hash suffix (for example `charles-main/books/Romans/Cranfield--9f86d0.pdf`), so the object is easy to find in any S3 browser. The key is fixed when the file is offloaded and never changes on a later rename; re-uploading different bytes creates a new versioned key rather than overwriting the old one.
 - Reference scanner: finds note embeds that point at an attachment in either link form, rewrites them to target the pointer note on offload and back to the file on restore (preserving captions and page anchors), ignores embeds inside code blocks, and conservatively flags references it does not manage so an attachment is never deleted while something still points at it.
 - Pointer note codec: read and write the machine fields in a pointer's frontmatter, regenerate the open link without touching the user's notes, and preserve any other frontmatter (such as tags) across edits. The pointer's identity is always read from frontmatter, never from the body, so the body is always safe to edit.

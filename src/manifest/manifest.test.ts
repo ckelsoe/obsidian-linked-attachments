@@ -40,6 +40,7 @@ function recordFor(key: string, overrides: Partial<PointerRecord> = {}): Pointer
 		offloadedAt: '2026-06-16T12:00:00.000Z',
 		sourceVersion: null,
 		supersedes: null,
+		...overrides,
 	};
 }
 

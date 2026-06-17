@@ -1,6 +1,17 @@
 import { KeyKind, PointerRecord, VerificationTier } from '../pointer/codec';
 
-// STUB (la-p1-05 RED). Implementation lands in the GREEN commit.
+// The manifest cache (spec section 3, section 10). A fast index of every
+// offloaded object, REBUILDABLE and never the source of truth:
+//
+//   - Authoritative rebuild: scan the vault's pointer files
+//     (buildManifestFromPointers). Pointers win every conflict.
+//   - Recovery rebuild: ListObjects + read object metadata
+//     (buildManifestFromBucket). Used when the pointers are unavailable.
+//   - The persisted manifest is OUTPUT, never INPUT of recovery: a corrupt copy
+//     is discarded (parseManifest returns a discardable result, never throws,
+//     never yields a partial manifest) and rebuilt from pointers > LIST.
+//
+// Ordering of trust: pointers > LIST > any manifest copy.
 
 export const MANIFEST_VERSION = 1;
 
@@ -15,6 +26,9 @@ export const OBJECT_METADATA_KEYS = {
 	byteSize: 'bytesize',
 	contentType: 'contenttype',
 } as const;
+
+const KEY_KINDS: readonly KeyKind[] = ['hash', 'external'];
+const VERIFICATION_TIERS: readonly VerificationTier[] = ['content', 'md5', 'existence', 'asserted'];
 
 export interface ManifestEntry {
 	key: string;
@@ -48,34 +62,144 @@ export interface BucketObject {
 
 export type ManifestParseResult = { ok: true; manifest: Manifest } | { ok: false; reason: string };
 
-export function buildManifestFromPointers(_sources: PointerSource[]): Manifest {
-	throw new Error('not implemented');
+export function buildManifestFromPointers(sources: PointerSource[]): Manifest {
+	const entries: Record<string, ManifestEntry> = {};
+	for (const { pointerPath, record } of sources) {
+		// Duplicate keys resolve deterministically: last source wins.
+		entries[record.key] = {
+			key: record.key,
+			keyKind: record.keyKind,
+			id: record.id,
+			hash: record.hash,
+			bucket: record.bucket,
+			byteSize: record.byteSize,
+			verificationTier: record.verificationTier,
+			originalPath: record.originalPath,
+			pointerPath,
+			remoteChecksum: record.remoteChecksum,
+		};
+	}
+	return { version: MANIFEST_VERSION, entries };
 }
 
-export function buildManifestFromBucket(_bucket: string, _objects: BucketObject[]): Manifest {
-	throw new Error('not implemented');
+export function buildManifestFromBucket(bucket: string, objects: BucketObject[]): Manifest {
+	const entries: Record<string, ManifestEntry> = {};
+	for (const object of objects) {
+		const metadata = object.metadata ?? {};
+		const hash = readMeta(metadata, OBJECT_METADATA_KEYS.sha256);
+		entries[object.key] = {
+			key: object.key,
+			// Our objects carry a sha256 in metadata; a foreign object has none.
+			keyKind: hash !== null ? 'hash' : 'external',
+			id: readMeta(metadata, OBJECT_METADATA_KEYS.id) ?? '',
+			hash,
+			bucket,
+			byteSize: object.byteSize,
+			// LIST/HEAD only locate the object; bytes are not re-checked, so the
+			// strongest tier a bucket rebuild can claim is asserted (spec section 6).
+			verificationTier: 'asserted',
+			originalPath: readMeta(metadata, OBJECT_METADATA_KEYS.originalPath) ?? '',
+			pointerPath: null,
+			remoteChecksum: object.remoteChecksum ?? null,
+		};
+	}
+	return { version: MANIFEST_VERSION, entries };
 }
 
-export function mergeManifests(_cached: Manifest, _authoritative: Manifest): Manifest {
-	throw new Error('not implemented');
+// Overlay authoritative (pointer-derived) entries onto a cached manifest:
+// per-key, the pointer wins (spec section 10).
+export function mergeManifests(cached: Manifest, authoritative: Manifest): Manifest {
+	return {
+		version: MANIFEST_VERSION,
+		entries: { ...cached.entries, ...authoritative.entries },
+	};
 }
 
-export function serializeManifest(_manifest: Manifest): string {
-	throw new Error('not implemented');
+export function serializeManifest(manifest: Manifest): string {
+	return JSON.stringify(manifest);
 }
 
-export function parseManifest(_text: string): ManifestParseResult {
-	throw new Error('not implemented');
+export function parseManifest(text: string): ManifestParseResult {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(text);
+	} catch {
+		return { ok: false, reason: 'manifest is not valid JSON' };
+	}
+	if (!isRecord(raw) || typeof raw.version !== 'number' || !isRecord(raw.entries)) {
+		return { ok: false, reason: 'manifest has an unexpected shape' };
+	}
+	const entries: Record<string, ManifestEntry> = {};
+	for (const [key, value] of Object.entries(raw.entries)) {
+		const entry = validateEntry(value);
+		if (entry === null) {
+			return { ok: false, reason: `manifest entry ${key} is malformed` };
+		}
+		entries[key] = entry;
+	}
+	return { ok: true, manifest: { version: raw.version, entries } };
 }
 
-export function findByKey(_manifest: Manifest, _key: string): ManifestEntry | null {
-	throw new Error('not implemented');
+export function findByKey(manifest: Manifest, key: string): ManifestEntry | null {
+	return manifest.entries[key] ?? null;
 }
 
-export function findByHash(_manifest: Manifest, _hash: string): ManifestEntry[] {
-	throw new Error('not implemented');
+export function findByHash(manifest: Manifest, hash: string): ManifestEntry[] {
+	return Object.values(manifest.entries).filter((entry) => entry.hash === hash);
 }
 
-export function hasKey(_manifest: Manifest, _key: string): boolean {
-	throw new Error('not implemented');
+export function hasKey(manifest: Manifest, key: string): boolean {
+	return Object.prototype.hasOwnProperty.call(manifest.entries, key);
+}
+
+// --- internals --------------------------------------------------------------
+
+function readMeta(metadata: Record<string, string>, key: string): string | null {
+	const value = metadata[key];
+	return typeof value === 'string' ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateEntry(value: unknown): ManifestEntry | null {
+	if (!isRecord(value)) {
+		return null;
+	}
+	if (
+		typeof value.key !== 'string' ||
+		!isMember(value.keyKind, KEY_KINDS) ||
+		typeof value.id !== 'string' ||
+		!isStringOrNull(value.hash) ||
+		typeof value.bucket !== 'string' ||
+		typeof value.byteSize !== 'number' ||
+		!Number.isFinite(value.byteSize) ||
+		!isMember(value.verificationTier, VERIFICATION_TIERS) ||
+		typeof value.originalPath !== 'string' ||
+		!isStringOrNull(value.pointerPath) ||
+		!isStringOrNull(value.remoteChecksum)
+	) {
+		return null;
+	}
+	return {
+		key: value.key,
+		keyKind: value.keyKind,
+		id: value.id,
+		hash: value.hash,
+		bucket: value.bucket,
+		byteSize: value.byteSize,
+		verificationTier: value.verificationTier,
+		originalPath: value.originalPath,
+		pointerPath: value.pointerPath,
+		remoteChecksum: value.remoteChecksum,
+	};
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+	return value === null || typeof value === 'string';
+}
+
+function isMember<T extends string>(value: unknown, allowed: readonly T[]): value is T {
+	return typeof value === 'string' && (allowed as readonly string[]).includes(value);
 }
