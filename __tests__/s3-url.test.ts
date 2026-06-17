@@ -1,4 +1,4 @@
-import { buildListUrl, classifyListResult, objectUrl, buildObjectListUrl, parseListedKeys, parseXmlTag, parseListContents, parseCommonPrefixes } from '../s3-url';
+import { buildListUrl, classifyListResult, objectUrl, buildObjectListUrl, parseListedKeys, parseXmlTag, parseListContents, parseCommonPrefixes, describeNetworkFailure } from '../s3-url';
 
 describe('parseListContents', () => {
 	const xml =
@@ -107,5 +107,28 @@ describe('classifyListResult', () => {
 		const result = classifyListResult(404, '<Error><Code>NoSuchBucket</Code></Error>', 'missing');
 		expect(result.ok).toBe(false);
 		expect(result.detail).toContain('no bucket by that name');
+	});
+
+	// A3 onboarding floor: O9 clock skew. AWS/R2 reject a request whose signed
+	// timestamp is too far from server time with RequestTimeTooSkewed (HTTP 403).
+	// Without naming it, the user sees a generic auth failure and re-checks keys
+	// that are actually fine; the real fix is the device clock.
+	it('maps RequestTimeTooSkewed to a device-clock hint', () => {
+		const result = classifyListResult(403, '<Error><Code>RequestTimeTooSkewed</Code></Error>', 's3-dev-test');
+		expect(result.ok).toBe(false);
+		expect(result.detail).toContain('RequestTimeTooSkewed');
+		expect(result.detail).toContain('clock');
+	});
+});
+
+describe('describeNetworkFailure', () => {
+	// A3 onboarding floor: the no-response path. The classifier handles HTTP
+	// responses; a thrown request (offline host, blocked origin) never reaches it.
+	// This copy names the plain-language likely causes so the test button can teach.
+	it('names CORS, offline, and a wrong endpoint as the likely causes', () => {
+		const detail = describeNetworkFailure();
+		expect(detail.toLowerCase()).toContain('cors');
+		expect(detail.toLowerCase()).toContain('offline');
+		expect(detail.toLowerCase()).toContain('endpoint');
 	});
 });
