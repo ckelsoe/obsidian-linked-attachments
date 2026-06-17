@@ -82,10 +82,25 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			},
 		});
 
-		// A right-click "Offload to storage" affordance on a non-markdown file.
+		// Right-click affordances: "Offload to storage" on a normal file, and
+		// "Restore from storage" on a pointer note (detected by its la_* frontmatter).
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
-				if (!(file instanceof TFile) || file.extension === 'md') {
+				if (!(file instanceof TFile)) {
+					return;
+				}
+				if (file.extension === 'md') {
+					const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+					if (frontmatter !== undefined && 'la_version' in frontmatter) {
+						menu.addItem((item) => {
+							item
+								.setTitle('Restore from storage')
+								.setIcon('download-cloud')
+								.onClick(() => {
+									void this.runRestore(file);
+								});
+						});
+					}
 					return;
 				}
 				menu.addItem((item) => {
