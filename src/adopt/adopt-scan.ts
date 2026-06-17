@@ -118,11 +118,20 @@ export async function adoptByKey(
 
 // --- internals --------------------------------------------------------------
 
+// Mirror a bucket key to a vault path: strip an optional source prefix and place
+// the remainder under an optional destination folder. Shared with the
+// reconciliation scanner's "link it" action so both mirror identically.
+export function mirrorKeyToVaultPath(key: string, opts: { stripPrefix?: string; destinationFolder?: string }): string {
+	const remainder = stripLeadingSlash(stripPrefix(key, opts.stripPrefix));
+	if (opts.destinationFolder !== undefined && opts.destinationFolder.length > 0) {
+		return `${trimSlashes(opts.destinationFolder)}/${remainder}`;
+	}
+	return remainder;
+}
+
 function classify(entry: ListEntry, input: AdoptScanInput): AdoptRow {
+	const vaultPath = mirrorKeyToVaultPath(entry.key, { stripPrefix: input.stripPrefix, destinationFolder: input.destinationFolder });
 	const remainder = stripLeadingSlash(stripPrefix(entry.key, input.stripPrefix));
-	const vaultPath = input.destinationFolder !== undefined && input.destinationFolder.length > 0
-		? `${trimSlashes(input.destinationFolder)}/${remainder}`
-		: remainder;
 	const pointerPath = `${vaultPath}.md`;
 
 	let status: AdoptRowStatus = 'adoptable';
