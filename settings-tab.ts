@@ -1,8 +1,9 @@
-import { App, ButtonComponent, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
 import { testConnection } from './s3-connection';
+import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
@@ -90,6 +91,31 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						desc: 'Verify the endpoint, region, bucket, and credentials by listing the bucket.',
 						searchable: false,
 						render: (setting: Setting) => { this.renderConnectionTestRow(setting); },
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Round-trip rehearsal',
+				items: [
+					{
+						name: 'Rehearse a round-trip',
+						desc: 'Before you trust a real file, test your bucket end to end on a throwaway object: uploaded, verified byte-for-byte, retrieved, and matched. Nothing in your vault is touched.',
+						searchable: false,
+						render: (setting: Setting) => {
+							setting.addButton((btn) =>
+								btn.setButtonText('Rehearse').setCta().onClick(() => {
+									const ready = this.plugin.settings.endpoint.length > 0 && this.plugin.settings.bucket.length > 0 && this.plugin.credentials.hasCompleteCredentials();
+									if (!ready) {
+										new Notice('Set the endpoint, bucket, and credentials first.');
+										return;
+									}
+									new TrustRehearsalModal(this.app, this.plugin.attachments, (error) => {
+										this.plugin.logger.error('Trust rehearsal threw.', { error: describeError(error) });
+									}).open();
+								}),
+							);
+						},
 					},
 				],
 			},

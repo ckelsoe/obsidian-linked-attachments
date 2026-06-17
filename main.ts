@@ -13,6 +13,8 @@ import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 import { BatchOffloadModal } from './src/ui/batch-offload-modal';
 import { AdoptModal } from './src/ui/adopt-modal';
+import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
+import { decodePointer } from './src/pointer/codec';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -141,6 +143,14 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 									void this.runRestore(file);
 								});
 						});
+						menu.addItem((item) => {
+							item
+								.setTitle('Check storage status')
+								.setIcon('shield-check')
+								.onClick(() => {
+									void this.showPointerStatus(file);
+								});
+						});
 					}
 					return;
 				}
@@ -190,6 +200,18 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		}).open();
 	}
 
+	// Surface a pointer's trust badge (Verified / Found / Asserted) in a notice, so
+	// the user always sees what was actually confirmed about the cloud copy.
+	private async showPointerStatus(pointer: TFile): Promise<void> {
+		try {
+			const record = decodePointer(await this.app.vault.read(pointer)).record;
+			new Notice(`${pointer.basename}: ${pointerTrustLine(record)}`);
+		} catch (error) {
+			new Notice('That note is not a storage pointer.');
+			this.logger.warn('Pointer status read failed.', { path: pointer.path, error: describeError(error) });
+		}
+	}
+
 	// Offload a file. First show a dry-run preview (B7) of where it will go; nothing
 	// moves until the user confirms. Guarded so a failure computing the preview is a
 	// notice + a logged error, never an unhandled rejection.
@@ -220,11 +242,10 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		this.logger.info('Offload started.', { path: file.path });
 		try {
 			const result = await this.attachments.offload(file);
+			new Notice(offloadOutcomeLine(file.name, result));
 			if (result.ok) {
-				new Notice(result.removed ? `Offloaded ${file.name}. The local file was moved to trash.` : `Offloaded ${file.name}. The local file was kept (not yet at the delete-gate tier).`);
 				this.logger.info('Offload finished.', { path: file.path, removed: result.removed, tier: result.record?.verificationTier });
 			} else {
-				new Notice(`Offload of ${file.name} did not complete: ${result.error ?? 'unknown error'}. Your file was not removed.`);
 				this.logger.warn('Offload did not complete.', { path: file.path, stage: result.reachedStage, error: result.error });
 			}
 		} catch (error) {
