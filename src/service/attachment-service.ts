@@ -10,6 +10,7 @@ import { ladderVerifier } from '../offload/verify';
 import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
 import { rewriteEmbedsInNotes, RewriteDirection } from '../scan/embed-rewrite';
 import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
+import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItems, OffloadJournal, JournalStage } from '../offload/journal';
 import { scanReconcile, linkUnlinked, ReconcileFinding } from '../reconcile/scanner';
 import { buildManifestFromPointers, PointerSource } from '../manifest/manifest';
 import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
@@ -181,20 +182,57 @@ export class AttachmentService {
 	}
 
 	// Batch offload: run the selection one file at a time, reporting per-file
-	// progress for the H5 modal. One file's failure never aborts the batch.
+	// progress for the H5 modal. One file's failure never aborts the batch. A session
+	// journal is written before the batch and updated per file; it is deleted when the
+	// batch finishes, so it only survives a crash - making recovery deterministic.
 	async offloadMany(
 		files: TFile[],
 		onProgress?: (item: BatchItem<OffloadResult>, progress: BatchProgress<OffloadResult>) => void,
 	): Promise<BatchProgress<OffloadResult>> {
-		return runBatch<TFile, OffloadResult>({
-			items: files,
-			idOf: (file) => file.path,
-			run: async (file) => {
-				const result = await this.offload(file);
-				return { ok: result.ok, value: result, error: result.error };
-			},
-			onProgress,
-		});
+		const batchId = generateId();
+		let journal = createJournal(batchId, files.map((f) => f.path), new Date().toISOString());
+		await this.writeJournal(journal);
+		try {
+			return await runBatch<TFile, OffloadResult>({
+				items: files,
+				idOf: (file) => file.path,
+				run: async (file) => {
+					const result = await this.offload(file);
+					journal = setStage(journal, file.path, journalStageFor(result));
+					await this.writeJournal(journal);
+					return { ok: result.ok, value: result, error: result.error };
+				},
+				onProgress,
+			});
+		} finally {
+			// The batch completed (no crash); the journal is no longer needed.
+			await this.deleteJournal(batchId);
+		}
+	}
+
+	// Resume any offload interrupted by a crash: read each leftover journal and
+	// re-offload the unfinished items whose original file still exists (the pipeline
+	// re-verifies an already-uploaded object rather than trusting the key). A
+	// committed-then-trashed item whose original is gone is simply skipped.
+	async resumeInterrupted(): Promise<{ journals: number; resumed: number; failed: number }> {
+		const journals = await this.readJournals();
+		let resumed = 0;
+		let failed = 0;
+		for (const journal of journals) {
+			for (const item of unfinishedItems(journal)) {
+				const file = this.app.vault.getAbstractFileByPath(item.path);
+				if (file instanceof TFile) {
+					const result = await this.offload(file);
+					if (result.ok) {
+						resumed++;
+					} else {
+						failed++;
+					}
+				}
+			}
+			await this.deleteJournal(journal.batchId);
+		}
+		return { journals: journals.length, resumed, failed };
 	}
 
 	async offload(file: TFile): Promise<OffloadResult> {
@@ -305,6 +343,48 @@ export class AttachmentService {
 		return embedsRewritten;
 	}
 
+	// --- offload-session journal persistence (the plugin's own folder) ----------
+
+	private journalDir(): string {
+		return `${this.app.vault.configDir}/plugins/linked-attachments/sessions`;
+	}
+
+	private async writeJournal(journal: OffloadJournal): Promise<void> {
+		const dir = this.journalDir();
+		if (!(await this.app.vault.adapter.exists(dir))) {
+			await this.app.vault.adapter.mkdir(dir);
+		}
+		await this.app.vault.adapter.write(`${dir}/${journal.batchId}.json`, serializeJournal(journal));
+	}
+
+	private async deleteJournal(batchId: string): Promise<void> {
+		const path = `${this.journalDir()}/${batchId}.json`;
+		if (await this.app.vault.adapter.exists(path)) {
+			await this.app.vault.adapter.remove(path);
+		}
+	}
+
+	private async readJournals(): Promise<OffloadJournal[]> {
+		const dir = this.journalDir();
+		if (!(await this.app.vault.adapter.exists(dir))) {
+			return [];
+		}
+		const journals: OffloadJournal[] = [];
+		for (const path of (await this.app.vault.adapter.list(dir)).files) {
+			if (!path.endsWith('.json')) {
+				continue;
+			}
+			const parsed = parseJournal(await this.app.vault.adapter.read(path));
+			if (parsed.ok) {
+				journals.push(parsed.journal);
+			} else {
+				// A corrupt journal is discardable (the manifest-is-output discipline).
+				await this.app.vault.adapter.remove(path);
+			}
+		}
+		return journals;
+	}
+
 	private backend(config: AttachmentServiceConfig): S3Backend {
 		const s3Config: S3ConnectionConfig = {
 			endpoint: config.endpoint,
@@ -350,6 +430,15 @@ export class AttachmentService {
 
 // A sortable, collision-resistant id: base36 time + random hex. Not a ULID, but
 // monotonic-ish and unique enough for a pointer id.
+// Map an offload result to the journal stage it reached, so recovery knows whether
+// the file is done (removed) or still needs finishing.
+function journalStageFor(result: OffloadResult): JournalStage {
+	if (!result.ok) {
+		return 'failed';
+	}
+	return result.removed ? 'removed' : result.reachedStage;
+}
+
 function generateId(): string {
 	const time = Date.now().toString(36);
 	const random = Array.from(crypto.getRandomValues(new Uint8Array(6)))

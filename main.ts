@@ -92,6 +92,22 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			},
 		});
 
+		// Resume an offload interrupted by a crash, from the session journal.
+		this.addCommand({
+			id: 'resume-interrupted-offload',
+			name: 'Resume an interrupted offload',
+			checkCallback: (checking: boolean): boolean => {
+				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+				if (!ready) {
+					return false;
+				}
+				if (!checking) {
+					void this.runResume();
+				}
+				return true;
+			},
+		});
+
 		// Reconcile: diff the vault's pointers against the bucket (the four outcomes).
 		this.addCommand({
 			id: 'reconcile-with-storage',
@@ -217,6 +233,23 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		new BatchOffloadModal(this.app, this.attachments, files, (error) => {
 			this.logger.error('Batch offload threw.', { error: describeError(error) });
 		}).open();
+	}
+
+	// Resume an interrupted offload from the session journal. Guarded.
+	private async runResume(): Promise<void> {
+		new Notice('Checking for interrupted offloads...');
+		try {
+			const result = await this.attachments.resumeInterrupted();
+			if (result.journals === 0) {
+				new Notice('No interrupted offload was found.');
+			} else {
+				new Notice(`Resumed ${result.resumed} file(s) from ${result.journals} session(s)${result.failed > 0 ? `, ${result.failed} still need attention` : ''}.`);
+			}
+			this.logger.info('Resume finished.', result);
+		} catch (error) {
+			new Notice('Resume failed. See the log for details.');
+			this.logger.error('Resume threw.', { error: describeError(error) });
+		}
 	}
 
 	// Surface a pointer's trust badge (Verified / Found / Asserted) in a notice, so
