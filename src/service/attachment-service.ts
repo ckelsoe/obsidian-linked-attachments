@@ -10,7 +10,9 @@ import { ladderVerifier } from '../offload/verify';
 import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
 import { rewriteEmbedsInNotes, RewriteDirection } from '../scan/embed-rewrite';
 import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
-import { decodePointer, PointerRecord } from '../pointer/codec';
+import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
+import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
+import { planAdoption } from '../adopt/adopt-plan';
 import { sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
 
@@ -64,6 +66,68 @@ export class AttachmentService {
 		const key = `${prefix}/.linked-attachments/rehearsal-${nonce}.txt`;
 		const payload = new TextEncoder().encode(`Linked Attachments round-trip rehearsal ${nonce}`);
 		return runTrustRehearsal({ backend: this.backend(config), key, payload, onStage });
+	}
+
+	// Adopt-from-bucket: LIST under an optional prefix and classify each object
+	// against what the vault already has (pointer keys + existing paths), so the
+	// checklist can hide already-adopted objects and flag collisions. LIST only.
+	async adoptScan(prefix: string, destinationFolder: string): Promise<AdoptScanResult> {
+		const config = this.getConfig();
+		const existingVaultPaths = new Set(this.app.vault.getFiles().map((file) => file.path));
+		const existingPointerKeys = new Set<string>();
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			const key = frontmatter?.['la_key'];
+			if (typeof key === 'string') {
+				existingPointerKeys.add(key);
+			}
+		}
+		return scanForAdoption({
+			backend: this.backend(config),
+			prefix: prefix.length > 0 ? prefix : undefined,
+			destinationFolder: destinationFolder.length > 0 ? destinationFolder : undefined,
+			existingPointerKeys,
+			existingVaultPaths,
+		});
+	}
+
+	// Create pointer notes for the selected adoptable rows. planAdoption guards that
+	// only adoptable rows ever become pointers; writePointer guards against an
+	// existing file at the path (so a race still never overwrites).
+	async adoptRows(rows: AdoptRow[]): Promise<{ created: number; failed: number }> {
+		const pointers = planAdoption(rows, { bucket: this.getConfig().bucket, newId: () => generateId(), now: () => new Date().toISOString() });
+		let created = 0;
+		let failed = 0;
+		for (const pointer of pointers) {
+			try {
+				await this.writePointer(pointer.pointerPath, encodePointer(pointer.record, ''));
+				created++;
+			} catch {
+				failed++;
+			}
+		}
+		return { created, failed };
+	}
+
+	// Paste-a-key: adopt one object by its exact key (a single HEAD, no LIST). The
+	// vault path mirrors the key unless the caller overrides it.
+	async adoptKey(key: string, vaultPath?: string): Promise<{ ok: boolean; pointerPath: string | null; error: string | null }> {
+		const config = this.getConfig();
+		const placement = { vaultPath: vaultPath !== undefined && vaultPath.length > 0 ? vaultPath : mirrorKeyToVaultPath(key, {}) };
+		try {
+			const result = await adoptByKey(this.backend(config), key, placement, {
+				bucket: config.bucket,
+				newId: () => generateId(),
+				now: () => new Date().toISOString(),
+			});
+			if ('collision' in result) {
+				return { ok: false, pointerPath: null, error: 'a pointer already exists for this object' };
+			}
+			await this.writePointer(result.pointerPath, encodePointer(result.record, ''));
+			return { ok: true, pointerPath: result.pointerPath, error: null };
+		} catch (error) {
+			return { ok: false, pointerPath: null, error: describe(error) };
+		}
 	}
 
 	// B7 batch dry-run: the per-file plan for a selection, for the preview table.

@@ -12,6 +12,7 @@ import { AttachmentService } from './src/service/attachment-service';
 import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 import { BatchOffloadModal } from './src/ui/batch-offload-modal';
+import { AdoptModal } from './src/ui/adopt-modal';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -82,6 +83,24 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				if (!checking) {
 					new TrustRehearsalModal(this.app, this.attachments, (error) => {
 						this.logger.error('Trust rehearsal threw.', { error: describeError(error) });
+					}).open();
+				}
+				return true;
+			},
+		});
+
+		// Adopt-from-bucket: catalogue objects already in the bucket as pointer notes.
+		this.addCommand({
+			id: 'adopt-from-storage',
+			name: 'Adopt files from storage',
+			checkCallback: (checking: boolean): boolean => {
+				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+				if (!ready) {
+					return false;
+				}
+				if (!checking) {
+					new AdoptModal(this.app, this.attachments, (error) => {
+						this.logger.error('Adopt threw.', { error: describeError(error) });
 					}).open();
 				}
 				return true;

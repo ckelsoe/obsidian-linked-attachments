@@ -72,3 +72,30 @@
 .linked-attachments-ladder-verdict.linked-attachments-ladder-verdict-error {
 	color: var(--text-error);
 }
+
+.linked-attachments-adopt {
+	max-height: 18em;
+	overflow-y: auto;
+	margin: var(--size-4-2) 0;
+}
+
+.linked-attachments-adopt-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-2-1) 0;
+}
+
+.linked-attachments-adopt-row.linked-attachments-adopt-row-disabled {
+	color: var(--text-muted);
+}
+
+.linked-attachments-adopt-name {
+	flex: 1;
+	word-break: break-all;
+}
+
+.linked-attachments-adopt-size {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
