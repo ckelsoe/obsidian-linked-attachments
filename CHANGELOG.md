@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Pointer note codec: read and write the machine fields in a pointer's frontmatter, regenerate the open link without touching the user's notes, and preserve any other frontmatter (such as tags) across edits. The pointer's identity is always read from frontmatter, never from the body, so the body is always safe to edit.
 - StorageBackend interface and an in-memory MemoryBackend (the tier-0 test stand-in): typed put/get/head/delete/list verbs, two-axis capability flags, server-side checksum validation on upload, and a content-addressed sha256 helper. The seam every offload and reconciliation module is built against.
 - Plugin scaffold from the workspace standard template (CI, release, lint, and scorecard tooling).
 - Secure credential storage: S3 access key and secret key are held in Obsidian's per-vault secret storage via `SecretComponent`, never in `data.json`. Non-secret connection config (endpoint, region, bucket, addressing style) and the secret-name references live in settings.
