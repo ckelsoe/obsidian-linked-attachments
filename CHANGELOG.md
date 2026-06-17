@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Batch offload: select several attachments in the file explorer and offload them in one go. A preview table lists every file, its size, and the total before anything moves; on confirm, each file is uploaded, verified, and trashed in turn with a live progress list, and one file failing never stops the rest.
 - Embeds follow the file: when you offload an attachment, every note that embeds it is rewritten to transclude the pointer note instead, so the embed keeps working; restoring reverses it. Page anchors and captions are preserved, and embeds inside code blocks are left alone.
 
 ## [0.1.0] - 2026-06-17

@@ -9,6 +9,7 @@ import { planOffload, OffloadPlan } from '../offload/plan';
 import { ladderVerifier } from '../offload/verify';
 import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
 import { rewriteEmbedsInNotes, RewriteDirection } from '../scan/embed-rewrite';
+import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
 import { decodePointer, PointerRecord } from '../pointer/codec';
 import { sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
@@ -63,6 +64,32 @@ export class AttachmentService {
 		const key = `${prefix}/.linked-attachments/rehearsal-${nonce}.txt`;
 		const payload = new TextEncoder().encode(`Linked Attachments round-trip rehearsal ${nonce}`);
 		return runTrustRehearsal({ backend: this.backend(config), key, payload, onStage });
+	}
+
+	// B7 batch dry-run: the per-file plan for a selection, for the preview table.
+	async planOffloadMany(files: TFile[]): Promise<OffloadPlan[]> {
+		const plans: OffloadPlan[] = [];
+		for (const file of files) {
+			plans.push(await this.planOffload(file));
+		}
+		return plans;
+	}
+
+	// Batch offload: run the selection one file at a time, reporting per-file
+	// progress for the H5 modal. One file's failure never aborts the batch.
+	async offloadMany(
+		files: TFile[],
+		onProgress?: (item: BatchItem<OffloadResult>, progress: BatchProgress<OffloadResult>) => void,
+	): Promise<BatchProgress<OffloadResult>> {
+		return runBatch<TFile, OffloadResult>({
+			items: files,
+			idOf: (file) => file.path,
+			run: async (file) => {
+				const result = await this.offload(file);
+				return { ok: result.ok, value: result, error: result.error };
+			},
+			onProgress,
+		});
 	}
 
 	async offload(file: TFile): Promise<OffloadResult> {

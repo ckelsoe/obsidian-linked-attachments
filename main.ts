@@ -11,6 +11,7 @@ import { Logger } from './logger';
 import { AttachmentService } from './src/service/attachment-service';
 import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
+import { BatchOffloadModal } from './src/ui/batch-offload-modal';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -135,6 +136,39 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			}),
 		);
 
+		// Multi-select in the file explorer: batch-offload the selected attachments.
+		this.registerEvent(
+			this.app.workspace.on('files-menu', (menu, files) => {
+				const attachments = files.filter((f): f is TFile => f instanceof TFile && f.extension !== 'md');
+				if (attachments.length < 2) {
+					return;
+				}
+				menu.addItem((item) => {
+					item
+						.setTitle('Offload to storage')
+						.setIcon('upload-cloud')
+						.onClick(() => {
+							this.runBatchOffload(attachments);
+						});
+				});
+			}),
+		);
+
+	}
+
+	// Open the batch dry-run preview + progress modal for a multi-file selection.
+	private runBatchOffload(files: TFile[]): void {
+		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
+			new Notice('Set the endpoint and bucket in settings first.');
+			return;
+		}
+		if (!this.credentials.hasCompleteCredentials()) {
+			new Notice('Add your storage credentials in settings first.');
+			return;
+		}
+		new BatchOffloadModal(this.app, this.attachments, files, (error) => {
+			this.logger.error('Batch offload threw.', { error: describeError(error) });
+		}).open();
 	}
 
 	// Offload a file. First show a dry-run preview (B7) of where it will go; nothing
