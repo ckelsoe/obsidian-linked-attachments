@@ -20,6 +20,7 @@ import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanR
 import { planAdoption } from '../adopt/adopt-plan';
 import { sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
+import { restoreTargetPath } from './restore-path';
 
 // The offload / restore orchestration: the thin Obsidian glue that wires the
 // proven engine (offload pipeline, verify ladder, codec, S3Backend) to the vault.
@@ -280,8 +281,14 @@ export class AttachmentService {
 			return { ok: false, restoredPath: null, error: `not a pointer note: ${describe(error)}` };
 		}
 
-		if (this.app.vault.getAbstractFileByPath(record.originalPath) !== null) {
-			return { ok: false, restoredPath: null, error: `a file already exists at ${record.originalPath}; not overwriting` };
+		// Restore next to the pointer's CURRENT location, not the path recorded at
+		// offload time. The pointer note is the in-vault representation: if its folder
+		// was renamed or it was moved (here or via sync), the recorded path is stale,
+		// and restoring there would recreate the old folder and leave the new one empty.
+		const targetPath = restoreTargetPath(pointer.path, record.originalName);
+
+		if (this.app.vault.getAbstractFileByPath(targetPath) !== null) {
+			return { ok: false, restoredPath: null, error: `a file already exists at ${targetPath}; not overwriting` };
 		}
 
 		const got = await this.backend(config).get(record.key);
@@ -295,13 +302,13 @@ export class AttachmentService {
 		// Capture the notes embedding the pointer before it is removed.
 		const embeddingNotes = this.notesLinking(pointer.path);
 
-		await this.ensureParentFolder(record.originalPath);
-		await this.app.vault.createBinary(record.originalPath, toArrayBuffer(bytes));
+		await this.ensureParentFolder(targetPath);
+		await this.app.vault.createBinary(targetPath, toArrayBuffer(bytes));
 		// Rewrite ![[file.ext.md]] -> ![[file.ext]] while the pointer still exists, so
 		// no embed is left dangling between the rewrite and the pointer removal.
 		await this.rewriteEmbeds(record.originalName, embeddingNotes, 'to-attachment');
 		await this.app.fileManager.trashFile(pointer);
-		return { ok: true, restoredPath: record.originalPath, error: null };
+		return { ok: true, restoredPath: targetPath, error: null };
 	}
 
 	// --- internals --------------------------------------------------------------
