@@ -144,9 +144,8 @@ describe('checkout (la-p6-32)', () => {
 	it('test_checkout_refuses_held_by_other_unless_forced', async () => {
 		const h = makeHarness('mbp');
 		const { pointerPath } = await seedOffloaded(h, 'shared doc');
-		// simulate another device's checkout by writing its markers onto the pointer
-		const other = makeHarness('work-pc');
-		other.backend = h.backend;
+		// simulate another device's checkout by writing its markers onto the shared
+		// pointer (same maps + backend, a different host).
 		const otherManager = new CheckoutManager({ ...h.deps, host: () => 'work-pc' });
 		await otherManager.checkout(pointerPath);
 		// now THIS device (mbp) tries
