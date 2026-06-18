@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-18
+
+### Added
+- No accidental duplicate objects: when you offload a file whose exact bytes are already in your bucket (for example the same document under a new name or path), the plugin now links a new pointer note to the existing object instead of uploading a second copy. It still confirms the existing object really holds those bytes before removing your local original, and it tells you "already in storage; linked here". One object can be referenced by several pointer notes. If the existing object cannot be confirmed (it drifted or is missing), the plugin uploads a fresh copy as before, so your file is always safely offloaded either way.
+
 ## [1.0.3] - 2026-06-18
 
 ### Fixed
