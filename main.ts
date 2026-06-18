@@ -1,10 +1,12 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { Notice, Platform, Plugin, TFile } from 'obsidian';
 import {
 	LinkedAttachmentsSettings,
 	DEFAULT_SETTINGS,
 	DEFAULT_ACCESS_KEY_SECRET_ID,
 	DEFAULT_SECRET_KEY_SECRET_ID,
 } from './settings';
+import { AutoOffloadController } from './src/service/auto-offload-controller';
+import { parseAllowlist } from './src/offload/auto-offload';
 import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { Logger } from './logger';
@@ -35,6 +37,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	credentials!: CredentialStore;
 	logger!: Logger;
 	attachments!: AttachmentService;
+	autoOffload!: AutoOffloadController;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -231,6 +234,44 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			}),
 		);
 
+		// Auto-offload on add (spec section 4b), opt-in. The controller decides via
+		// the pure policy and prompts (default) or schedules an idle offload. Vault
+		// events are registered only AFTER layout-ready, so the create handler does
+		// not fire for every existing file during the initial vault index.
+		this.autoOffload = new AutoOffloadController({
+			app: this.app,
+			isDesktop: Platform.isDesktop,
+			getConfig: () => ({
+				enabled: this.settings.autoOffloadEnabled,
+				allowlist: parseAllowlist(this.settings.autoOffloadAllowlist),
+				sizeThresholdBytes: Math.max(0, this.settings.autoOffloadSizeThresholdMb) * 1024 * 1024,
+				triggerMode: this.settings.autoOffloadTriggerMode,
+				idleMinutes: this.settings.autoOffloadIdleMinutes,
+			}),
+			isReady: () => this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials(),
+			offloadNow: (file) => this.executeOffload(file),
+			onError: (error) => this.logger.error('Auto-offload threw.', { error: describeError(error) }),
+		});
+		this.app.workspace.onLayoutReady(() => {
+			this.registerEvent(
+				this.app.vault.on('create', (file) => {
+					if (file instanceof TFile) {
+						this.autoOffload.onCreate(file);
+					}
+				}),
+			);
+			this.registerEvent(
+				this.app.vault.on('modify', (file) => {
+					if (file instanceof TFile) {
+						this.autoOffload.onModify(file);
+					}
+				}),
+			);
+		});
+	}
+
+	onunload(): void {
+		this.autoOffload?.dispose();
 	}
 
 	// Open the batch dry-run preview + progress modal for a multi-file selection.

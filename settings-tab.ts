@@ -121,6 +121,44 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
+				heading: 'Automatic offload',
+				items: [
+					{
+						name: 'Offload large new files automatically',
+						desc: 'When a new file of an allowed type is larger than the threshold, offer to offload it so the heavy bytes never try to sync. Off by default.',
+						control: { type: 'toggle', key: 'autoOffloadEnabled' },
+					},
+					{
+						name: 'File types',
+						desc: 'Comma-separated extensions to consider, e.g. pdf, epub, mp3, zip. Actively-edited types are best left out.',
+						control: { type: 'text', key: 'autoOffloadAllowlist', placeholder: 'pdf, epub, mp3, zip' },
+					},
+					{
+						name: 'Size threshold in MB',
+						desc: 'Only files at least this large are offered. Small files sync fine and are left alone.',
+						control: { type: 'number', key: 'autoOffloadSizeThresholdMb' },
+					},
+					{
+						name: 'Trigger',
+						desc: 'Prompt asks you on every qualifying add. Offload when idle waits until the file has been untouched for the idle window (desktop only; mobile always prompts).',
+						control: {
+							type: 'dropdown',
+							key: 'autoOffloadTriggerMode',
+							options: {
+								'prompt': 'Prompt me on add',
+								'idle-debounce': 'Offload when idle',
+							},
+						},
+					},
+					{
+						name: 'Idle window in minutes',
+						desc: 'Used only when the trigger is offload when idle: how long a file must be untouched before it is offloaded.',
+						control: { type: 'number', key: 'autoOffloadIdleMinutes' },
+					},
+				],
+			},
+			{
+				type: 'group',
 				heading: 'Diagnostics',
 				items: [
 					{
