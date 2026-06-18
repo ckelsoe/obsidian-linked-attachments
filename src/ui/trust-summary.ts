@@ -18,6 +18,13 @@ export function offloadOutcomeLine(fileName: string, result: OffloadResult): str
 	}
 	const tier = result.record?.verificationTier ?? 'asserted';
 	const badge = trustBadge(tier);
+	if (result.deduped) {
+		// Content-dedup: the bytes were already in storage, so this linked to the
+		// existing object instead of uploading a second copy (spec section 10).
+		return result.removed
+			? `${fileName} is already in storage; linked here (${badge.label}) and the local file was moved to trash.`
+			: `${fileName} is already in storage; linked here (${badge.label}). The local file was kept.`;
+	}
 	if (result.removed) {
 		return `Offloaded ${fileName} (${badge.label}). The local file was moved to trash.`;
 	}

@@ -65,6 +65,20 @@ describe('offloadOutcomeLine', () => {
 		expect(line).not.toContain('moved to trash');
 	});
 
+	it('reports a deduped offload that linked to an existing object and trashed the local copy', () => {
+		const line = offloadOutcomeLine('copy.pdf', { ...base, deduped: true });
+		expect(line).toContain('already in storage');
+		expect(line).toContain('linked here');
+		expect(line).toContain('moved to trash');
+	});
+
+	it('reports a deduped offload that kept the local copy', () => {
+		const line = offloadOutcomeLine('copy.pdf', { ...base, deduped: true, removed: false, reachedStage: 'committed' });
+		expect(line).toContain('already in storage');
+		expect(line).toContain('kept');
+		expect(line).not.toContain('moved to trash');
+	});
+
 	it('reports a failed offload without claiming any deletion', () => {
 		const line = offloadOutcomeLine('file.pdf', { ok: false, reachedStage: 'uploaded', removed: false, record: record('asserted'), pointerPath: 'file.pdf.md', error: 'verify failed', deduped: false });
 		expect(line).toContain('not removed');

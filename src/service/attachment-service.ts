@@ -14,6 +14,7 @@ import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
 import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItems, OffloadJournal, JournalStage } from '../offload/journal';
 import { scanReconcile, linkUnlinked, ReconcileFinding } from '../reconcile/scanner';
 import { buildManifestFromPointers, PointerSource } from '../manifest/manifest';
+import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offload/dedup';
 import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
 import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
@@ -79,20 +80,7 @@ export class AttachmentService {
 	// Strictly read-only - LIST, and HEAD only when deep is asked for.
 	async reconcile(deep = false): Promise<ReconcileFinding[]> {
 		const config = this.getConfig();
-		const sources: PointerSource[] = [];
-		for (const file of this.app.vault.getMarkdownFiles()) {
-			const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			if (frontmatter === undefined || !('la_version' in frontmatter)) {
-				continue;
-			}
-			try {
-				const record = decodePointer(await this.app.vault.read(file)).record;
-				sources.push({ pointerPath: file.path, record });
-			} catch {
-				// not a valid pointer; skip
-			}
-		}
-		const manifest = buildManifestFromPointers(sources);
+		const manifest = buildManifestFromPointers(await this.collectPointerSources());
 		return scanReconcile(this.backend(config), Object.values(manifest.entries), { deep });
 	}
 
@@ -202,12 +190,15 @@ export class AttachmentService {
 		const batchId = generateId();
 		let journal = createJournal(batchId, files.map((f) => f.path), new Date().toISOString());
 		await this.writeJournal(journal);
+		// One hash index for the whole batch, so two identical files in the same
+		// selection link to one object (the index accumulates as each file commits).
+		const hashIndex = await this.buildHashIndex();
 		try {
 			return await runBatch<TFile, OffloadResult>({
 				items: files,
 				idOf: (file) => file.path,
 				run: async (file) => {
-					const result = await this.offload(file);
+					const result = await this.offload(file, hashIndex);
 					journal = setStage(journal, file.path, journalStageFor(result));
 					await this.writeJournal(journal);
 					return { ok: result.ok, value: result, error: result.error };
@@ -228,11 +219,12 @@ export class AttachmentService {
 		const journals = await this.readJournals();
 		let resumed = 0;
 		let failed = 0;
+		const hashIndex = await this.buildHashIndex();
 		for (const journal of journals) {
 			for (const item of unfinishedItems(journal)) {
 				const file = this.app.vault.getAbstractFileByPath(item.path);
 				if (file instanceof TFile) {
-					const result = await this.offload(file);
+					const result = await this.offload(file, hashIndex);
 					if (result.ok) {
 						resumed++;
 					} else {
@@ -245,9 +237,12 @@ export class AttachmentService {
 		return { journals: journals.length, resumed, failed };
 	}
 
-	async offload(file: TFile): Promise<OffloadResult> {
+	async offload(file: TFile, hashIndex?: HashIndex): Promise<OffloadResult> {
 		const config = this.getConfig();
 		const bytes = new Uint8Array(await this.app.vault.readBinary(file));
+		// The content-dedup index: a caller-shared one (batch / resume) accumulates
+		// across files; a standalone offload rebuilds it from the vault's pointers.
+		const index = hashIndex ?? (await this.buildHashIndex());
 		// Capture the notes that embed this attachment BEFORE the pipeline trashes
 		// the original, so the rewrite can run against a stable backlink set.
 		const embeddingNotes = this.notesLinking(file.path);
@@ -260,12 +255,20 @@ export class AttachmentService {
 			newId: () => generateId(),
 			now: () => new Date().toISOString(),
 			verify: ladderVerifier,
+			// Link to an object already in storage instead of uploading a duplicate
+			// (spec section 10). The pipeline still verifies it before trashing.
+			findExistingByHash: (hash) => Promise.resolve(lookupByHash(index, hash)),
 		};
 		const result = await offloadFile({ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) }, deps);
+		// Keep the live index current so a later identical file (same batch) dedups.
+		if (result.ok && result.record !== null) {
+			rememberObject(index, result.record);
+		}
 		// Only after the pointer is committed: rewrite ![[file.ext]] -> ![[file.ext.md]]
-		// so the embeds transclude the pointer. A rewrite failure is non-fatal - the
-		// file is already safely offloaded; the embeds simply still point at the raw
-		// name (which resolves to the pointer by Obsidian's basename rule anyway).
+		// so the embeds transclude the pointer. Applies to a deduped offload too (the
+		// file is offloaded either way). A rewrite failure is non-fatal - the file is
+		// already safely offloaded; the embeds still resolve to the pointer by
+		// Obsidian's basename rule anyway.
 		if (result.ok) {
 			await this.rewriteEmbeds(file.name, embeddingNotes, 'to-pointer');
 		}
@@ -312,6 +315,32 @@ export class AttachmentService {
 	}
 
 	// --- internals --------------------------------------------------------------
+
+	// Decode every pointer note in the vault into a PointerSource. The single
+	// gather used by reconcile and the content-dedup index, so both read identity
+	// from frontmatter the same way (la_version present -> attempt decode; skip junk).
+	private async collectPointerSources(): Promise<PointerSource[]> {
+		const sources: PointerSource[] = [];
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (frontmatter === undefined || !('la_version' in frontmatter)) {
+				continue;
+			}
+			try {
+				const record = decodePointer(await this.app.vault.read(file)).record;
+				sources.push({ pointerPath: file.path, record });
+			} catch {
+				// not a valid pointer; skip
+			}
+		}
+		return sources;
+	}
+
+	// The hash -> object index for content-dedup, rebuilt from the vault's pointer
+	// notes (the source of truth; not a synced datastore - spec section 10).
+	private async buildHashIndex(): Promise<HashIndex> {
+		return buildHashIndex(await this.collectPointerSources());
+	}
 
 	// The bucket key prefix that mirrors this vault; an explicit setting wins,
 	// else the vault name. Shared by plan and offload so the key matches.
