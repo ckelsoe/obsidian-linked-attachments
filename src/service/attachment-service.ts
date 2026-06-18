@@ -15,6 +15,8 @@ import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItem
 import { scanReconcile, linkUnlinked, ReconcileFinding } from '../reconcile/scanner';
 import { buildManifestFromPointers, PointerSource } from '../manifest/manifest';
 import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offload/dedup';
+import { CheckoutManager, CheckoutDeps, CheckoutResult, CheckinResult } from '../checkout/checkout-manager';
+import { dirtyState, DirtyState, readCheckoutBase, workingCopyPath } from '../checkout/checkout-state';
 import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
 import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
@@ -314,6 +316,123 @@ export class AttachmentService {
 		return { ok: true, restoredPath: targetPath, error: null };
 	}
 
+	// --- checkout / check-in (spec section 4a, desktop-only) ---------------------
+
+	// Check out a pointer: download + verify the bytes, write the editable working
+	// copy to the sync-excluded checkout dir, mark the pointer, and open it natively.
+	async checkout(pointer: TFile, opts: { force?: boolean } = {}): Promise<CheckoutResult> {
+		return this.checkoutManager().checkout(pointer.path, opts);
+	}
+
+	// Check in a pointer: re-hash the working copy and, if changed, PUT a new verified
+	// version (additive) before advancing the pointer; release the lock.
+	async checkin(pointer: TFile): Promise<CheckinResult> {
+		return this.checkoutManager().checkin(pointer.path);
+	}
+
+	// Discard a checkout: release the lock and remove the working copy, no upload.
+	async discardCheckout(pointer: TFile): Promise<{ ok: boolean; error: string | null }> {
+		return this.checkoutManager().discard(pointer.path);
+	}
+
+	// The dirty state of a pointer for the status indicator (green/orange/red).
+	async dirtyStateFor(pointer: TFile): Promise<DirtyState> {
+		const decoded = decodePointer(await this.app.vault.read(pointer));
+		const base = readCheckoutBase(decoded) ?? decoded.record.hash;
+		if (decoded.record.copyState !== 'checked-out' || base === null) {
+			return dirtyState(decoded.record, null);
+		}
+		const wcPath = workingCopyPath(base, decoded.record.originalName);
+		let workingHash: string | null = null;
+		if (await this.app.vault.adapter.exists(wcPath)) {
+			workingHash = await sha256Hex(new Uint8Array(await this.app.vault.adapter.readBinary(wcPath)));
+		}
+		return dirtyState(decoded.record, workingHash);
+	}
+
+	// Pointer paths currently marked checked-out, for the quit guard seed.
+	async checkedOutPointers(): Promise<string[]> {
+		const paths: string[] = [];
+		for (const { pointerPath, record } of await this.collectPointerSources()) {
+			if (record.copyState === 'checked-out') {
+				paths.push(pointerPath);
+			}
+		}
+		return paths;
+	}
+
+	private checkoutManager(): CheckoutManager {
+		const config = this.getConfig();
+		const adapter = this.app.vault.adapter;
+		const deps: CheckoutDeps = {
+			backend: this.backend(config),
+			vaultPrefix: this.resolveVaultPrefix(config),
+			readPointer: async (path) => {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (!(file instanceof TFile)) {
+					throw new Error(`no pointer note at ${path}`);
+				}
+				return this.app.vault.read(file);
+			},
+			writePointer: async (path, text) => {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (!(file instanceof TFile)) {
+					throw new Error(`no pointer note at ${path}`);
+				}
+				await this.app.vault.modify(file, text);
+			},
+			writeWorkingCopy: async (path, bytes) => {
+				await this.ensureAdapterDir(parentDir(path));
+				await adapter.writeBinary(path, toArrayBuffer(bytes));
+			},
+			readWorkingCopy: async (path) => new Uint8Array(await adapter.readBinary(path)),
+			removeWorkingCopy: (path) => adapter.remove(path),
+			workingCopyExists: (path) => adapter.exists(path),
+			openInDefaultApp: (path) => this.app.openWithDefaultApp(path),
+			writeConflictCopy: async (path, bytes) => {
+				await this.ensureParentFolder(path);
+				await this.app.vault.createBinary(path, toArrayBuffer(bytes));
+			},
+			host: () => this.deviceHost(),
+			now: () => new Date().toISOString(),
+			verify: ladderVerifier,
+		};
+		return new CheckoutManager(deps);
+	}
+
+	// A stable, human-distinguishable per-device id for the advisory lock, persisted
+	// in device-local storage (so it never syncs and differs per device).
+	private deviceHost(): string {
+		const key = 'linked-attachments-device-host';
+		const existing: unknown = this.app.loadLocalStorage(key);
+		if (typeof existing === 'string' && existing.length > 0) {
+			return existing;
+		}
+		const id = `device-${generateId()}`;
+		this.app.saveLocalStorage(key, id);
+		return id;
+	}
+
+	private async ensureAdapterDir(dir: string): Promise<void> {
+		if (dir.length === 0) {
+			return;
+		}
+		let acc = '';
+		for (const part of dir.split('/')) {
+			if (part.length === 0) {
+				continue;
+			}
+			acc = acc.length === 0 ? part : `${acc}/${part}`;
+			if (!(await this.app.vault.adapter.exists(acc))) {
+				try {
+					await this.app.vault.adapter.mkdir(acc);
+				} catch {
+					// tolerate a concurrent creation
+				}
+			}
+		}
+	}
+
 	// --- internals --------------------------------------------------------------
 
 	// Decode every pointer note in the vault into a PointerSource. The single
@@ -520,6 +639,11 @@ function generateId(): string {
 		.map((b) => b.toString(16).padStart(2, '0'))
 		.join('');
 	return `la-${time}-${random}`;
+}
+
+function parentDir(path: string): string {
+	const slash = path.lastIndexOf('/');
+	return slash >= 0 ? path.slice(0, slash) : '';
 }
 
 function describe(error: unknown): string {

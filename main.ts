@@ -20,6 +20,8 @@ import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
 import { formatPointerReference } from './src/ui/pointer-reference';
 import { decodePointer } from './src/pointer/codec';
+import { dirtyColor, dirtyLabel } from './src/checkout/checkout-state';
+import { ConfirmModal } from './src/ui/confirm-modal';
 
 // One-time rename: earlier builds defaulted the secret names to the long
 // linked-attachments-* form. Map a saved long default to the current short name so
@@ -38,6 +40,9 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	logger!: Logger;
 	attachments!: AttachmentService;
 	autoOffload!: AutoOffloadController;
+	private dirtyStatusEl: HTMLElement | null = null;
+	// Pointer paths currently checked out on this device, for the quit guard.
+	private readonly checkedOut = new Set<string>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -165,6 +170,63 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			},
 		});
 
+		// Check out the active pointer note to edit it natively (desktop-only).
+		this.addCommand({
+			id: 'checkout-active-pointer',
+			name: 'Check out the active pointer note to edit',
+			checkCallback: (checking: boolean): boolean => {
+				if (!Platform.isDesktop) {
+					return false;
+				}
+				const file = this.activePointer();
+				if (file === null || this.pointerCopyState(file) === 'checked-out') {
+					return false;
+				}
+				if (!checking) {
+					void this.runCheckout(file);
+				}
+				return true;
+			},
+		});
+
+		// Check in the active pointer note (save the edited working copy as a version).
+		this.addCommand({
+			id: 'checkin-active-pointer',
+			name: 'Check in the active pointer note',
+			checkCallback: (checking: boolean): boolean => {
+				if (!Platform.isDesktop) {
+					return false;
+				}
+				const file = this.activePointer();
+				if (file === null || this.pointerCopyState(file) !== 'checked-out') {
+					return false;
+				}
+				if (!checking) {
+					void this.runCheckin(file);
+				}
+				return true;
+			},
+		});
+
+		// Discard the active pointer note's checkout (drop the working copy, no upload).
+		this.addCommand({
+			id: 'discard-active-checkout',
+			name: 'Discard the active checkout',
+			checkCallback: (checking: boolean): boolean => {
+				if (!Platform.isDesktop) {
+					return false;
+				}
+				const file = this.activePointer();
+				if (file === null || this.pointerCopyState(file) !== 'checked-out') {
+					return false;
+				}
+				if (!checking) {
+					void this.runDiscardCheckout(file);
+				}
+				return true;
+			},
+		});
+
 		// Right-click affordances: "Offload to storage" on a normal file, and
 		// "Restore from storage" on a pointer note (detected by its la_* frontmatter).
 		this.registerEvent(
@@ -202,6 +264,36 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 									void this.copyPointerReference(file);
 								});
 						});
+						// Checkout/check-in cycle (spec section 4a), desktop-only.
+						if (Platform.isDesktop) {
+							if (frontmatter['la_copy_state'] === 'checked-out') {
+								menu.addItem((item) => {
+									item
+										.setTitle('Check in (save a new version)')
+										.setIcon('check-circle')
+										.onClick(() => {
+											void this.runCheckin(file);
+										});
+								});
+								menu.addItem((item) => {
+									item
+										.setTitle('Discard checkout')
+										.setIcon('rotate-ccw')
+										.onClick(() => {
+											void this.runDiscardCheckout(file);
+										});
+								});
+							} else {
+								menu.addItem((item) => {
+									item
+										.setTitle('Check out to edit')
+										.setIcon('file-edit')
+										.onClick(() => {
+											void this.runCheckout(file);
+										});
+								});
+							}
+						}
 					}
 					return;
 				}
@@ -267,11 +359,177 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 					}
 				}),
 			);
+			// Seed the checked-out set (desktop) so the quit guard knows about checkouts
+			// from a previous session, and prime the status indicator.
+			if (Platform.isDesktop) {
+				void this.attachments.checkedOutPointers().then((paths) => {
+					for (const path of paths) {
+						this.checkedOut.add(path);
+					}
+				});
+				void this.updateDirtyStatus();
+			}
 		});
+
+		// The checkout dirty-state indicator (orange/red/green) for the active pointer.
+		if (Platform.isDesktop) {
+			this.dirtyStatusEl = this.addStatusBarItem();
+			this.registerEvent(this.app.workspace.on('active-leaf-change', () => { void this.updateDirtyStatus(); }));
+
+			// Guard quit/close while a file is checked out (its cloud copy may be behind
+			// the local edits). A native confirm; the richer in-app modal is deferred.
+			this.registerDomEvent(window, 'beforeunload', (event: BeforeUnloadEvent) => {
+				if (this.checkedOut.size > 0) {
+					// Modern browsers/Electron show a generic prompt when the default is
+					// prevented; the custom in-app dirty modal is the deferred refinement.
+					event.preventDefault();
+				}
+			});
+		}
 	}
 
 	onunload(): void {
 		this.autoOffload?.dispose();
+	}
+
+	// Check out a pointer to edit it in the OS default app. Guarded.
+	private async runCheckout(pointer: TFile): Promise<void> {
+		if (!this.requireStorageReady()) {
+			return;
+		}
+		this.logger.info('Checkout started.', { path: pointer.path });
+		try {
+			let result = await this.attachments.checkout(pointer);
+			if (!result.ok && (result.lockState === 'held-by-other' || result.lockState === 'stale')) {
+				// Advisory only: offer a forced checkout (the lock cannot be enforced).
+				const force = await this.confirm('Force a checkout?', `${result.error ?? 'This file is checked out elsewhere.'} Force a checkout anyway?`, 'Force checkout');
+				if (!force) {
+					new Notice(result.error ?? 'This file is checked out on another device.');
+					return;
+				}
+				result = await this.attachments.checkout(pointer, { force: true });
+			}
+			if (result.ok) {
+				this.checkedOut.add(pointer.path);
+				new Notice(`Checked out ${pointer.basename}. Edit it in the app that opened, then check it in to save a new version.`);
+				void this.updateDirtyStatus();
+			} else {
+				const state = classifyError(result.error);
+				new Notice(state.isAuth ? state.message : `Could not check out ${pointer.basename}: ${result.error ?? 'unknown error'}.`);
+			}
+		} catch (error) {
+			new Notice(`Checkout of ${pointer.basename} failed. See the log for details.`);
+			this.logger.error('Checkout threw.', { path: pointer.path, error: describeError(error) });
+		}
+	}
+
+	// Check in a pointer: save the edited working copy back as a new version. Guarded.
+	private async runCheckin(pointer: TFile): Promise<void> {
+		if (!this.requireStorageReady()) {
+			return;
+		}
+		new Notice(`Checking in ${pointer.basename}...`);
+		this.logger.info('Checkin started.', { path: pointer.path });
+		try {
+			const result = await this.attachments.checkin(pointer);
+			if (result.ok) {
+				this.checkedOut.delete(pointer.path);
+				if (result.kind === 'no-op') {
+					new Notice(`${pointer.basename} was unchanged; checkout released.`);
+				} else if (result.kind === 'conflict') {
+					new Notice(`Checked in ${pointer.basename} as a new version. The cloud had changed meanwhile, so the previous version was kept as a conflict copy.`);
+				} else {
+					new Notice(`Checked in ${pointer.basename} as a new version.`);
+				}
+				void this.updateDirtyStatus();
+			} else {
+				const state = classifyError(result.error);
+				new Notice(state.isAuth ? state.message : `Could not check in ${pointer.basename}: ${result.error ?? 'unknown error'}. Your edits are kept.`);
+			}
+		} catch (error) {
+			new Notice(`Check-in of ${pointer.basename} failed. Your edits are kept. See the log for details.`);
+			this.logger.error('Checkin threw.', { path: pointer.path, error: describeError(error) });
+		}
+	}
+
+	// Discard a checkout: drop the working copy, no upload. Guarded + confirmed.
+	private async runDiscardCheckout(pointer: TFile): Promise<void> {
+		const ok = await this.confirm('Discard checkout?', `Discard your checked-out edits to ${pointer.basename}? The working copy is deleted and nothing is uploaded.`, 'Discard edits');
+		if (!ok) {
+			return;
+		}
+		try {
+			const result = await this.attachments.discardCheckout(pointer);
+			if (result.ok) {
+				this.checkedOut.delete(pointer.path);
+				new Notice(`Discarded the checkout of ${pointer.basename}.`);
+				void this.updateDirtyStatus();
+			} else {
+				new Notice(`Could not discard the checkout: ${result.error ?? 'unknown error'}.`);
+			}
+		} catch (error) {
+			new Notice(`Discarding the checkout of ${pointer.basename} failed. See the log for details.`);
+			this.logger.error('Discard checkout threw.', { path: pointer.path, error: describeError(error) });
+		}
+	}
+
+	// Update the status bar dirty indicator for the active pointer note.
+	private async updateDirtyStatus(): Promise<void> {
+		if (this.dirtyStatusEl === null) {
+			return;
+		}
+		const file = this.app.workspace.getActiveFile();
+		const frontmatter = file !== null && file.extension === 'md' ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
+		if (file === null || frontmatter === undefined || !('la_version' in frontmatter)) {
+			this.dirtyStatusEl.setText('');
+			this.dirtyStatusEl.removeClass('linked-attachments-dirty-green', 'linked-attachments-dirty-orange', 'linked-attachments-dirty-red');
+			return;
+		}
+		try {
+			const state = await this.attachments.dirtyStateFor(file);
+			const color = dirtyColor(state);
+			this.dirtyStatusEl.setText(`Storage: ${dirtyLabel(state)}`);
+			this.dirtyStatusEl.removeClass('linked-attachments-dirty-green', 'linked-attachments-dirty-orange', 'linked-attachments-dirty-red');
+			this.dirtyStatusEl.addClass(`linked-attachments-dirty-${color}`);
+		} catch (error) {
+			this.dirtyStatusEl.setText('');
+			this.logger.warn('Dirty status read failed.', { path: file.path, error: describeError(error) });
+		}
+	}
+
+	// The active file if it is a pointer note (md with la_* frontmatter), else null.
+	private activePointer(): TFile | null {
+		const file = this.app.workspace.getActiveFile();
+		if (file === null || file.extension !== 'md') {
+			return null;
+		}
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		return frontmatter !== undefined && 'la_version' in frontmatter ? file : null;
+	}
+
+	private pointerCopyState(file: TFile): string | undefined {
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const state: unknown = frontmatter?.['la_copy_state'];
+		return typeof state === 'string' ? state : undefined;
+	}
+
+	// A Promise-based confirmation modal (the browser confirm() is banned by lint).
+	private confirm(title: string, body: string, cta: string): Promise<boolean> {
+		return new Promise((resolve) => {
+			new ConfirmModal(this.app, { title, body, cta, onResult: resolve }).open();
+		});
+	}
+
+	private requireStorageReady(): boolean {
+		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
+			new Notice('Set the endpoint and bucket in settings first.');
+			return false;
+		}
+		if (!this.credentials.hasCompleteCredentials()) {
+			new Notice('Add your storage credentials in settings first.');
+			return false;
+		}
+		return true;
 	}
 
 	// Open the batch dry-run preview + progress modal for a multi-file selection.

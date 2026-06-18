@@ -144,3 +144,8 @@
 	font-size: var(--font-ui-smaller);
 	margin: 0 0 var(--size-2-2) 0;
 }
+
+/* Checkout dirty-state indicator in the status bar (spec section 4a). */
+.linked-attachments-dirty-green { color: var(--text-success); }
+.linked-attachments-dirty-orange { color: var(--text-warning); }
+.linked-attachments-dirty-red { color: var(--text-error); }

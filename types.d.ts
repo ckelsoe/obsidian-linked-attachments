@@ -8,4 +8,12 @@ declare module 'obsidian' {
 	interface PluginManifest {
 		version: string;
 	}
+
+	// Undocumented but stable App method (used widely by community plugins) that
+	// opens a vault-relative path in the OS default application. Declared here rather
+	// than cast, per the no-`as any` rule. Desktop-only; calls are gated by
+	// Platform.isDesktop (the checkout cycle is desktop-only, spec section 4a).
+	interface App {
+		openWithDefaultApp(path: string): Promise<void>;
+	}
 }
