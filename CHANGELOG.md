@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-06-18
+
+### Fixed
+- The offload preview dialog was unreadable: the fields were forced into two columns so labels and values collided and the destination key wrapped one character per line. It now stacks each field cleanly (label above, full-width value below), and the batch preview shows a proper file/size list with a separated total.
+
 ## [1.0.1] - 2026-06-17
 
 ### Added
