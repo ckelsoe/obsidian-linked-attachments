@@ -233,6 +233,153 @@ describe('offload pipeline failure injection (la-p2-07)', () => {
 	});
 });
 
+describe('offload pipeline content-dedup (la-p5-26)', () => {
+	// A shared-backend harness: two offloads against one backend + one events log,
+	// so we can assert the second offload does NOT upload a second object.
+	function sharedHarness(backend: StorageBackend, index: Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>) {
+		const events: string[] = [];
+		const pointers = new Map<string, string>();
+		const trashed: string[] = [];
+		const deps: OffloadDeps = {
+			backend: logged(backend, events),
+			bucket: 's3-dev-test',
+			vaultPrefix: 'charles-main',
+			writePointer: (p, c) => {
+				events.push('commit');
+				pointers.set(p, c);
+				return Promise.resolve();
+			},
+			trashOriginal: (p) => {
+				events.push('trash');
+				trashed.push(p);
+				return Promise.resolve();
+			},
+			newId: () => `ID-${pointers.size}`,
+			now: () => '2026-06-18T00:00:00.000Z',
+			findExistingByHash: (hash) => Promise.resolve(index.get(hash) ?? null),
+		};
+		return { deps, events, pointers, trashed };
+	}
+
+	// AC1 :: identical bytes at two different vault paths => ONE object, TWO
+	// pointers. The second offload links to the existing object, no second upload.
+	// (spec section 10 content-dedup; the goal's tier-0 acceptance case)
+	it('test_dedup_links_existing_no_second_upload', async () => {
+		const backend = new MemoryBackend();
+		const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
+		const bytes = 'the very same bytes under two different names';
+
+		const h1 = sharedHarness(backend, index);
+		const r1 = await offloadFile(file('books/Cranfield.pdf', bytes), h1.deps);
+		expect(r1.ok).toBe(true);
+		expect(r1.deduped).toBe(false);
+		// register the first object so the second offload can find it
+		if (r1.record?.hash) {
+			index.set(r1.record.hash, { key: r1.record.key, bucket: r1.record.bucket, keyKind: r1.record.keyKind });
+		}
+
+		const h2 = sharedHarness(backend, index);
+		const r2 = await offloadFile(file('inbox/copy-of-cranfield.pdf', bytes), h2.deps);
+		expect(r2.ok).toBe(true);
+		expect(r2.deduped).toBe(true);
+		// the second pointer references the FIRST object's key
+		expect(r2.record?.key).toBe(r1.record?.key);
+		// ...but carries its OWN original path/name (restore must put it back right)
+		expect(r2.record?.originalPath).toBe('inbox/copy-of-cranfield.pdf');
+		expect(r2.record?.originalName).toBe('copy-of-cranfield.pdf');
+		// the second offload uploaded nothing
+		expect(h2.events).not.toContain('upload');
+
+		// exactly one object in the bucket, referenced by two pointers
+		const list = await backend.list('charles-main');
+		expect(list.entries).toHaveLength(1);
+	});
+
+	// AC2 :: the dedup path verifies the EXISTING object before trashing the local
+	// original (F1: a stale index never authorizes a delete). On a passing verify the
+	// original is trashed.
+	it('test_dedup_verifies_then_trashes', async () => {
+		const backend = new MemoryBackend();
+		const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
+		const bytes = 'identical content';
+		const h1 = sharedHarness(backend, index);
+		const r1 = await offloadFile(file('a.pdf', bytes), h1.deps);
+		index.set(r1.record!.hash!, { key: r1.record!.key, bucket: r1.record!.bucket, keyKind: r1.record!.keyKind });
+
+		const h2 = sharedHarness(backend, index);
+		const r2 = await offloadFile(file('b.pdf', bytes), h2.deps);
+		expect(r2.deduped).toBe(true);
+		expect(r2.removed).toBe(true);
+		expect(h2.events).toContain('verify-head');
+		expect(h2.trashed).toEqual(['b.pdf']);
+	});
+
+	// AC3 :: if the existing object has drifted (its bytes no longer match the hash),
+	// dedup must NOT trust it - it falls through to a normal upload so the file is
+	// still safely offloaded at its own key.
+	it('test_dedup_drift_falls_through_to_upload', async () => {
+		const backend = new MemoryBackend();
+		const bytes = 'the real intended bytes';
+		const { key: realKey } = await previewKey(file('a.pdf', bytes), 'charles-main');
+		// the index points at a key whose object holds DIFFERENT bytes (drift)
+		await backend.seedObject(realKey, bytesOf('totally different bytes'));
+		const hash = await (await import('../hash/sha256')).sha256Hex(bytesOf(bytes));
+		const index = new Map([[hash, { key: realKey, bucket: 's3-dev-test', keyKind: 'hash' as const }]]);
+
+		const h = sharedHarness(backend, index);
+		const result = await offloadFile(file('b.pdf', bytes), h.deps);
+		expect(result.ok).toBe(true);
+		expect(result.deduped).toBe(false); // did not link to the drifted object
+		expect(h.events).toContain('upload'); // uploaded a fresh, correct copy
+		const head = await backend.head(result.record!.key);
+		expect(head.checksumSha256).toBe(await sha256Base64(bytesOf(bytes)));
+	});
+
+	// AC4 :: a stale index entry pointing at a deleted/missing object falls through
+	// to a normal upload (the object is gone, so re-upload).
+	it('test_dedup_missing_object_falls_through', async () => {
+		const backend = new MemoryBackend();
+		const bytes = 'content';
+		const hash = await (await import('../hash/sha256')).sha256Hex(bytesOf(bytes));
+		const index = new Map([[hash, { key: 'charles-main/ghost--000000.pdf', bucket: 's3-dev-test', keyKind: 'hash' as const }]]);
+		const h = sharedHarness(backend, index);
+		const result = await offloadFile(file('b.pdf', bytes), h.deps);
+		expect(result.ok).toBe(true);
+		expect(result.deduped).toBe(false);
+		expect(h.events).toContain('upload');
+	});
+
+	// AC5 :: with no dedup lookup wired, behavior is exactly as before (always upload).
+	it('test_no_dedup_dep_uploads_as_before', async () => {
+		const backend = new MemoryBackend();
+		const h = makeHarness(backend); // no findExistingByHash
+		const result = await offloadFile(file('a.pdf', 'data'), h.deps);
+		expect(result.ok).toBe(true);
+		expect(result.deduped).toBe(false);
+		expect(h.events).toEqual(['upload', 'verify-head', 'commit', 'trash']);
+	});
+
+	// prop :: offloading any bytes twice (at different paths, sharing a live index)
+	// leaves exactly ONE object in the bucket.
+	it('prop_offload_twice_one_object', async () => {
+		await fc.assert(
+			fc.asyncProperty(fc.uint8Array({ minLength: 1, maxLength: 64 }), async (data) => {
+				const backend = new MemoryBackend();
+				const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
+				const h1 = sharedHarness(backend, index);
+				const r1 = await offloadFile({ path: 'one/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h1.deps);
+				index.set(r1.record!.hash!, { key: r1.record!.key, bucket: r1.record!.bucket, keyKind: r1.record!.keyKind });
+				const h2 = sharedHarness(backend, index);
+				const r2 = await offloadFile({ path: 'two/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h2.deps);
+				expect(r2.deduped).toBe(true);
+				const list = await backend.list('');
+				expect(list.entries).toHaveLength(1);
+			}),
+			{ numRuns: 50 },
+		);
+	});
+});
+
 // Derive the key the pipeline will assign, to seed a colliding object for the
 // resume test. Mirrors the pipeline's own derivation.
 async function previewKey(f: OffloadFile, vaultPrefix: string): Promise<{ key: string }> {
