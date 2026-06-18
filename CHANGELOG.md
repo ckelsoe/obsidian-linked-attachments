@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-06-18
+
+### Fixed
+- Restore now puts the file back next to its pointer note's current location. Before, if you renamed or moved the folder a pointer lived in, restoring recreated the old folder and put the file there, leaving the moved folder empty. Restore now follows the pointer wherever it is (including moves synced from another device) and uses the recorded original filename.
+
 ## [1.0.2] - 2026-06-18
 
 ### Fixed
