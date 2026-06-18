@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-18
+
+### Added
+- Automatic offload on add (opt-in, off by default): when you add a new file of an allowed type that is larger than a size threshold, the plugin offers to offload it so the heavy bytes never try to sync across your devices. By default it prompts you with a one-click "offload it" notice and never moves anything on its own. An opt-in "offload when idle" mode (desktop only) offloads a qualifying file after it has been untouched for a set number of minutes; mobile always prompts and never sweeps in the background. Checked-out working copies are skipped, and every auto-offload runs the same duplicate check as a manual offload. New settings: enable toggle, file types, size threshold, trigger mode, and idle window.
+
 ## [1.1.0] - 2026-06-18
 
 ### Added
