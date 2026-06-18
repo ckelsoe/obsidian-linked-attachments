@@ -45,13 +45,13 @@ export class BatchOffloadModal extends Modal {
 			return;
 		}
 
-		const table = contentEl.createDiv({ cls: 'linked-attachments-plan' });
+		const table = contentEl.createDiv({ cls: 'linked-attachments-filelist' });
 		let total = 0;
 		for (const plan of plans) {
 			total += plan.byteSize;
-			this.row(table, plan.originalName, formatBytes(plan.byteSize));
+			this.row(table, plan.originalName, formatBytes(plan.byteSize), false);
 		}
-		this.row(table, 'Total', formatBytes(total));
+		this.row(table, `Total (${plans.length})`, formatBytes(total), true);
 
 		new Setting(contentEl)
 			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
@@ -112,9 +112,10 @@ export class BatchOffloadModal extends Modal {
 		el.toggleClass('linked-attachments-ladder-status-failed', item.status === 'failed');
 	}
 
-	private row(parent: HTMLElement, label: string, value: string): void {
-		const row = parent.createDiv({ cls: 'linked-attachments-plan-row' });
-		row.createSpan({ cls: 'linked-attachments-plan-label', text: label });
-		row.createSpan({ cls: 'linked-attachments-plan-value', text: value });
+	private row(parent: HTMLElement, label: string, value: string, emphasize: boolean): void {
+		const row = parent.createDiv({ cls: 'linked-attachments-filelist-row' });
+		row.toggleClass('linked-attachments-filelist-total', emphasize);
+		row.createSpan({ cls: 'linked-attachments-filelist-name', text: label });
+		row.createSpan({ cls: 'linked-attachments-filelist-size', text: value });
 	}
 }

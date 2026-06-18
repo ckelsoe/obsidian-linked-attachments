@@ -15,20 +15,55 @@
 }
 
 .linked-attachments-plan {
-	display: grid;
-	grid-template-columns: auto 1fr;
-	gap: var(--size-2-1) var(--size-4-3);
 	margin: var(--size-4-2) 0;
 }
 
+.linked-attachments-plan-row {
+	margin-bottom: var(--size-4-2);
+}
+
 .linked-attachments-plan-label {
+	display: block;
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+	margin-bottom: var(--size-2-1);
 }
 
 .linked-attachments-plan-value {
+	display: block;
 	font-family: var(--font-monospace);
-	word-break: break-all;
+	overflow-wrap: anywhere;
+}
+
+.linked-attachments-filelist {
+	max-height: 18em;
+	overflow-y: auto;
+	margin: var(--size-4-2) 0;
+}
+
+.linked-attachments-filelist-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--size-4-3);
+	padding: var(--size-2-1) 0;
+}
+
+.linked-attachments-filelist-row.linked-attachments-filelist-total {
+	margin-top: var(--size-2-2);
+	border-top: var(--border-width) solid var(--background-modifier-border);
+	padding-top: var(--size-2-2);
+	font-weight: var(--font-semibold);
+}
+
+.linked-attachments-filelist-name {
+	overflow-wrap: anywhere;
+}
+
+.linked-attachments-filelist-size {
+	flex-shrink: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
 }
 
 .linked-attachments-ladder {
