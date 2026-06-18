@@ -50,6 +50,7 @@ describe('offloadOutcomeLine', () => {
 		record: record('content'),
 		pointerPath: 'file.pdf.md',
 		error: null,
+		deduped: false,
 	};
 
 	it('reports a verified, removed offload', () => {
@@ -65,7 +66,7 @@ describe('offloadOutcomeLine', () => {
 	});
 
 	it('reports a failed offload without claiming any deletion', () => {
-		const line = offloadOutcomeLine('file.pdf', { ok: false, reachedStage: 'uploaded', removed: false, record: record('asserted'), pointerPath: 'file.pdf.md', error: 'verify failed' });
+		const line = offloadOutcomeLine('file.pdf', { ok: false, reachedStage: 'uploaded', removed: false, record: record('asserted'), pointerPath: 'file.pdf.md', error: 'verify failed', deduped: false });
 		expect(line).toContain('not removed');
 		expect(line).toContain('verify failed');
 	});
