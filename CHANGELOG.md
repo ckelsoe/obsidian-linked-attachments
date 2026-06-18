@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-18
+
+### Added
+- Check out and check in offloaded files (desktop): edit a non-markdown offloaded file in its native app and save it back as a new version, without an S3 drive-mapping tool. Check out downloads the object, confirms its bytes, writes an editable working copy to a sync-excluded folder, and opens it in your default app; the pointer note stays in place as the visible record and shows a status. Check in re-hashes the working copy and, if it changed, uploads a new content-addressed version and confirms it before the pointer advances, keeping every earlier version (never an overwrite). Discard drops the working copy without uploading.
+- Advisory cross-device lock: when a file is checked out, the pointer note records which device holds it, so another device sees "checked out on <device>" and defaults to leaving it alone, with a force option for a stale checkout. There is no server, so this is advisory, not enforced, and the plugin says so.
+- Conflict safety: if the cloud version changed while you had a file checked out, checking in keeps both versions (last write becomes current, the other is preserved as a recognizable conflict copy). It never tries to merge.
+- A status-bar indicator shows the active pointer's state: up to date (green), checked out with the cloud copy untouched (orange), or checked out with local edits not yet saved to the cloud (red). New commands and right-click items: check out, check in, and discard checkout.
+
 ## [1.2.0] - 2026-06-18
 
 ### Added
