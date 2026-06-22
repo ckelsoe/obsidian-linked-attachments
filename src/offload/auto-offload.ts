@@ -7,16 +7,20 @@
 // mode and NOT a silent timer by default.
 //
 // Deliberately conservative (mirrors section 4a's "nothing on a blind timer"):
-//   - gated by type AND size (size primary, type secondary);
+//   - whether a type qualifies is decided by the shared per-extension rule table
+//     (decideByRules) - the SAME policy the retroactive vault sweep uses, so the
+//     forward trigger and the sweep can never disagree;
 //   - prompt by default, never silent;
 //   - opt-in idle-debounce, OFF by default;
-//   - skip checked-out working copies;
+//   - skip checked-out working copies and markdown notes;
 //   - desktop-first: mobile may prompt but never idle-sweeps (coerced here).
 //
 // This module is the qualification + mode decision only. The vault-create / modify
 // event wiring, the debounce timers, and the prompt UI are the Obsidian-coupled
 // layer (la-p5-29). The 1.1 content-dedup pre-check runs automatically because
 // auto-offload goes through the same offload pipeline.
+
+import { OffloadRule, decideByRules } from './offload-rules';
 
 export type AutoOffloadTriggerMode = 'prompt' | 'idle-debounce';
 
@@ -27,8 +31,7 @@ export const CHECKOUT_DIR_PREFIX = '.linked-attachments/';
 
 export interface AutoOffloadConfig {
 	enabled: boolean;
-	allowlist: string[]; // lowercase extensions, no leading dot
-	sizeThresholdBytes: number;
+	rules: OffloadRule[]; // the shared per-extension policy (type + per-type threshold)
 	triggerMode: AutoOffloadTriggerMode;
 	idleMinutes: number;
 }
@@ -61,12 +64,12 @@ export function decideAutoOffload(
 	if (candidate.path.startsWith(CHECKOUT_DIR_PREFIX)) {
 		return { qualifies: false, reason: 'a checked-out working copy is never auto-offloaded' };
 	}
-	if (!config.allowlist.map((e) => e.toLowerCase()).includes(ext)) {
-		return { qualifies: false, reason: `the .${ext} type is not in the auto-offload allowlist` };
-	}
-	// Size is the primary signal: small files sync fine and are left alone.
-	if (candidate.size < config.sizeThresholdBytes) {
-		return { qualifies: false, reason: 'below the auto-offload size threshold' };
+	// The per-extension rule table decides type + size in one place (the same policy
+	// the vault sweep uses). 'always' types qualify at any size; 'over-size' types
+	// only at/over their own threshold; an unlisted type never qualifies.
+	const ruled = decideByRules({ extension: ext, size: candidate.size }, config.rules);
+	if (!ruled.offload) {
+		return { qualifies: false, reason: ruled.reason };
 	}
 	return { qualifies: true, mode: effectiveTriggerMode(config.triggerMode, isDesktop) };
 }
@@ -77,13 +80,4 @@ export function effectiveTriggerMode(mode: AutoOffloadTriggerMode, isDesktop: bo
 		return 'prompt';
 	}
 	return mode;
-}
-
-// Parse the settings allowlist string ("pdf, EPUB, .mp3") into normalized
-// extensions (lowercase, no dot, no empties).
-export function parseAllowlist(text: string): string[] {
-	return text
-		.split(',')
-		.map((entry) => entry.trim().replace(/^\.+/, '').toLowerCase())
-		.filter((entry) => entry.length > 0);
 }

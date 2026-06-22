@@ -4,6 +4,7 @@ import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
 import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
+import { OffloadRuleMode } from './src/offload/offload-rules';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
@@ -121,22 +122,36 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
+				heading: 'File type rules',
+				items: [
+					{
+						name: 'Types to offload',
+						desc: 'Each file type is offloaded either always (any size) or only when larger than its own size in MB. A type that is not listed here is never offloaded. These rules drive both automatic offload of new files and the scan below.',
+						searchable: false,
+						render: (setting: Setting) => { this.renderRuleTable(setting); },
+					},
+					{
+						name: 'Scan the whole vault now',
+						desc: 'Apply these rules to every file already in your vault and offload the matches in one batch. You get a preview of every file and the total before anything moves.',
+						searchable: false,
+						render: (setting: Setting) => {
+							setting.addButton((btn) =>
+								btn.setButtonText('Scan and offload').onClick(() => {
+									this.plugin.runVaultSweep();
+								}),
+							);
+						},
+					},
+				],
+			},
+			{
+				type: 'group',
 				heading: 'Automatic offload',
 				items: [
 					{
 						name: 'Offload large new files automatically',
-						desc: 'When a new file of an allowed type is larger than the threshold, offer to offload it so the heavy bytes never try to sync. Off by default.',
+						desc: 'When a new file matching a rule above is added, offer to offload it so the heavy bytes never try to sync. Off by default.',
 						control: { type: 'toggle', key: 'autoOffloadEnabled' },
-					},
-					{
-						name: 'File types',
-						desc: 'Comma-separated extensions to consider, e.g. pdf, epub, mp3, zip. Actively-edited types are best left out.',
-						control: { type: 'text', key: 'autoOffloadAllowlist', placeholder: 'pdf, epub, mp3, zip' },
-					},
-					{
-						name: 'Size threshold in MB',
-						desc: 'Only files at least this large are offered. Small files sync fine and are left alone.',
-						control: { type: 'number', key: 'autoOffloadSizeThresholdMb' },
 					},
 					{
 						name: 'Trigger',
@@ -180,6 +195,75 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
 		await this.plugin.saveSettings();
+	}
+
+	// The per-extension rule table. A composite, variable-length control, so it is a
+	// custom render that saves itself (the declarative API cannot auto-bind it) and
+	// is laid out full-width below the title/description (the workspace stacked-row
+	// convention for long controls). Rows are managed imperatively: text/dropdown/
+	// number edits update the model in place and persist; add/remove redraw the rows.
+	private renderRuleTable(setting: Setting): void {
+		setting.settingEl.addClass('linked-attachments-rule-setting');
+		const table = setting.settingEl.createDiv({ cls: 'linked-attachments-rule-table' });
+		this.drawRuleRows(table);
+	}
+
+	private drawRuleRows(table: HTMLElement): void {
+		table.empty();
+		const rules = this.plugin.settings.offloadRules;
+		rules.forEach((rule, index) => {
+			const row = table.createDiv({ cls: 'linked-attachments-rule-row' });
+
+			const ext = row.createEl('input', { cls: 'linked-attachments-rule-ext', type: 'text' });
+			ext.value = rule.extension;
+			ext.placeholder = 'Extension';
+			ext.addEventListener('change', () => {
+				rule.extension = ext.value;
+				void this.plugin.saveSettings();
+			});
+
+			const mode = row.createEl('select', { cls: 'dropdown linked-attachments-rule-mode' });
+			mode.createEl('option', { value: 'always', text: 'Always offload' });
+			mode.createEl('option', { value: 'over-size', text: 'Offload when larger than' });
+			mode.value = rule.mode;
+
+			const sizeWrap = row.createDiv({ cls: 'linked-attachments-rule-size' });
+			const mb = sizeWrap.createEl('input', { cls: 'linked-attachments-rule-mb', type: 'number' });
+			mb.value = String(rule.thresholdMb);
+			mb.min = '0';
+			sizeWrap.createSpan({ cls: 'linked-attachments-rule-unit', text: 'MB' });
+
+			// 'always' rules have no threshold, so the MB field is hidden for them.
+			const syncSizeVisibility = (): void => {
+				sizeWrap.toggleClass('linked-attachments-hidden', rule.mode !== 'over-size');
+			};
+			syncSizeVisibility();
+
+			mode.addEventListener('change', () => {
+				rule.mode = mode.value as OffloadRuleMode;
+				syncSizeVisibility();
+				void this.plugin.saveSettings();
+			});
+			mb.addEventListener('change', () => {
+				rule.thresholdMb = Math.max(0, Number(mb.value) || 0);
+				void this.plugin.saveSettings();
+			});
+
+			const remove = row.createEl('button', { cls: 'linked-attachments-rule-remove', text: 'Remove' });
+			remove.setAttribute('aria-label', `Remove the ${rule.extension || 'blank'} rule`);
+			remove.addEventListener('click', () => {
+				this.plugin.settings.offloadRules.splice(index, 1);
+				void this.plugin.saveSettings();
+				this.drawRuleRows(table);
+			});
+		});
+
+		const add = table.createEl('button', { cls: 'linked-attachments-rule-add', text: 'Add file type' });
+		add.addEventListener('click', () => {
+			this.plugin.settings.offloadRules.push({ extension: '', mode: 'over-size', thresholdMb: 5 });
+			void this.plugin.saveSettings();
+			this.drawRuleRows(table);
+		});
 	}
 
 	private renderConnectionTestRow(setting: Setting): void {

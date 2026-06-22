@@ -6,7 +6,8 @@ import {
 	DEFAULT_SECRET_KEY_SECRET_ID,
 } from './settings';
 import { AutoOffloadController } from './src/service/auto-offload-controller';
-import { parseAllowlist } from './src/offload/auto-offload';
+import { normalizeRules, rulesFromLegacy } from './src/offload/offload-rules';
+import { planVaultSweep, SweepFile } from './src/offload/vault-sweep';
 import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { Logger } from './logger';
@@ -113,6 +114,24 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				}
 				if (!checking) {
 					void this.runResume();
+				}
+				return true;
+			},
+		});
+
+		// Sweep: apply the per-extension offload rules across the whole vault at once,
+		// offloading every existing file that matches (the retroactive counterpart to
+		// auto-offload, which only acts on new files going forward).
+		this.addCommand({
+			id: 'scan-vault-and-offload-by-type',
+			name: 'Scan vault and offload by file type',
+			checkCallback: (checking: boolean): boolean => {
+				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+				if (!ready) {
+					return false;
+				}
+				if (!checking) {
+					this.runVaultSweep();
 				}
 				return true;
 			},
@@ -335,8 +354,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			isDesktop: Platform.isDesktop,
 			getConfig: () => ({
 				enabled: this.settings.autoOffloadEnabled,
-				allowlist: parseAllowlist(this.settings.autoOffloadAllowlist),
-				sizeThresholdBytes: Math.max(0, this.settings.autoOffloadSizeThresholdMb) * 1024 * 1024,
+				rules: this.settings.offloadRules,
 				triggerMode: this.settings.autoOffloadTriggerMode,
 				idleMinutes: this.settings.autoOffloadIdleMinutes,
 			}),
@@ -547,6 +565,38 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		}).open();
 	}
 
+	// Apply the per-extension offload rules across every existing file in the vault
+	// and offload the matches in one batch. This is the retroactive counterpart to
+	// auto-offload (which only acts on files added going forward), sharing the exact
+	// same policy via planVaultSweep, so a "scan now" catches precisely the files a
+	// future add would. It reuses the batch dry-run preview + progress modal, so the
+	// user sees every file and the total and nothing moves until they confirm.
+	runVaultSweep(): void {
+		if (!this.requireStorageReady()) {
+			return;
+		}
+		const byPath = new Map<string, TFile>();
+		const candidates: SweepFile[] = [];
+		for (const file of this.app.vault.getFiles()) {
+			byPath.set(file.path, file);
+			candidates.push({ path: file.path, extension: file.extension, size: file.stat.size });
+		}
+		const plan = planVaultSweep(candidates, normalizeRules(this.settings.offloadRules));
+		this.logger.info('Vault sweep planned.', {
+			matched: plan.selected.length,
+			skipped: plan.skipped,
+			totalBytes: plan.totalBytes,
+		});
+		if (plan.selected.length === 0) {
+			new Notice('No files in your vault match the offload rules. Add or adjust rules in settings.');
+			return;
+		}
+		const targets = plan.selected
+			.map((entry) => byPath.get(entry.path))
+			.filter((file): file is TFile => file instanceof TFile);
+		this.runBatchOffload(targets);
+	}
+
 	// Resume an interrupted offload from the session journal. Guarded.
 	private async runResume(): Promise<void> {
 		new Notice('Checking for interrupted offloads...');
@@ -666,7 +716,12 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const raw = (await this.loadData()) as Partial<LinkedAttachmentsSettings> | null;
+		// The legacy fields (autoOffloadAllowlist / autoOffloadSizeThresholdMb) are no
+		// longer on the settings interface but may exist in an older data.json; type
+		// them as optional here so the one-time migration below can read them.
+		const raw = (await this.loadData()) as
+			| (Partial<LinkedAttachmentsSettings> & { autoOffloadAllowlist?: string; autoOffloadSizeThresholdMb?: number })
+			| null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
 
 		// Map a saved old-default secret name to its current short name.
@@ -688,6 +743,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		if (this.settings.secretAccessKeySecretName.length === 0) {
 			this.settings.secretAccessKeySecretName = DEFAULT_SECRET_KEY_SECRET_ID;
 		}
+
+		// Migrate the pre-2.1 auto-offload model (one comma allowlist + one global MB
+		// threshold) into the per-extension rule table, once. An older data.json has
+		// no offloadRules, so Object.assign above left the DEFAULT_SETTINGS rules in
+		// place; rebuild them from the saved legacy fields instead so the upgrade
+		// qualifies exactly the files it did before (each old type -> an over-size
+		// rule at the old global threshold). A fresh install keeps the defaults.
+		if (raw !== null && raw.offloadRules === undefined && typeof raw.autoOffloadAllowlist === 'string') {
+			const threshold = typeof raw.autoOffloadSizeThresholdMb === 'number' ? raw.autoOffloadSizeThresholdMb : 5;
+			this.settings.offloadRules = rulesFromLegacy(raw.autoOffloadAllowlist, threshold);
+		}
+		// Normalize whichever rule set we ended up with (dedupe by type, clamp
+		// thresholds), so persisted or migrated data is always in canonical shape.
+		this.settings.offloadRules = normalizeRules(this.settings.offloadRules);
 	}
 
 	async saveSettings(): Promise<void> {

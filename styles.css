@@ -149,3 +149,51 @@
 .linked-attachments-dirty-green { color: var(--text-success); }
 .linked-attachments-dirty-orange { color: var(--text-warning); }
 .linked-attachments-dirty-red { color: var(--text-error); }
+
+/* Per-extension offload rule table (settings). Stacked full-width: the table sits
+   below the title/description rather than in the squeezed right rail. */
+.linked-attachments-rule-setting {
+	display: block;
+}
+
+.linked-attachments-rule-table {
+	margin-top: var(--size-4-2);
+}
+
+.linked-attachments-rule-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-2-1) 0;
+}
+
+.linked-attachments-rule-ext {
+	flex: 0 0 8em;
+}
+
+.linked-attachments-rule-size {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.linked-attachments-rule-mb {
+	width: 6em;
+}
+
+.linked-attachments-rule-unit {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.linked-attachments-rule-remove {
+	margin-left: auto;
+}
+
+.linked-attachments-rule-add {
+	margin-top: var(--size-4-2);
+}
+
+.linked-attachments-hidden {
+	display: none;
+}

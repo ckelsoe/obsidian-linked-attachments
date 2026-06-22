@@ -1,24 +1,33 @@
 import fc from 'fast-check';
 import {
 	decideAutoOffload,
-	parseAllowlist,
 	AutoOffloadConfig,
 	AutoOffloadCandidate,
 	CHECKOUT_DIR_PREFIX,
 } from './auto-offload';
+import { OffloadRule } from './offload-rules';
 
 // Tier 0: the auto-offload trigger policy is pure (a candidate + config + platform
 // in, a decision out). No vault, no events, no timers. This is the gate that decides
 // whether a vault-create qualifies (spec section 4b); the event wiring + debounce
-// timers + prompt are the Obsidian-coupled layer (la-p5-29, parked runtime).
+// timers + prompt are the Obsidian-coupled layer (la-p5-29, parked runtime). The
+// type + size decision is delegated to the shared per-extension rule table
+// (decideByRules), exercised directly in offload-rules.test.ts; here we cover the
+// trigger-specific guards (enabled, checkout, markdown) and mode coercion.
 
 const MB = 1024 * 1024;
+
+const RULES: OffloadRule[] = [
+	{ extension: 'pdf', mode: 'over-size', thresholdMb: 5 },
+	{ extension: 'epub', mode: 'over-size', thresholdMb: 5 },
+	{ extension: 'mp3', mode: 'over-size', thresholdMb: 5 },
+	{ extension: 'zip', mode: 'over-size', thresholdMb: 5 },
+];
 
 function config(overrides: Partial<AutoOffloadConfig> = {}): AutoOffloadConfig {
 	return {
 		enabled: true,
-		allowlist: ['pdf', 'epub', 'mp3', 'zip'],
-		sizeThresholdBytes: 5 * MB,
+		rules: RULES,
 		triggerMode: 'prompt',
 		idleMinutes: 5,
 		...overrides,
@@ -48,13 +57,13 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 		}
 	});
 
-	// AC3 :: a non-allowlisted type is not auto-offloaded (actively-authored types
-	// are excluded; type is the secondary filter).
-	it('test_rejects_non_allowlisted_type', () => {
+	// AC3 :: a type with no rule is not auto-offloaded (actively-authored types are
+	// simply left out of the rule table).
+	it('test_rejects_unlisted_type', () => {
 		const d = decideAutoOffload(candidate({ path: 'note.txt', extension: 'txt' }), config(), true);
 		expect(d.qualifies).toBe(false);
 		if (!d.qualifies) {
-			expect(d.reason).toMatch(/type|allowlist/i);
+			expect(d.reason).toMatch(/rule|listed/i);
 		}
 	});
 
@@ -84,11 +93,20 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 		expect(d.qualifies).toBe(false);
 	});
 
-	// AC7 :: the threshold is inclusive (>=); one byte under is left alone.
+	// AC7 :: the over-size threshold flows through from the matched rule; exactly at
+	// the threshold qualifies, one byte under is left alone.
 	it('test_size_threshold_boundary', () => {
-		const cfg = config({ sizeThresholdBytes: 100 });
-		expect(decideAutoOffload(candidate({ size: 100 }), cfg, true).qualifies).toBe(true);
-		expect(decideAutoOffload(candidate({ size: 99 }), cfg, true).qualifies).toBe(false);
+		const cfg = config({ rules: [{ extension: 'pdf', mode: 'over-size', thresholdMb: 1 }] });
+		expect(decideAutoOffload(candidate({ size: 1 * MB }), cfg, true).qualifies).toBe(true);
+		expect(decideAutoOffload(candidate({ size: 1 * MB - 1 }), cfg, true).qualifies).toBe(false);
+	});
+
+	// AC7b :: an 'always' rule qualifies a tiny file (the new capability the old
+	// allowlist + global threshold could not express).
+	it('test_always_rule_qualifies_small_file', () => {
+		const cfg = config({ rules: [{ extension: 'epub', mode: 'always', thresholdMb: 0 }] });
+		const d = decideAutoOffload(candidate({ extension: 'epub', path: 'x.epub', size: 1 }), cfg, true);
+		expect(d.qualifies).toBe(true);
 	});
 
 	// AC8 :: idle-debounce is coerced to prompt on mobile (mobile may prompt but
@@ -108,28 +126,20 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 	});
 });
 
-describe('auto-offload allowlist parsing (la-p5-28)', () => {
-	it('test_parse_allowlist', () => {
-		expect(parseAllowlist('pdf, EPUB , .mp3,,zip')).toEqual(['pdf', 'epub', 'mp3', 'zip']);
-	});
-	it('test_parse_empty', () => {
-		expect(parseAllowlist('   ')).toEqual([]);
-	});
-});
-
 describe('auto-offload property (la-p5-28)', () => {
-	// prop :: a sub-threshold file never qualifies, regardless of type (size is the
-	// primary signal - spec section 4b).
+	// prop :: a file under its type's over-size threshold never qualifies, for every
+	// type/threshold pair (size is the primary signal for over-size rules).
 	it('prop_never_qualifies_below_threshold', () => {
 		fc.assert(
 			fc.property(
-				fc.integer({ min: 0, max: 1000 }),
-				fc.integer({ min: 1001, max: 100000 }),
+				fc.integer({ min: 2, max: 1000 }),
 				fc.constantFrom('pdf', 'epub', 'mp3', 'zip'),
-				(size, threshold, ext) => {
+				(thresholdMb, ext) => {
+					const cfg = config({ rules: [{ extension: ext, mode: 'over-size', thresholdMb }] });
+					// One byte under the threshold: must never qualify.
 					const d = decideAutoOffload(
-						candidate({ extension: ext, path: `x.${ext}`, size }),
-						config({ sizeThresholdBytes: threshold }),
+						candidate({ extension: ext, path: `x.${ext}`, size: thresholdMb * MB - 1 }),
+						cfg,
 						true,
 					);
 					expect(d.qualifies).toBe(false);

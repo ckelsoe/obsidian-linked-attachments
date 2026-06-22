@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Per-file-type offload rules and a whole-vault scan. A new "File type rules" settings section lets you list each file type and say how it offloads: "always" (offloaded at any size, for example every epub) or "offload when larger than" its own size in MB (for example PDFs over 5 MB but not small ones). Each type carries its own threshold, and you add or remove types freely. A type that is not listed is never offloaded. The "Scan the whole vault now" button applies these rules to every file already in your vault and offloads the matches in one batch, with the same preview of every file and the total before anything moves, and the same per-file verify-before-trash. The command palette has a matching "Scan vault and offload by file type" action.
+
+### Changed
+- Automatic offload now reads the same per-type rules, so a file caught automatically when added is exactly a file the vault scan would catch, and the other way round. The old single list of types plus one global size threshold is replaced by the per-type rules. Your existing settings migrate automatically on upgrade: each type you had listed becomes an "offload when larger than" rule carrying your old threshold, so nothing you already offloaded changes. Switch any type to "always" when you want it offloaded regardless of size.
+
 ## [2.0.0] - 2026-06-18
 
 ### Added
