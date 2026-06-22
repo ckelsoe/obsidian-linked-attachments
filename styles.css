@@ -68,6 +68,11 @@
 
 .linked-attachments-ladder {
 	margin: var(--size-4-2) 0;
+	/* Cap the height and scroll: a batch can be dozens of rows, which otherwise runs
+	   off the modal with no way to reach the rest of the list. The rehearsal uses
+	   this same class with only four rows, so the cap never bites there. */
+	max-height: 24em;
+	overflow-y: auto;
 }
 
 .linked-attachments-ladder-row {

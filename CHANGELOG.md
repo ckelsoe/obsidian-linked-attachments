@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-06-22
+
+### Fixed
+- The offload progress list now scrolls when a batch has many files. Offloading dozens of files at once (for example from a whole-vault scan) ran the status list off the bottom of the dialog with no way to reach the rest; it now caps its height and scrolls.
+
 ## [2.2.0] - 2026-06-22
 
 ### Added
