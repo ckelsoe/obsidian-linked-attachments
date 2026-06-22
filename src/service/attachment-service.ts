@@ -172,15 +172,6 @@ export class AttachmentService {
 		}
 	}
 
-	// B7 batch dry-run: the per-file plan for a selection, for the preview table.
-	async planOffloadMany(files: TFile[]): Promise<OffloadPlan[]> {
-		const plans: OffloadPlan[] = [];
-		for (const file of files) {
-			plans.push(await this.planOffload(file));
-		}
-		return plans;
-	}
-
 	// Batch offload: run the selection one file at a time, reporting per-file
 	// progress for the H5 modal. One file's failure never aborts the batch. A session
 	// journal is written before the batch and updated per file; it is deleted when the

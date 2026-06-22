@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-22
+
+### Added
+- Turn each file-type rule on or off with a checkbox, without deleting it. A rule that is off stays in the list (dimmed) and offloads nothing, so you can stage a type before enabling it or pause one while testing. Off applies to both automatic offload and the vault scan.
+- View the activity log in the app: a "View log" button in settings (Diagnostics) and a "View the activity log" command open the recent log in a panel with one-click copy, so you can include it in a bug report without hunting for the file on disk.
+
+### Fixed
+- The round-trip rehearsal no longer fails at "Verified byte-for-byte" with "size 0" on a healthy bucket. On desktop, the size pre-check read 0 because the platform's HEAD request returns no content length; the rehearsal now treats an unknown size as inconclusive and relies on the download-and-rehash step, which is the real byte-for-byte proof. A size that is actually present and wrong, or a wrong server checksum, still fails honestly.
+- Offload verification no longer forces an unnecessary re-download when the bucket reports a matching checksum but no size on HEAD. The checksum match is accepted as proof; size only blocks verification when it is present and wrong. This makes large-file offloads faster and is the same root cause as the rehearsal fix.
+- The offload preview (batch offload and the vault scan) now appears instantly for any number of files. It previously read and hashed every selected file before drawing the list, so a whole-vault scan of hundreds of megabytes looked frozen. The preview now shows names and sizes only; hashing happens during the offload itself, with live progress.
+- A failed rehearsal is now written to the activity log (it was only shown on screen before), so a failure leaves a record you can copy and report.
+
 ## [2.1.0] - 2026-06-22
 
 ### Added

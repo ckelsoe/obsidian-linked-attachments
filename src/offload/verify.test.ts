@@ -7,7 +7,7 @@ import {
 	LadderExpectation,
 } from './verify';
 import { MemoryBackend } from '../storage/memory-backend';
-import { Capabilities } from '../storage/backend';
+import { Capabilities, GetRange, StorageBackend } from '../storage/backend';
 import { VerificationTier } from '../pointer/codec';
 import { sha256Base64, sha256Hex } from '../hash/sha256';
 
@@ -43,6 +43,26 @@ describe('verify ladder acceptance (la-p2-08)', () => {
 		const bytes = bytesOf('verify me');
 		await backend.put('k', bytes, bytes.length, { checksumSha256: await sha256Base64(bytes) });
 		const result = await verifyByLadder(backend, 'k', await expectationFor(bytes));
+		expect(result.tier).toBe('content');
+	});
+
+	// AC1b :: Obsidian's requestUrl reports size 0 on a HEAD response (no body). A
+	// matching server checksum must STILL verify to content with no re-download - the
+	// size is only a sanity check and a 0/unknown size must not veto the checksum.
+	it('test_checksum_rung_content_when_head_size_unknown', async () => {
+		const inner = new MemoryBackend();
+		const bytes = bytesOf('verify me even with a sizeless head');
+		await inner.put('k', bytes, bytes.length, { checksumSha256: await sha256Base64(bytes) });
+		const zeroHeadSize: StorageBackend = {
+			capabilities: inner.capabilities,
+			put: (k, b, s, o) => inner.put(k, b, s, o),
+			head: async (k) => ({ ...(await inner.head(k)), size: 0 }),
+			get: (k, range?: GetRange) => inner.get(k, range),
+			delete: (k) => inner.delete(k),
+			list: (p, o) => inner.list(p, o),
+			displayKey: (k) => inner.displayKey(k),
+		};
+		const result = await verifyByLadder(zeroHeadSize, 'k', await expectationFor(bytes));
 		expect(result.tier).toBe('content');
 	});
 

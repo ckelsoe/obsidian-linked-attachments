@@ -53,8 +53,21 @@ export class Logger implements AuditSink {
 		private readonly isDebugEnabled: () => boolean,
 	) {}
 
-	private get logPath(): string {
+	get logPath(): string {
 		return `${this.app.vault.configDir}/plugins/${this.pluginId}/audit.jsonl`;
+	}
+
+	// Read the most recent log lines for the in-app log viewer (the user copies this
+	// to report an issue). Returns the last maxLines lines so a long-lived log does
+	// not load megabytes into a modal. Empty string when the log does not exist yet.
+	async readRecent(maxLines = 1000): Promise<string> {
+		const adapter = this.app.vault.adapter;
+		if (!(await adapter.exists(this.logPath))) {
+			return '';
+		}
+		const text = await adapter.read(this.logPath);
+		const lines = text.split('\n').filter((line) => line.length > 0);
+		return lines.slice(Math.max(0, lines.length - maxLines)).join('\n');
 	}
 
 	debug(message: string, fields: Record<string, unknown> = {}): void {

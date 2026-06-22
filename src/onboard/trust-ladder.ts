@@ -76,14 +76,20 @@ export async function runTrustRehearsal(deps: TrustRehearsalDeps): Promise<Trust
 		// returns one) the server-side checksum, no re-download. The GET+rehash in
 		// stage four is the universal byte proof; this stage is the cheap confirm.
 		const head = await deps.backend.head(deps.key);
-		if (head.size !== deps.payload.length) {
+		if (head.size > 0 && head.size !== deps.payload.length) {
 			settle('verified', 'failed', `size ${head.size} != ${deps.payload.length}`);
 			failedStage = 'verified';
 		} else if (head.checksumSha256 !== undefined && head.checksumSha256 !== expectedChecksum) {
 			settle('verified', 'failed', 'server checksum does not match');
 			failedStage = 'verified';
+		} else if (head.checksumSha256 !== undefined) {
+			settle('verified', 'passed', 'checksum confirmed');
+		} else if (head.size > 0) {
+			settle('verified', 'passed', 'size confirmed');
 		} else {
-			settle('verified', 'passed', head.checksumSha256 !== undefined ? 'checksum confirmed' : 'size confirmed');
+			// HEAD gave nothing usable (Obsidian's requestUrl omits content-length on a
+			// HEAD); the byte-for-byte truth is the GET+rehash in stage four.
+			settle('verified', 'passed', 'confirmed on retrieval');
 		}
 
 		// 3. Retrieved - download the object back.

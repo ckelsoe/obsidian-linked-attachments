@@ -20,6 +20,10 @@ export interface OffloadRule {
 	extension: string; // normalized: lowercase, no leading dot
 	mode: OffloadRuleMode;
 	thresholdMb: number; // consulted only when mode === 'over-size'
+	// A disabled rule stays configured but offloads nothing - useful for staging a
+	// rule before turning it on, or pausing one while testing. Optional for
+	// back-compat: a rule with no enabled field is treated as enabled.
+	enabled?: boolean;
 }
 
 export interface RuleCandidate {
@@ -39,6 +43,9 @@ export function decideByRules(candidate: RuleCandidate, rules: OffloadRule[]): R
 	const matched = rules.find((r) => normalizeExtension(r.extension) === ext);
 	if (matched === undefined) {
 		return { offload: false, reason: `no offload rule is listed for .${ext} files` };
+	}
+	if (matched.enabled === false) {
+		return { offload: false, reason: `the offload rule for .${ext} files is turned off` };
 	}
 	if (matched.mode === 'always') {
 		return { offload: true, matched };
@@ -70,7 +77,8 @@ export function normalizeRules(rules: OffloadRule[]): OffloadRule[] {
 			continue;
 		}
 		seen.add(extension);
-		out.push({ extension, mode: rule.mode, thresholdMb: Math.max(0, rule.thresholdMb) });
+		// Persist enabled explicitly (undefined -> true) so stored data is unambiguous.
+		out.push({ extension, mode: rule.mode, thresholdMb: Math.max(0, rule.thresholdMb), enabled: rule.enabled !== false });
 	}
 	return out;
 }
@@ -85,6 +93,6 @@ export function rulesFromLegacy(allowlistText: string, globalThresholdMb: number
 		.split(',')
 		.map((entry) => normalizeExtension(entry))
 		.filter((entry) => entry.length > 0)
-		.map((extension): OffloadRule => ({ extension, mode: 'over-size', thresholdMb: Math.max(0, globalThresholdMb) }));
+		.map((extension): OffloadRule => ({ extension, mode: 'over-size', thresholdMb: Math.max(0, globalThresholdMb), enabled: true }));
 	return normalizeRules(rules);
 }

@@ -4,6 +4,7 @@ import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
 import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
+import { LogViewModal } from './src/ui/log-view-modal';
 import { OffloadRuleMode } from './src/offload/offload-rules';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
@@ -111,7 +112,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 										new Notice('Set the endpoint, bucket, and credentials first.');
 										return;
 									}
-									new TrustRehearsalModal(this.app, this.plugin.attachments, (error) => {
+									new TrustRehearsalModal(this.app, this.plugin.attachments, this.plugin.logger, (error) => {
 										this.plugin.logger.error('Trust rehearsal threw.', { error: describeError(error) });
 									}).open();
 								}),
@@ -126,7 +127,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: 'Types to offload',
-						desc: 'Each file type is offloaded either always (any size) or only when larger than its own size in MB. A type that is not listed here is never offloaded. These rules drive both automatic offload of new files and the scan below.',
+						desc: 'Each file type is offloaded either always (any size) or only when larger than its own size in MB. A type that is not listed here is never offloaded. Turn a row off with its checkbox to keep the rule configured without offloading those files, for example while testing. These rules drive both automatic offload of new files and the scan below.',
 						searchable: false,
 						render: (setting: Setting) => { this.renderRuleTable(setting); },
 					},
@@ -181,6 +182,18 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						desc: `Also write debug-level detail to the log. Every bucket interaction, warning, and error is logged regardless. Log file: ${this.app.vault.configDir}/plugins/${this.plugin.manifest.id}/audit.jsonl`,
 						control: { type: 'toggle', key: 'debugLogging' },
 					},
+					{
+						name: 'View log',
+						desc: 'Open the recent activity log and copy it to include in a bug report.',
+						searchable: false,
+						render: (setting: Setting) => {
+							setting.addButton((btn) =>
+								btn.setButtonText('View log').onClick(() => {
+									new LogViewModal(this.app, () => this.plugin.logger.readRecent()).open();
+								}),
+							);
+						},
+					},
 				],
 			},
 		];
@@ -213,6 +226,21 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		const rules = this.plugin.settings.offloadRules;
 		rules.forEach((rule, index) => {
 			const row = table.createDiv({ cls: 'linked-attachments-rule-row' });
+
+			// A disabled rule stays configured but offloads nothing; the row dims so
+			// its paused state is visible at a glance.
+			const syncEnabledState = (): void => {
+				row.toggleClass('linked-attachments-rule-disabled', rule.enabled === false);
+			};
+
+			const toggle = row.createEl('input', { cls: 'linked-attachments-rule-enabled', type: 'checkbox' });
+			toggle.checked = rule.enabled !== false;
+			toggle.setAttribute('aria-label', 'Enable this rule');
+			toggle.addEventListener('change', () => {
+				rule.enabled = toggle.checked;
+				syncEnabledState();
+				void this.plugin.saveSettings();
+			});
 
 			const ext = row.createEl('input', { cls: 'linked-attachments-rule-ext', type: 'text' });
 			ext.value = rule.extension;
@@ -256,11 +284,13 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				void this.plugin.saveSettings();
 				this.drawRuleRows(table);
 			});
+
+			syncEnabledState();
 		});
 
 		const add = table.createEl('button', { cls: 'linked-attachments-rule-add', text: 'Add file type' });
 		add.addEventListener('click', () => {
-			this.plugin.settings.offloadRules.push({ extension: '', mode: 'over-size', thresholdMb: 5 });
+			this.plugin.settings.offloadRules.push({ extension: '', mode: 'over-size', thresholdMb: 5, enabled: true });
 			void this.plugin.saveSettings();
 			this.drawRuleRows(table);
 		});

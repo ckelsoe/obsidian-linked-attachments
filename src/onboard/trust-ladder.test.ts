@@ -95,6 +95,42 @@ describe('runTrustRehearsal', () => {
 		expect(statusOf(result.stages, 'matched')).toBe('failed');
 	});
 
+	it('AC5b test_head_size_zero_passes_via_retrieval :: a HEAD that reports size 0 (Obsidian requestUrl on a HEAD) is inconclusive, not a failure; the GET+rehash confirms', async () => {
+		// Reproduce the live symptom: PUT/GET are honest, but HEAD comes back with
+		// size 0 and no server checksum (requestUrl omits content-length on a HEAD).
+		// The verify stage must NOT hard-fail on that; stage four proves the bytes.
+		const inner = new MemoryBackend();
+		const zeroHead: StorageBackend = {
+			capabilities: inner.capabilities,
+			put: (k, b, s, o) => inner.put(k, b, s, o),
+			head: async (k) => ({ ...(await inner.head(k)), size: 0, checksumSha256: undefined }),
+			get: (k, range) => inner.get(k, range),
+			delete: (k) => inner.delete(k),
+			list: (p, o) => inner.list(p, o),
+			displayKey: (k) => inner.displayKey(k),
+		};
+		const result = await runTrustRehearsal({ backend: zeroHead, key: KEY, payload: payload('the real bytes survive') });
+		expect(result.ok).toBe(true);
+		expect(statusOf(result.stages, 'verified')).toBe('passed');
+		expect(statusOf(result.stages, 'matched')).toBe('passed');
+	});
+
+	it('AC5c test_head_wrong_positive_size_still_fails :: a size that is present and wrong is a real mismatch and stops at verify', async () => {
+		const inner = new MemoryBackend();
+		const wrongHead: StorageBackend = {
+			capabilities: inner.capabilities,
+			put: (k, b, s, o) => inner.put(k, b, s, o),
+			head: async (k) => ({ ...(await inner.head(k)), size: 999999 }),
+			get: (k, range) => inner.get(k, range),
+			delete: (k) => inner.delete(k),
+			list: (p, o) => inner.list(p, o),
+			displayKey: (k) => inner.displayKey(k),
+		};
+		const result = await runTrustRehearsal({ backend: wrongHead, key: KEY, payload: payload('abc') });
+		expect(result.ok).toBe(false);
+		expect(result.failedStage).toBe('verified');
+	});
+
 	it('AC6 test_onStage_reports_each_update :: the live callback sees every stage', async () => {
 		const backend = new MemoryBackend();
 		const seen: string[] = [];

@@ -1,6 +1,6 @@
 import { App, Modal, Setting, TFile, setIcon } from 'obsidian';
 import { AttachmentService } from '../service/attachment-service';
-import { formatBytes, OffloadPlan } from '../offload/plan';
+import { formatBytes } from '../offload/plan';
 import { BatchItem } from '../offload/batch';
 import { OffloadResult } from '../offload/pipeline';
 
@@ -24,34 +24,31 @@ export class BatchOffloadModal extends Modal {
 
 	onOpen(): void {
 		this.setTitle('Offload several files');
-		void this.showPreview();
+		this.showPreview();
 	}
 
 	onClose(): void {
 		this.contentEl.empty();
 	}
 
-	private async showPreview(): Promise<void> {
+	// The preview shows each file's name and size and the total. These come straight
+	// off TFile, so the preview is instant for any selection size - it never reads or
+	// hashes the bytes. (An earlier version planned every file up front, which read
+	// and hashed the whole selection before drawing anything; a whole-vault scan of
+	// hundreds of MB then looked frozen. The hashing happens during the offload run
+	// below, where it is needed and shows live progress.)
+	private showPreview(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.createEl('p', { text: `${this.files.length} file(s) selected. Nothing has been moved yet. Review, then confirm.` });
 
-		let plans: OffloadPlan[];
-		try {
-			plans = await this.service.planOffloadMany(this.files);
-		} catch (error) {
-			this.onError(error);
-			contentEl.createEl('p', { text: 'Could not prepare the preview. See the log for details.' });
-			return;
-		}
-
 		const table = contentEl.createDiv({ cls: 'linked-attachments-filelist' });
 		let total = 0;
-		for (const plan of plans) {
-			total += plan.byteSize;
-			this.row(table, plan.originalName, formatBytes(plan.byteSize), false);
+		for (const file of this.files) {
+			total += file.stat.size;
+			this.row(table, file.name, formatBytes(file.stat.size), false);
 		}
-		this.row(table, `Total (${plans.length})`, formatBytes(total), true);
+		this.row(table, `Total (${this.files.length})`, formatBytes(total), true);
 
 		new Setting(contentEl)
 			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))

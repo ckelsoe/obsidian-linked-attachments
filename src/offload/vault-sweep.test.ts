@@ -77,6 +77,14 @@ describe('vault sweep planner', () => {
 		expect(plan.skipped).toBe(1);
 	});
 
+	// AC6b :: a disabled rule is skipped by the sweep (configured but paused), so its
+	// type is left in the vault even when files would otherwise match.
+	it('test_disabled_rule_is_not_swept', () => {
+		const rules: OffloadRule[] = [{ extension: 'epub', mode: 'always', thresholdMb: 0, enabled: false }];
+		const plan = planVaultSweep([file('a.epub', 'epub', 50), file('b.epub', 'epub', 1)], rules);
+		expect(plan.selected).toEqual([]);
+	});
+
 	// AC6 :: an empty rule table sweeps nothing.
 	it('test_empty_rules_selects_nothing', () => {
 		const plan = planVaultSweep([file('a.pdf', 'pdf', 100)], []);

@@ -88,6 +88,23 @@ describe('offload rule policy (per-extension)', () => {
 	it('test_empty_table_offloads_nothing', () => {
 		expect(decideByRules(candidate(), []).offload).toBe(false);
 	});
+
+	// AC7c :: a disabled rule offloads nothing even when it would otherwise match
+	// (the rule stays configured but paused). enabled === false is the off switch;
+	// undefined or true is on.
+	it('test_disabled_rule_offloads_nothing', () => {
+		const off = decideByRules(candidate({ extension: 'epub', size: 999 * MB }), [
+			rule({ extension: 'epub', mode: 'always', enabled: false }),
+		]);
+		expect(off.offload).toBe(false);
+		if (!off.offload) {
+			expect(off.reason).toMatch(/off|disabled|turned/i);
+		}
+		// The same rule enabled does offload.
+		expect(decideByRules(candidate({ extension: 'epub', size: 1 }), [
+			rule({ extension: 'epub', mode: 'always', enabled: true }),
+		]).offload).toBe(true);
+	});
 });
 
 describe('offload rule normalization', () => {
@@ -108,8 +125,21 @@ describe('offload rule normalization', () => {
 			{ extension: 'mp4', mode: 'over-size', thresholdMb: -5 },
 		]);
 		expect(cleaned).toEqual([
-			{ extension: 'pdf', mode: 'over-size', thresholdMb: 10 },
-			{ extension: 'mp4', mode: 'over-size', thresholdMb: 0 },
+			{ extension: 'pdf', mode: 'over-size', thresholdMb: 10, enabled: true },
+			{ extension: 'mp4', mode: 'over-size', thresholdMb: 0, enabled: true },
+		]);
+	});
+
+	// AC9b :: normalizeRules persists enabled explicitly: a missing field becomes
+	// true, an explicit false is preserved.
+	it('test_normalize_rules_persists_enabled', () => {
+		const cleaned = normalizeRules([
+			{ extension: 'pdf', mode: 'over-size', thresholdMb: 5 },
+			{ extension: 'epub', mode: 'always', thresholdMb: 0, enabled: false },
+		]);
+		expect(cleaned).toEqual([
+			{ extension: 'pdf', mode: 'over-size', thresholdMb: 5, enabled: true },
+			{ extension: 'epub', mode: 'always', thresholdMb: 0, enabled: false },
 		]);
 	});
 });
@@ -120,9 +150,9 @@ describe('legacy settings migration', () => {
 	// must not silently change what already qualified.
 	it('test_migrates_allowlist_to_over_size_rules', () => {
 		expect(rulesFromLegacy('pdf, EPUB, .mp3', 5)).toEqual([
-			{ extension: 'pdf', mode: 'over-size', thresholdMb: 5 },
-			{ extension: 'epub', mode: 'over-size', thresholdMb: 5 },
-			{ extension: 'mp3', mode: 'over-size', thresholdMb: 5 },
+			{ extension: 'pdf', mode: 'over-size', thresholdMb: 5, enabled: true },
+			{ extension: 'epub', mode: 'over-size', thresholdMb: 5, enabled: true },
+			{ extension: 'mp3', mode: 'over-size', thresholdMb: 5, enabled: true },
 		]);
 	});
 

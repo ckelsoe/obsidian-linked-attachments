@@ -14,6 +14,7 @@ import { Logger } from './logger';
 import { AttachmentService } from './src/service/attachment-service';
 import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
+import { LogViewModal } from './src/ui/log-view-modal';
 import { BatchOffloadModal } from './src/ui/batch-offload-modal';
 import { AdoptModal } from './src/ui/adopt-modal';
 import { ReconcileModal } from './src/ui/reconcile-modal';
@@ -95,11 +96,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 					return false;
 				}
 				if (!checking) {
-					new TrustRehearsalModal(this.app, this.attachments, (error) => {
+					new TrustRehearsalModal(this.app, this.attachments, this.logger, (error) => {
 						this.logger.error('Trust rehearsal threw.', { error: describeError(error) });
 					}).open();
 				}
 				return true;
+			},
+		});
+
+		// View the activity log in-app and copy it for a bug report.
+		this.addCommand({
+			id: 'view-activity-log',
+			name: 'View the activity log',
+			callback: () => {
+				new LogViewModal(this.app, () => this.logger.readRecent()).open();
 			},
 		});
 

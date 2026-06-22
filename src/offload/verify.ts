@@ -59,7 +59,12 @@ export async function verifyByLadder(backend: StorageBackend, key: string, expec
 		// No HEAD -> nothing is proven -> asserted (the gate will refuse a delete).
 		return { tier: 'asserted', remoteChecksum: null, reason: `head failed: ${describe(error)}` };
 	}
-	const sizeOk = head.size === expectation.size;
+	// Size is only a cheap sanity check; the server checksum and the GET+rehash are
+	// the real byte proofs. Obsidian's requestUrl reports content-length as 0 on a
+	// HEAD response (no body), so a 0/unknown size must NOT veto a checksum that
+	// matches - it only blocks when the size is positively present and wrong.
+	const sizeContradicts = head.size > 0 && head.size !== expectation.size;
+	const sizeOk = !sizeContradicts;
 	const remoteChecksum = head.checksumSha256 ?? null;
 
 	// Rung 1: server checksum (cheapest content verification).

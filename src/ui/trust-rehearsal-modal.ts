@@ -1,6 +1,7 @@
 import { App, Modal, setIcon } from 'obsidian';
 import { AttachmentService } from '../service/attachment-service';
 import { TrustRehearsalResult, TrustStage, TrustStageId } from '../onboard/trust-ladder';
+import { Logger } from '../../logger';
 
 // S6 first-file round-trip trust check, rendered live (development-plan section 8
 // "REHEARSE" beat). Opening the modal runs the rehearsal against the user's real
@@ -15,6 +16,7 @@ export class TrustRehearsalModal extends Modal {
 	constructor(
 		app: App,
 		private readonly service: AttachmentService,
+		private readonly logger: Logger,
 		private readonly onError: (error: unknown) => void,
 	) {
 		super(app);
@@ -52,8 +54,17 @@ export class TrustRehearsalModal extends Modal {
 	}
 
 	private async run(): Promise<void> {
+		this.logger.info('Trust rehearsal started.');
 		try {
 			const result = await this.service.rehearseTrust((stage) => this.applyStage(stage));
+			// Log the outcome including each stage's detail. A failed rehearsal is a
+			// returned result (not a thrown error), so without this an honest stage
+			// failure left no trace in the log.
+			this.logger.info('Trust rehearsal finished.', {
+				ok: result.ok,
+				failedStage: result.failedStage,
+				stages: result.stages.map((s) => ({ id: s.id, status: s.status, detail: s.detail })),
+			});
 			this.showVerdict(result);
 		} catch (error) {
 			this.onError(error);
