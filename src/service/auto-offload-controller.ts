@@ -105,7 +105,7 @@ export class AutoOffloadController {
 	// offload; ignoring it does nothing (it cannot eat a file the user is editing).
 	private prompt(file: TFile): void {
 		const sizeMb = (file.stat.size / (1024 * 1024)).toFixed(1);
-		const fragment = activeDocument.createDocumentFragment();
+		const fragment = createFragment();
 		fragment.createSpan({ text: `${file.name} (${sizeMb} MB) will not sync well. ` });
 		const action = fragment.createEl('a', { text: 'Offload it to storage', href: '#' });
 		const notice = new Notice(fragment, 0);
