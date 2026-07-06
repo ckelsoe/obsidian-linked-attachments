@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import * as nodePath from 'path';
+import * as os from 'os';
 import {
 	BackendError,
 	Capabilities,
@@ -305,6 +306,29 @@ export class LocalBackend implements StorageBackend {
 			}
 		}
 	}
+}
+
+// Expand environment variables in a user-entered root and resolve it to an
+// absolute path, so one pointer resolves the same folder on machines with different
+// user profiles (spec: %OneDriveCommercial%, $HOME). Supports %VAR% (Windows),
+// $VAR / ${VAR} (POSIX), and a leading ~ for the home dir. Returns '' for a
+// blank input, which the caller reads as "no local root configured".
+export function resolveLocalRoot(raw: string): string {
+	const trimmed = raw.trim();
+	if (trimmed.length === 0) {
+		return '';
+	}
+	return nodePath.resolve(expandEnv(trimmed));
+}
+
+function expandEnv(input: string): string {
+	let out = input.replace(/%([^%]+)%/g, (whole: string, name: string) => process.env[name] ?? whole);
+	out = out.replace(/\$\{([^}]+)\}/g, (whole: string, name: string) => process.env[name] ?? whole);
+	out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole: string, name: string) => process.env[name] ?? whole);
+	if (out === '~' || out.startsWith('~/') || out.startsWith('~\\')) {
+		out = os.homedir() + out.slice(1);
+	}
+	return out;
 }
 
 // Best-effort fsync of a directory so a freshly created/renamed entry is durable,

@@ -46,7 +46,7 @@ describe('planOffload', () => {
 		const backend = new MemoryBackend();
 		let committed = '';
 		const deps: OffloadDeps = {
-			backend,
+			targets: [{ backend, toRef: (key) => ({ type: 's3', bucket: 'my-bucket', key, keyKind: 'hash' }) }],
 			bucket: 'my-bucket',
 			vaultPrefix: 'charles-main',
 			writePointer: (_path, content) => { committed = content; return Promise.resolve(); },

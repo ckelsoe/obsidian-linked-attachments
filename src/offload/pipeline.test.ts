@@ -9,7 +9,8 @@ import { MemoryBackend } from '../storage/memory-backend';
 import { StorageBackend } from '../storage/backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { sha256Base64 } from '../hash/sha256';
-import { requireS3Backend } from '../pointer/codec';
+import { decodePointer, requireS3Backend } from '../pointer/codec';
+import { ladderVerifier } from './verify';
 
 // Tier 0: the pipeline runs against MemoryBackend with injected vault side
 // effects (writePointer / trashOriginal). No filesystem, no network.
@@ -49,7 +50,7 @@ function makeHarness(backend: StorageBackend, overrides: Partial<OffloadDeps> = 
 	const pointers = new Map<string, string>();
 	const trashed: string[] = [];
 	const deps: OffloadDeps = {
-		backend: logged(backend, events),
+		targets: [{ backend: logged(backend, events), toRef: (key) => ({ type: 's3', bucket: 's3-dev-test', key, keyKind: 'hash' }) }],
 		bucket: 's3-dev-test',
 		vaultPrefix: 'charles-main',
 		writePointer: (pointerPath, content) => {
@@ -242,7 +243,7 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		const pointers = new Map<string, string>();
 		const trashed: string[] = [];
 		const deps: OffloadDeps = {
-			backend: logged(backend, events),
+			targets: [{ backend: logged(backend, events), toRef: (key) => ({ type: 's3', bucket: 's3-dev-test', key, keyKind: 'hash' }) }],
 			bucket: 's3-dev-test',
 			vaultPrefix: 'charles-main',
 			writePointer: (p, c) => {
@@ -392,3 +393,100 @@ async function previewKey(f: OffloadFile, vaultPrefix: string): Promise<{ key: s
 	const hash = await sha256Hex(f.bytes);
 	return { key: layoutHashKey({ vaultPrefix, originalPath: f.path, hash }).key };
 }
+
+describe('paired offload atomicity (local + s3)', () => {
+	// A MemoryBackend shaped like the local backend (no server checksum, local-path
+	// access), so the verify ladder proves it by GET+rehash the same way LocalBackend
+	// is proven, without touching the filesystem in a tier-0 test.
+	function localLike(): MemoryBackend {
+		return new MemoryBackend({ capabilities: { upload: { presign: false, range: true, serverChecksum: false, conditionalWrite: false }, access: 'local-path' } });
+	}
+
+	interface Sink {
+		pointers: Map<string, string>;
+		trashed: string[];
+	}
+
+	function pairedDeps(local: StorageBackend, s3: StorageBackend, sink: Sink): OffloadDeps {
+		return {
+			// local first = preferred read; s3 second = durable fallback.
+			targets: [
+				{ backend: local, toRef: (key) => ({ type: 'local', path: key }) },
+				{ backend: s3, toRef: (key) => ({ type: 's3', bucket: 's3-dev-test', key, keyKind: 'hash' }) },
+			],
+			bucket: 's3-dev-test',
+			vaultPrefix: 'charles-main',
+			writePointer: (p, c) => {
+				sink.pointers.set(p, c);
+				return Promise.resolve();
+			},
+			trashOriginal: (p) => {
+				sink.trashed.push(p);
+				return Promise.resolve();
+			},
+			newId: () => 'id-paired',
+			now: () => '2026-07-06T00:00:00.000Z',
+			verify: ladderVerifier,
+		};
+	}
+
+	const file: OffloadFile = { path: 'books/x.pdf', bytes: bytesOf('paired payload'), contentType: 'application/pdf' };
+
+	it('writes both backends, records both refs local-first, trashes the original', async () => {
+		const local = localLike();
+		const s3 = new MemoryBackend();
+		const sink: Sink = { pointers: new Map(), trashed: [] };
+		const result = await offloadFile(file, pairedDeps(local, s3, sink));
+
+		expect(result.ok).toBe(true);
+		expect(result.removed).toBe(true);
+		expect(local.objectCount()).toBe(1);
+		expect(s3.objectCount()).toBe(1);
+		expect(sink.trashed).toEqual(['books/x.pdf']);
+		// The pointer records both backends, local first (read-preference order).
+		const committed = [...sink.pointers.values()][0] ?? '';
+		const record = decodePointer(committed).record;
+		expect(record.backends.map((b) => b.type)).toEqual(['local', 's3']);
+	});
+
+	it('rolls back the local copy and keeps the original when the S3 write fails', async () => {
+		const local = localLike();
+		const s3 = new MemoryBackend();
+		// S3 (the second target) fails its upload after the local copy already landed.
+		s3.faults.put = () => {
+			throw new Error('s3 down');
+		};
+		const sink: Sink = { pointers: new Map(), trashed: [] };
+		const result = await offloadFile(file, pairedDeps(local, s3, sink));
+
+		expect(result.ok).toBe(false);
+		// The already-written local copy is rolled back: never a pointer with a
+		// backend that does not hold the bytes.
+		expect(local.objectCount()).toBe(0);
+		expect(s3.objectCount()).toBe(0);
+		// No pointer committed and, crucially, the original was NOT trashed.
+		expect(sink.pointers.size).toBe(0);
+		expect(sink.trashed).toEqual([]);
+	});
+
+	it('rolls back the local copy when the S3 copy verifies as drifted', async () => {
+		const local = localLike();
+		const s3 = new MemoryBackend();
+		const sink: Sink = { pointers: new Map(), trashed: [] };
+		// A verifier that passes the local target but fails the S3 target, modelling an
+		// S3 copy whose bytes do not match (drift) even though the PUT "succeeded".
+		const deps = pairedDeps(local, s3, sink);
+		deps.verify = (backend, key, expectation) =>
+			backend.capabilities.upload.serverChecksum
+				? Promise.resolve({ ok: false, tier: 'existence', remoteChecksum: null, reason: 'drift' })
+				: ladderVerifier(local, key, expectation);
+		const result = await offloadFile(file, deps);
+
+		expect(result.ok).toBe(false);
+		// Local landed and verified, but S3 failed verification, so local is rolled
+		// back: no half-written pointer, and the original is kept.
+		expect(local.objectCount()).toBe(0);
+		expect(sink.pointers.size).toBe(0);
+		expect(sink.trashed).toEqual([]);
+	});
+});

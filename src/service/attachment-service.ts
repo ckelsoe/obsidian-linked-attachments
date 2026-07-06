@@ -3,9 +3,11 @@ import { signRequest } from '../../sigv4';
 import { S3AddressingStyle, CredentialStore } from '../../credentials';
 import { S3ConnectionConfig } from '../../s3-url';
 import { S3Backend } from '../storage/s3-backend';
+import { LocalBackend, resolveLocalRoot } from '../storage/local-backend';
 import { requestUrlTransport } from '../storage/requesturl-transport';
 import { toArrayBuffer } from '../storage/body';
-import { offloadFile, OffloadDeps, OffloadResult } from '../offload/pipeline';
+import { StorageMode } from '../../settings';
+import { offloadFile, OffloadDeps, OffloadResult, OffloadTarget } from '../offload/pipeline';
 import { planOffload, OffloadPlan } from '../offload/plan';
 import { ladderVerifier } from '../offload/verify';
 import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
@@ -37,6 +39,8 @@ export interface AttachmentServiceConfig {
 	bucket: string;
 	addressingStyle: S3AddressingStyle;
 	vaultPrefix?: string;
+	storageMode: StorageMode;
+	localRoot: string;
 }
 
 export interface RestoreResult {
@@ -240,7 +244,7 @@ export class AttachmentService {
 		// the original, so the rewrite can run against a stable backlink set.
 		const embeddingNotes = this.notesLinking(file.path);
 		const deps: OffloadDeps = {
-			backend: this.backend(config),
+			targets: this.offloadTargets(config),
 			bucket: config.bucket,
 			vaultPrefix: this.resolveVaultPrefix(config),
 			writePointer: (path, content) => this.writePointer(path, content),
@@ -248,9 +252,11 @@ export class AttachmentService {
 			newId: () => generateId(),
 			now: () => new Date().toISOString(),
 			verify: ladderVerifier,
-			// Link to an object already in storage instead of uploading a duplicate
-			// (spec section 10). The pipeline still verifies it before trashing.
-			findExistingByHash: (hash) => Promise.resolve(lookupByHash(index, hash)),
+			// Content-dedup links to an existing S3 object instead of uploading a
+			// duplicate (spec section 10). It is an S3-side optimization, so it applies
+			// only when S3 is the sole destination; paired/local offloads always write
+			// the local copy fresh. The pipeline still verifies before trashing.
+			findExistingByHash: config.storageMode === 's3-only' ? (hash) => Promise.resolve(lookupByHash(index, hash)) : undefined,
 		};
 		const result = await offloadFile({ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) }, deps);
 		// Keep the live index current so a later identical file (same batch) dedups.
@@ -578,6 +584,35 @@ export class AttachmentService {
 			addressingStyle: config.addressingStyle,
 		};
 		return new S3Backend({ config: s3Config, getCredentials: () => this.credentials.getCredentials(), transport: requestUrlTransport });
+	}
+
+	// The offload destinations for the active storage mode, in read-preference order
+	// (first = preferred read). local-s3 lists the local copy first so a paired
+	// object reads from disk, with S3 as the durable off-machine fallback.
+	private offloadTargets(config: AttachmentServiceConfig): OffloadTarget[] {
+		const s3Target: OffloadTarget = {
+			backend: this.backend(config),
+			toRef: (key) => ({ type: 's3', bucket: config.bucket, key, keyKind: 'hash' }),
+		};
+		if (config.storageMode === 's3-only') {
+			return [s3Target];
+		}
+		const localTarget: OffloadTarget = {
+			backend: this.localBackend(config),
+			// The local path is the object key (the layout already mirrors the vault
+			// path); the pointer stores it root-relative so it resolves against the
+			// configured root on any machine.
+			toRef: (key) => ({ type: 'local', path: key }),
+		};
+		return config.storageMode === 'local-only' ? [localTarget] : [localTarget, s3Target];
+	}
+
+	private localBackend(config: AttachmentServiceConfig): LocalBackend {
+		const root = resolveLocalRoot(config.localRoot);
+		if (root.length === 0) {
+			throw new Error('local storage mode needs a local root path (set it in settings)');
+		}
+		return new LocalBackend(root);
 	}
 
 	private async writePointer(path: string, content: string): Promise<void> {

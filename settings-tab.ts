@@ -21,6 +21,30 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		return [
 			{
 				type: 'group',
+				heading: 'Storage',
+				items: [
+					{
+						name: 'Storage mode',
+						desc: 'Where offloaded files are written. S3 only uses your bucket. Local only moves files to a folder outside the vault (a synced OneDrive, Dropbox, or NAS path). Local and S3 writes both, reading from the local copy and keeping S3 as an off-machine backup.',
+						control: {
+							type: 'dropdown',
+							key: 'storageMode',
+							options: {
+								's3-only': 'S3 only',
+								'local-only': 'Local only',
+								'local-s3': 'Local and S3 (paired)',
+							},
+						},
+					},
+					{
+						name: 'Local folder',
+						desc: 'Absolute path to the offload folder, used by the local and paired modes. Environment variables are expanded (%OneDriveCommercial%, $HOME) so one setting resolves the right folder on each machine. Offloaded files mirror their vault path under here.',
+						control: { type: 'text', key: 'localRoot', placeholder: '%OneDriveCommercial%\\Vault attachments' },
+					},
+				],
+			},
+			{
+				type: 'group',
 				heading: 'Connection',
 				items: [
 					{

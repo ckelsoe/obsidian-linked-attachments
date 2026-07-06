@@ -67,6 +67,8 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			region: this.settings.region,
 			bucket: this.settings.bucket,
 			addressingStyle: this.settings.addressingStyle,
+			storageMode: this.settings.storageMode,
+			localRoot: this.settings.localRoot,
 		}));
 
 		// Offload the active file (an attachment opened in a tab) to storage.
@@ -368,7 +370,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				triggerMode: this.settings.autoOffloadTriggerMode,
 				idleMinutes: this.settings.autoOffloadIdleMinutes,
 			}),
-			isReady: () => this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials(),
+			isReady: () => this.storageConfigured(),
 			offloadNow: (file) => this.executeOffload(file),
 			onError: (error) => this.logger.error('Auto-offload threw.', { error: describeError(error) }),
 		});
@@ -675,6 +677,21 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	// Run the verified upload, then the local original goes to system trash
 	// (recoverable). Never removes a file without a verified cloud copy.
+	// Whether the active storage mode is fully configured: S3 modes need endpoint +
+	// bucket + credentials; local-only needs a local root; paired needs both.
+	private storageConfigured(): boolean {
+		const s3Ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+		const localReady = this.settings.localRoot.trim().length > 0;
+		switch (this.settings.storageMode) {
+			case 'local-only':
+				return localReady;
+			case 'local-s3':
+				return s3Ready && localReady;
+			default:
+				return s3Ready;
+		}
+	}
+
 	private async executeOffload(file: TFile): Promise<void> {
 		new Notice(`Offloading ${file.name}...`);
 		this.logger.info('Offload started.', { path: file.path });

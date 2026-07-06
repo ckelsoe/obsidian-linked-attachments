@@ -1,4 +1,4 @@
-import { encodePointer, LA_VERSION, PointerRecord, VerificationTier } from '../pointer/codec';
+import { BackendRef, encodePointer, LA_VERSION, PointerRecord, VerificationTier } from '../pointer/codec';
 import { sha256Base64 } from '../hash/sha256';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { StorageBackend } from '../storage/backend';
@@ -45,8 +45,22 @@ export interface VerifyOutcome {
 
 export type Verifier = (backend: StorageBackend, key: string, expectation: VerifyExpectation) => Promise<VerifyOutcome>;
 
-export interface OffloadDeps {
+// One destination an offload writes to, plus how it is recorded on the pointer.
+// The same object key addresses every backend (the key layout is backend-neutral),
+// so a target only needs to say how to turn that key into its BackendRef.
+export interface OffloadTarget {
 	backend: StorageBackend;
+	toRef: (key: string) => BackendRef;
+}
+
+export interface OffloadDeps {
+	// Every backend to write to, in read-preference order (first = preferred read).
+	// Paired offload writes them all as one transaction: on any partial failure the
+	// already-written copies are deleted so the local original is never trashed
+	// against an incomplete backend set (never a pointer with a backend that does
+	// not hold the bytes - spec section 3 / 10 atomicity).
+	targets: OffloadTarget[];
+	// Labels the plan/preview only; each target's toRef carries its own address.
 	bucket: string;
 	vaultPrefix: string;
 	writePointer: (pointerPath: string, content: string) => Promise<void>;
@@ -125,7 +139,7 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 		laVersion: LA_VERSION,
 		id: deps.newId(),
 		hash,
-		backends: [{ type: 's3', bucket: deps.bucket, key, keyKind: plan.keyKind }],
+		backends: deps.targets.map((target) => target.toRef(key)),
 		originalName: plan.originalName,
 		originalExt: plan.originalExt,
 		originalPath: file.path,
@@ -142,37 +156,48 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 		supersedes: null,
 	};
 
-	// Upload. A failure here is the cleanest rollback: no pointer, original intact.
-	try {
-		await deps.backend.put(key, file.bytes, file.bytes.length, {
-			checksumSha256: checksumBase64,
-			contentType: file.contentType,
-			metadata: {
-				[OBJECT_METADATA_KEYS.sha256]: hash,
-				[OBJECT_METADATA_KEYS.id]: record.id,
-				[OBJECT_METADATA_KEYS.originalPath]: file.path,
-				[OBJECT_METADATA_KEYS.originalName]: plan.originalName,
-				[OBJECT_METADATA_KEYS.byteSize]: String(file.bytes.length),
-				[OBJECT_METADATA_KEYS.contentType]: file.contentType,
-			},
-		});
-	} catch (error) {
-		return failure('staged', record, pointerPath, `upload failed: ${describe(error)}`);
-	}
+	const metadata = {
+		[OBJECT_METADATA_KEYS.sha256]: hash,
+		[OBJECT_METADATA_KEYS.id]: record.id,
+		[OBJECT_METADATA_KEYS.originalPath]: file.path,
+		[OBJECT_METADATA_KEYS.originalName]: plan.originalName,
+		[OBJECT_METADATA_KEYS.byteSize]: String(file.bytes.length),
+		[OBJECT_METADATA_KEYS.contentType]: file.contentType,
+	};
 
-	// Verify. A throw here is dead creds / network: we cannot prove the bytes, so
-	// the original is kept untouched (no HEAD -> no delete).
-	let outcome: VerifyOutcome;
-	try {
-		outcome = await verify(deps.backend, key, { hash, checksumBase64, size: file.bytes.length });
-	} catch (error) {
-		return failure('uploaded', record, pointerPath, `verify failed: ${describe(error)}`);
+	// Write to every target and verify each, as one transaction. A failure at any
+	// target rolls back the copies already written (delete-best-effort) and keeps
+	// the local original, so the user is never left with a pointer whose backend set
+	// is incomplete. The recorded tier is the WEAKEST any target achieved, so the
+	// delete gate is only cleared when every copy is genuinely verified.
+	const written: OffloadTarget[] = [];
+	let worstTier: VerificationTier = 'content';
+	let remoteChecksum: string | null = null;
+	for (const target of deps.targets) {
+		try {
+			await target.backend.put(key, file.bytes, file.bytes.length, { checksumSha256: checksumBase64, contentType: file.contentType, metadata });
+		} catch (error) {
+			await rollback(written, key);
+			return failure('staged', record, pointerPath, `upload failed: ${describe(error)}`);
+		}
+		let outcome: VerifyOutcome;
+		try {
+			outcome = await verify(target.backend, key, { hash, checksumBase64, size: file.bytes.length });
+		} catch (error) {
+			// This target's PUT landed but could not be verified; roll it back too.
+			await rollback([...written, target], key);
+			return failure('uploaded', record, pointerPath, `verify failed: ${describe(error)}`);
+		}
+		if (!outcome.ok) {
+			await rollback([...written, target], key);
+			return failure('uploaded', record, pointerPath, outcome.reason ?? 'verification failed');
+		}
+		written.push(target);
+		worstTier = weakerTier(worstTier, outcome.tier);
+		remoteChecksum = remoteChecksum ?? outcome.remoteChecksum;
 	}
-	if (!outcome.ok) {
-		return failure('uploaded', record, pointerPath, outcome.reason ?? 'verification failed');
-	}
-	record.verificationTier = outcome.tier;
-	record.remoteChecksum = outcome.remoteChecksum;
+	record.verificationTier = worstTier;
+	record.remoteChecksum = remoteChecksum;
 
 	// Commit the pointer. A failure here keeps the original: the bytes are safely
 	// in the bucket, so no data is lost; the space is simply not reclaimed yet.
@@ -211,9 +236,16 @@ async function tryDedup(
 	verify: Verifier,
 	canRemove: (tier: VerificationTier) => boolean,
 ): Promise<OffloadResult | null> {
+	// Dedup targets an existing S3 object, so it only runs when S3 is the offload
+	// destination (the service supplies findExistingByHash for S3-only mode alone);
+	// targets[0] is that S3 backend.
+	const s3Backend = deps.targets[0]?.backend;
+	if (s3Backend === undefined) {
+		return null;
+	}
 	let outcome: VerifyOutcome;
 	try {
-		outcome = await verify(deps.backend, existing.key, { hash: plan.hash, checksumBase64, size: plan.byteSize });
+		outcome = await verify(s3Backend, existing.key, { hash: plan.hash, checksumBase64, size: plan.byteSize });
 	} catch {
 		return null; // cannot reach / confirm the existing object -> upload normally
 	}
@@ -256,6 +288,28 @@ async function tryDedup(
 		return { ok: true, reachedStage: 'committed', removed: false, record, pointerPath: plan.pointerPath, error: `original not trashed: ${describe(error)}`, deduped: true };
 	}
 	return { ok: true, reachedStage: 'removed', removed: true, record, pointerPath: plan.pointerPath, error: null, deduped: true };
+}
+
+// Best-effort rollback of the copies already written in a paired offload. A delete
+// that itself fails is swallowed: the local original is kept regardless (no pointer
+// was committed), so a lingering orphan copy is a cost concern, never data loss, and
+// the reconcile scan surfaces it later.
+async function rollback(written: OffloadTarget[], key: string): Promise<void> {
+	for (const target of written) {
+		try {
+			await target.backend.delete(key);
+		} catch {
+			// Ignore; the original is untouched and the orphan is reconcilable.
+		}
+	}
+}
+
+const TIER_ORDER: Record<VerificationTier, number> = { asserted: 0, existence: 1, md5: 2, content: 3 };
+
+// The weaker of two tiers, so a paired pointer records the LEAST it proved across
+// all copies (the delete gate must see every copy verified, not just the strongest).
+function weakerTier(a: VerificationTier, b: VerificationTier): VerificationTier {
+	return TIER_ORDER[a] <= TIER_ORDER[b] ? a : b;
 }
 
 function failure(reachedStage: OffloadStage, record: PointerRecord, pointerPath: string, error: string): OffloadResult {
