@@ -1,4 +1,5 @@
-import { Notice, Platform, Plugin, TFile } from 'obsidian';
+import { Notice, ObsidianProtocolData, Platform, Plugin, TFile } from 'obsidian';
+import { shell } from 'electron';
 import {
 	LinkedAttachmentsSettings,
 	DEFAULT_SETTINGS,
@@ -21,7 +22,7 @@ import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
 import { formatPointerReference } from './src/ui/pointer-reference';
-import { decodePointer } from './src/pointer/codec';
+import { decodePointer, PointerRecord } from './src/pointer/codec';
 import { dirtyColor, dirtyLabel } from './src/checkout/checkout-state';
 import { ConfirmModal } from './src/ui/confirm-modal';
 
@@ -299,6 +300,13 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 		// Right-click affordances: "Offload to storage" on a normal file, and
 		// "Restore from storage" on a pointer note (detected by its la_* frontmatter).
+		// The pointer's managed-block "Open" link is an obsidian://linked-attachments
+		// URI; register the handler so it actually opens the attachment (this was
+		// never registered before, so the link was inert).
+		this.registerObsidianProtocolHandler('linked-attachments', (params: ObsidianProtocolData) => {
+			void this.handleOpenProtocol(params);
+		});
+
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (!(file instanceof TFile)) {
@@ -334,6 +342,26 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 									void this.copyPointerReference(file);
 								});
 						});
+						// Open / reveal the local copy directly (desktop; the local copy
+						// lives outside the vault, so this uses the OS shell).
+						if (Platform.isDesktop) {
+							menu.addItem((item) => {
+								item
+									.setTitle('Open in default app')
+									.setIcon('external-link')
+									.onClick(() => {
+										void this.openAttachment(file);
+									});
+							});
+							menu.addItem((item) => {
+								item
+									.setTitle('Reveal local copy in file explorer')
+									.setIcon('folder-open')
+									.onClick(() => {
+										void this.revealLocalCopy(file);
+									});
+							});
+						}
 						// Checkout/check-in cycle (spec section 4a), desktop-only.
 						if (Platform.isDesktop) {
 							if (frontmatter['la_copy_state'] === 'checked-out') {
@@ -706,6 +734,71 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	// Run the verified upload, then the local original goes to system trash
 	// (recoverable). Never removes a file without a verified cloud copy.
+	// The obsidian://linked-attachments?action=open&id=... handler for the managed
+	// block's Open link: find the pointer by id and open its local copy.
+	private async handleOpenProtocol(params: ObsidianProtocolData): Promise<void> {
+		if (params.action !== 'open' || typeof params.id !== 'string' || params.id.length === 0) {
+			return;
+		}
+		const record = await this.attachments.findRecordById(params.id);
+		if (record === null) {
+			new Notice('Could not find that linked attachment in this vault.');
+			return;
+		}
+		await this.openRecord(record);
+	}
+
+	private async openAttachment(file: TFile): Promise<void> {
+		const record = await this.readPointer(file);
+		if (record !== null) {
+			await this.openRecord(record);
+		}
+	}
+
+	// Open the local copy in its default app. It lives outside the vault, so this
+	// uses the OS shell (openPath) rather than Obsidian's in-vault openWithDefaultApp.
+	private async openRecord(record: PointerRecord): Promise<void> {
+		const absolutePath = this.attachments.localAbsolutePath(record);
+		if (absolutePath === null) {
+			new Notice('No local copy to open. Restore it, or copy the storage reference to open the S3 copy in your S3 app.');
+			return;
+		}
+		try {
+			const error = await shell.openPath(absolutePath);
+			if (error.length > 0) {
+				new Notice(`Could not open the file: ${error}`);
+			}
+		} catch (error) {
+			new Notice(`Could not open the file: ${describeError(error)}`);
+		}
+	}
+
+	private async revealLocalCopy(file: TFile): Promise<void> {
+		const record = await this.readPointer(file);
+		if (record === null) {
+			return;
+		}
+		const absolutePath = this.attachments.localAbsolutePath(record);
+		if (absolutePath === null) {
+			new Notice('This pointer has no local copy to reveal.');
+			return;
+		}
+		try {
+			shell.showItemInFolder(absolutePath);
+		} catch (error) {
+			new Notice(`Could not reveal the file: ${describeError(error)}`);
+		}
+	}
+
+	private async readPointer(file: TFile): Promise<PointerRecord | null> {
+		try {
+			return decodePointer(await this.app.vault.read(file)).record;
+		} catch {
+			new Notice('Not a pointer note.');
+			return null;
+		}
+	}
+
 	// A setup hint matched to the active storage mode, so a local-only user is not
 	// told to configure S3 (and vice versa).
 	private storageSetupHint(): string {

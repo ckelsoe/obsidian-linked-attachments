@@ -20,7 +20,7 @@ import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offl
 import { CheckoutManager, CheckoutDeps, CheckoutResult, CheckinResult } from '../checkout/checkout-manager';
 import { dirtyState, DirtyState, readCheckoutBase, workingCopyPath } from '../checkout/checkout-state';
 import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
-import { BackendRef, BackendType, decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
+import { BackendRef, BackendType, decodePointer, encodePointer, localBackend, PointerRecord } from '../pointer/codec';
 import { StorageBackend } from '../storage/backend';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
@@ -630,6 +630,36 @@ export class AttachmentService {
 			throw new Error('local storage mode needs a local root path (set it in settings)');
 		}
 		return new LocalBackend(root);
+	}
+
+	// The absolute filesystem path of a pointer's local copy, or null if it has no
+	// local backend or no local root is configured. Used to open/reveal the copy,
+	// which lives outside the vault.
+	localAbsolutePath(record: PointerRecord): string | null {
+		const local = localBackend(record);
+		if (local === null) {
+			return null;
+		}
+		const root = resolveLocalRoot(this.getConfig().localRoot);
+		if (root.length === 0) {
+			return null;
+		}
+		return new LocalBackend(root).displayKey(local.path);
+	}
+
+	// Find a pointer record by its id (the protocol handler only carries the id).
+	async findRecordById(id: string): Promise<PointerRecord | null> {
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			try {
+				const record = decodePointer(await this.app.vault.read(file)).record;
+				if (record.id === id) {
+					return record;
+				}
+			} catch {
+				// not a pointer note
+			}
+		}
+		return null;
 	}
 
 	// Resolve one pointer BackendRef to the StorageBackend and key that read it.

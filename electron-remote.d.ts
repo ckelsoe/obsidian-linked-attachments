@@ -3,6 +3,17 @@
 // file has no imports/exports on purpose: a global (script) declaration file so the
 // ambient module is visible to a dynamic import() without an entry in node_modules.
 // Only the tiny slice used for the local-folder picker is declared. Desktop-only.
+// The Electron shell, used to open/reveal a local copy that lives OUTSIDE the
+// vault (Obsidian's openWithDefaultApp only handles in-vault paths). External and
+// provided by the desktop runtime; only the two calls used are declared.
+declare module 'electron' {
+	export const shell: {
+		// Resolves to '' on success or an error string; never rejects.
+		openPath(path: string): Promise<string>;
+		showItemInFolder(fullPath: string): void;
+	};
+}
+
 declare module '@electron/remote' {
 	interface OpenDialogOptions {
 		title?: string;
