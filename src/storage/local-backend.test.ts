@@ -247,6 +247,17 @@ describe('LocalBackend safety', () => {
 		expect((await backend.head('a/b.bin')).size).toBe(body.length);
 	});
 
+	// on Windows, a key that resolves past the 260-char MAX_PATH is refused up front
+	// with a clear error, so the offload fails cleanly (original kept) instead of a
+	// cryptic fs failure. Skipped off Windows, where the limit does not apply.
+	const winIt = process.platform === 'win32' ? it : it.skip;
+	winIt('test_windows_maxpath_rejected', async () => {
+		const { backend } = await makeBackend();
+		const longKey = `${'a'.repeat(230)}.bin`;
+		const body = bytes('x');
+		await expect(backend.put(longKey, body, body.length)).rejects.toBeInstanceOf(BackendError);
+	});
+
 	// a completed put leaves no .la-tmp write-temp behind, and such temps are never
 	// surfaced by list even if one lingers from an interrupted write.
 	it('test_atomic_write_leaves_no_temp', async () => {

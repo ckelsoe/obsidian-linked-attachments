@@ -52,6 +52,10 @@ const CAPABILITIES: Capabilities = {
 	access: 'local-path',
 };
 
+// Windows MAX_PATH: a normal (non-`\\?\`) path is limited to 260 characters
+// including the terminator, so 260+ fails unless long-path support is enabled.
+const WINDOWS_MAX_PATH = 260;
+
 interface WalkedObject {
 	size: number;
 	etag: string;
@@ -163,6 +167,14 @@ export class LocalBackend implements StorageBackend {
 		const rootWithSep = this.root.endsWith(nodePath.sep) ? this.root : this.root + nodePath.sep;
 		if (resolved !== this.root && !resolved.startsWith(rootWithSep)) {
 			throw new BackendError('network', `key resolves outside the local root: ${key}`);
+		}
+		// Windows caps a normal path at 260 chars (MAX_PATH). Refuse a too-long path up
+		// front with an actionable message instead of letting the fs call fail with a
+		// cryptic ENOENT/ENAMETOOLONG mid-offload; the offload then rolls back and the
+		// vault original is kept (no data loss). A shorter local root or vault path, or
+		// enabling long-path support, resolves it.
+		if (process.platform === 'win32' && resolved.length >= WINDOWS_MAX_PATH) {
+			throw new BackendError('network', `local path exceeds the Windows ${WINDOWS_MAX_PATH}-character limit (${resolved.length} chars); shorten the local root or the vault path: ${resolved}`);
 		}
 		return resolved;
 	}
