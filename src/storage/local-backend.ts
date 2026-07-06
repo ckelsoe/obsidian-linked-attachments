@@ -192,7 +192,9 @@ export class LocalBackend implements StorageBackend {
 		try {
 			const handle = await fs.open(tmpPath, 'w');
 			try {
-				await handle.write(bytes);
+				// writeFile writes the WHOLE buffer (looping over any short writes);
+				// a bare handle.write() may persist a truncated file on a short write.
+				await handle.writeFile(bytes);
 				await handle.sync();
 			} finally {
 				await handle.close();
