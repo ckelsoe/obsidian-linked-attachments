@@ -120,8 +120,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'resume-interrupted-offload',
 			name: 'Resume an interrupted offload',
 			checkCallback: (checking: boolean): boolean => {
-				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
-				if (!ready) {
+				if (!this.storageConfigured()) {
 					return false;
 				}
 				if (!checking) {
@@ -138,8 +137,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'scan-vault-and-offload-by-type',
 			name: 'Scan vault and offload by file type',
 			checkCallback: (checking: boolean): boolean => {
-				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
-				if (!ready) {
+				if (!this.storageConfigured()) {
 					return false;
 				}
 				if (!checking) {
@@ -605,12 +603,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	// Open the batch dry-run preview + progress modal for a multi-file selection.
 	private runBatchOffload(files: TFile[]): void {
-		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
-			new Notice('Set the endpoint and bucket in settings first.');
-			return;
-		}
-		if (!this.credentials.hasCompleteCredentials()) {
-			new Notice('Add your storage credentials in settings first.');
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		new BatchOffloadModal(this.app, this.attachments, files, (error) => {
@@ -625,7 +618,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// future add would. It reuses the batch dry-run preview + progress modal, so the
 	// user sees every file and the total and nothing moves until they confirm.
 	runVaultSweep(): void {
-		if (!this.requireStorageReady()) {
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		const byPath = new Map<string, TFile>();
@@ -697,12 +690,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// moves until the user confirms. Guarded so a failure computing the preview is a
 	// notice + a logged error, never an unhandled rejection.
 	private async runOffload(file: TFile): Promise<void> {
-		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
-			new Notice('Set the endpoint and bucket in settings first.');
-			return;
-		}
-		if (!this.credentials.hasCompleteCredentials()) {
-			new Notice('Add your storage credentials in settings first.');
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		try {
@@ -718,6 +706,29 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	// Run the verified upload, then the local original goes to system trash
 	// (recoverable). Never removes a file without a verified cloud copy.
+	// A setup hint matched to the active storage mode, so a local-only user is not
+	// told to configure S3 (and vice versa).
+	private storageSetupHint(): string {
+		switch (this.settings.storageMode) {
+			case 'local-only':
+				return 'Set the local folder in settings first.';
+			case 'local-s3':
+				return 'Set the local folder and your S3 endpoint, bucket, and credentials in settings first.';
+			default:
+				return 'Set your S3 endpoint, bucket, and credentials in settings first.';
+		}
+	}
+
+	// The offload/restore readiness gate, mode-aware (unlike requireStorageReady,
+	// which stays S3-only for the S3-only checkout/check-in cycle).
+	private requireStorageForOffload(): boolean {
+		if (this.storageConfigured()) {
+			return true;
+		}
+		new Notice(this.storageSetupHint());
+		return false;
+	}
+
 	// Whether the active storage mode is fully configured: S3 modes need endpoint +
 	// bucket + credentials; local-only needs a local root; paired needs both.
 	private storageConfigured(): boolean {
@@ -790,12 +801,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// Restore a pointer note: download, verify the bytes against the recorded hash,
 	// write the file back, and remove the pointer. Guarded.
 	private async runRestore(pointer: TFile): Promise<void> {
-		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
-			new Notice('Set the endpoint and bucket in settings first.');
-			return;
-		}
-		if (!this.credentials.hasCompleteCredentials()) {
-			new Notice('Add your storage credentials in settings first.');
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		new Notice(`Restoring from ${pointer.name}...`);
