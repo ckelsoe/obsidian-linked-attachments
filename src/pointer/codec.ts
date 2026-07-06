@@ -175,7 +175,10 @@ export function preferredBackend(record: PointerRecord): BackendRef {
 
 export function encodePointer(record: PointerRecord, body: string, extraFrontmatter?: Record<string, unknown>): string {
 	const frontmatter: Record<string, unknown> = {
-		[FRONTMATTER_KEYS.laVersion]: record.laVersion,
+		// Always stamp the current version: encode emits the v2 la_backends shape, so a
+		// re-encoded v1 pointer must be labelled v2, never left saying la_version: 1
+		// while carrying v2 frontmatter.
+		[FRONTMATTER_KEYS.laVersion]: LA_VERSION,
 		[FRONTMATTER_KEYS.id]: record.id,
 		[FRONTMATTER_KEYS.hash]: record.hash,
 		[FRONTMATTER_KEYS.backends]: record.backends.map(backendToYaml),

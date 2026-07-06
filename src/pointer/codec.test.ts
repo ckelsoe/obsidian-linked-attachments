@@ -1,5 +1,6 @@
 import fc from 'fast-check';
 import {
+	LA_VERSION,
 	PointerRecord,
 	PointerParseError,
 	encodePointer,
@@ -16,7 +17,7 @@ import { MANAGED_END, MANAGED_START } from './managed-block';
 // nullable ones set to non-null so the round-trip covers them.
 function fullRecord(): PointerRecord {
 	return {
-		laVersion: 1,
+		laVersion: LA_VERSION,
 		id: '01J9Z0K3QECRANFIELD',
 		hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
 		backends: [
@@ -245,6 +246,15 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 		expect(text).toContain('la_backends');
 		expect(text).not.toContain('la_bucket:');
 		expect(text).not.toContain('la_key:');
+	});
+
+	// encode always stamps the current version, even when the in-memory record was
+	// decoded from a v1 pointer, so a re-encoded pointer is never labelled v1 while
+	// carrying the v2 la_backends shape.
+	it('test_encode_stamps_current_version_even_from_v1_record', () => {
+		const text = encodePointer({ ...fullRecord(), laVersion: 1 }, USER_BODY);
+		expect(text).toContain('la_version: 2');
+		expect(text).not.toContain('la_version: 1');
 	});
 });
 

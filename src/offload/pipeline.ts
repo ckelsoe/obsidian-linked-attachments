@@ -115,6 +115,14 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	const verify = deps.verify ?? checksumVerifier;
 	const canRemove = deps.canRemoveOriginal ?? defaultCanRemoveOriginal;
 
+	// Defensive: with no targets the write/verify loop would be skipped, the tier
+	// would default to `content`, and the delete gate would trash the original
+	// against a pointer that has zero backends. Never do that - fail before any side
+	// effect so the original is untouched.
+	if (deps.targets.length === 0) {
+		return { ok: false, reachedStage: 'staged', removed: false, record: null, pointerPath: null, error: 'no storage targets configured', deduped: false };
+	}
+
 	// The preview module is the single source of the key/pointerPath/hash
 	// derivation, so the committed pointer matches what a dry-run showed.
 	const plan = await planOffload(file, { vaultPrefix: deps.vaultPrefix, bucket: deps.bucket });

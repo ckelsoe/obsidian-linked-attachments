@@ -469,6 +469,15 @@ describe('paired offload atomicity (local + s3)', () => {
 		expect(sink.trashed).toEqual([]);
 	});
 
+	it('refuses an empty target list without committing a pointer or trashing the original', async () => {
+		const sink: Sink = { pointers: new Map(), trashed: [] };
+		const deps: OffloadDeps = { ...pairedDeps(localLike(), new MemoryBackend(), sink), targets: [] };
+		const result = await offloadFile(file, deps);
+		expect(result.ok).toBe(false);
+		expect(sink.pointers.size).toBe(0);
+		expect(sink.trashed).toEqual([]);
+	});
+
 	it('rolls back the local copy when the S3 copy verifies as drifted', async () => {
 		const local = localLike();
 		const s3 = new MemoryBackend();

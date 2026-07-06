@@ -654,8 +654,16 @@ export class AttachmentService {
 			try {
 				const { backend, key } = this.backendForRef(ref, config);
 				const bytes = new Uint8Array(await (await backend.get(key)).arrayBuffer());
-				if (record.hash !== null && (await sha256Hex(bytes)) !== record.hash) {
-					reasons.push(`${ref.type}: bytes do not match the recorded hash`);
+				if (record.hash !== null) {
+					if ((await sha256Hex(bytes)) !== record.hash) {
+						reasons.push(`${ref.type}: bytes do not match the recorded hash`);
+						continue;
+					}
+				} else if (record.byteSize > 0 && bytes.length !== record.byteSize) {
+					// No content hash (an adopted/external object): fall back on a size
+					// mismatch so a cloud-only placeholder or a truncated copy is not
+					// served as if it were the file, and a good backup is still tried.
+					reasons.push(`${ref.type}: size ${bytes.length} does not match the recorded ${record.byteSize}`);
 					continue;
 				}
 				return { ok: true, bytes };
@@ -730,8 +738,15 @@ export class AttachmentService {
 			try {
 				const { backend: srcBackend, key: sharedKey } = this.backendForRef(source, config);
 				const bytes = new Uint8Array(await (await srcBackend.get(sharedKey)).arrayBuffer());
-				if (record.hash !== null && (await sha256Hex(bytes)) !== record.hash) {
-					result.failed++; // source drifted - do not mirror bad bytes
+				if (record.hash !== null) {
+					if ((await sha256Hex(bytes)) !== record.hash) {
+						result.failed++; // source drifted - do not mirror bad bytes
+						continue;
+					}
+				} else if (record.byteSize > 0 && bytes.length !== record.byteSize) {
+					// No content hash (adopted/external): a size mismatch means the source
+					// is a placeholder or truncated, so do not propagate it to a new mirror.
+					result.failed++;
 					continue;
 				}
 				// The object key is shared across backends (one layout), so the mirror
