@@ -149,6 +149,47 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			},
 		});
 
+		// Read-only integrity scan: confirm every pointer's backends still hold their
+		// object (S3 HEAD / local stat), reporting the ones that do not.
+		this.addCommand({
+			id: 'check-backend-integrity',
+			name: 'Check backend integrity',
+			callback: () => {
+				void this.runIntegrityCheck();
+			},
+		});
+
+		// Migration: give every S3-only pointer a local copy too (upgrade to paired).
+		this.addCommand({
+			id: 'add-local-mirror',
+			name: 'Add a local mirror to existing pointers',
+			checkCallback: (checking: boolean): boolean => {
+				if (this.settings.localRoot.trim().length === 0) {
+					return false;
+				}
+				if (!checking) {
+					void this.runAddMirror('local');
+				}
+				return true;
+			},
+		});
+
+		// Migration: give every local-only pointer an S3 backup too.
+		this.addCommand({
+			id: 'add-s3-mirror',
+			name: 'Add an S3 mirror to existing pointers',
+			checkCallback: (checking: boolean): boolean => {
+				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+				if (!ready) {
+					return false;
+				}
+				if (!checking) {
+					void this.runAddMirror('s3');
+				}
+				return true;
+			},
+		});
+
 		// Reconcile: diff the vault's pointers against the bucket (the four outcomes).
 		this.addCommand({
 			id: 'reconcile-with-storage',
@@ -689,6 +730,40 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				return s3Ready && localReady;
 			default:
 				return s3Ready;
+		}
+	}
+
+	private async runIntegrityCheck(): Promise<void> {
+		new Notice('Checking backend integrity...');
+		try {
+			const findings = await this.attachments.checkBackendIntegrity();
+			if (findings.length === 0) {
+				new Notice('All pointers healthy: every backend holds its object.');
+				return;
+			}
+			new Notice(`${findings.length} pointer(s) have a missing backend. See the activity log for details.`);
+			for (const finding of findings) {
+				this.logger.warn('Backend integrity: missing backend.', {
+					pointer: finding.pointerPath,
+					name: finding.name,
+					broken: finding.broken.join(', '),
+					backends: finding.totalBackends,
+				});
+			}
+		} catch (error) {
+			new Notice(`Integrity check failed: ${describeError(error)}`);
+		}
+	}
+
+	private async runAddMirror(target: 'local' | 's3'): Promise<void> {
+		const label = target === 'local' ? 'local' : 'S3';
+		new Notice(`Adding ${label} mirror to existing pointers...`);
+		try {
+			const result = target === 'local' ? await this.attachments.addLocalMirror() : await this.attachments.addS3Mirror();
+			new Notice(`${label} mirror: ${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`);
+			this.logger.info('Add mirror complete.', { target, added: result.added, skipped: result.skipped, failed: result.failed });
+		} catch (error) {
+			new Notice(`Adding ${label} mirror failed: ${describeError(error)}`);
 		}
 	}
 

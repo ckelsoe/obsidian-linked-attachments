@@ -20,10 +20,11 @@ import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offl
 import { CheckoutManager, CheckoutDeps, CheckoutResult, CheckinResult } from '../checkout/checkout-manager';
 import { dirtyState, DirtyState, readCheckoutBase, workingCopyPath } from '../checkout/checkout-state';
 import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
-import { decodePointer, encodePointer, PointerRecord, requireS3Backend } from '../pointer/codec';
+import { BackendRef, BackendType, decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
+import { StorageBackend } from '../storage/backend';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
-import { sha256Hex } from '../hash/sha256';
+import { sha256Base64, sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
 import { restoreTargetPath } from './restore-path';
 
@@ -47,6 +48,20 @@ export interface RestoreResult {
 	ok: boolean;
 	restoredPath: string | null;
 	error: string | null;
+}
+
+// A pointer with at least one backend that failed its existence check.
+export interface BackendIntegrityFinding {
+	pointerPath: string;
+	name: string;
+	broken: BackendType[];
+	totalBackends: number;
+}
+
+export interface MirrorResult {
+	added: number; // pointers that gained the mirror backend
+	skipped: number; // already had it, or no source backend to copy from
+	failed: number; // source unreadable/drifted, or the mirror write did not verify
 }
 
 export class AttachmentService {
@@ -293,13 +308,15 @@ export class AttachmentService {
 			return { ok: false, restoredPath: null, error: `a file already exists at ${targetPath}; not overwriting` };
 		}
 
-		const got = await this.backend(config).get(requireS3Backend(record).key);
-		const bytes = new Uint8Array(await got.arrayBuffer());
-		// Restore is a verify path too: confirm the bytes hash to the recorded
-		// identity before writing them back (never restore drifted bytes silently).
-		if (record.hash !== null && (await sha256Hex(bytes)) !== record.hash) {
-			return { ok: false, restoredPath: null, error: 'downloaded bytes do not match the recorded hash; not writing' };
+		// Fetch from the pointer's backends in read-preference order (prefer local),
+		// verifying each candidate against the recorded hash and falling back to the
+		// next backend if one is unreachable or drifted. Restore is a verify path too:
+		// never write back bytes that do not match the recorded identity.
+		const fetched = await this.fetchFromBackends(record, config);
+		if (!fetched.ok) {
+			return { ok: false, restoredPath: null, error: fetched.error };
 		}
+		const bytes = fetched.bytes;
 
 		// Capture the notes embedding the pointer before it is removed.
 		const embeddingNotes = this.notesLinking(pointer.path);
@@ -613,6 +630,136 @@ export class AttachmentService {
 			throw new Error('local storage mode needs a local root path (set it in settings)');
 		}
 		return new LocalBackend(root);
+	}
+
+	// Resolve one pointer BackendRef to the StorageBackend and key that read it.
+	private backendForRef(ref: BackendRef, config: AttachmentServiceConfig): { backend: StorageBackend; key: string } {
+		if (ref.type === 's3') {
+			return { backend: this.backend(config), key: ref.key };
+		}
+		return { backend: this.localBackend(config), key: ref.path };
+	}
+
+	// Fetch the object from the pointer's backends in read-preference order (prefer
+	// local), verifying each candidate's bytes against the recorded hash. The first
+	// backend that returns matching bytes wins; a backend that is unreachable or
+	// drifted falls through to the next, so a healthy backup still restores when the
+	// preferred copy is missing. Fails only when NO backend can serve the file.
+	private async fetchFromBackends(
+		record: PointerRecord,
+		config: AttachmentServiceConfig,
+	): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: string }> {
+		const reasons: string[] = [];
+		for (const ref of record.backends) {
+			try {
+				const { backend, key } = this.backendForRef(ref, config);
+				const bytes = new Uint8Array(await (await backend.get(key)).arrayBuffer());
+				if (record.hash !== null && (await sha256Hex(bytes)) !== record.hash) {
+					reasons.push(`${ref.type}: bytes do not match the recorded hash`);
+					continue;
+				}
+				return { ok: true, bytes };
+			} catch (error) {
+				reasons.push(`${ref.type}: ${describe(error)}`);
+			}
+		}
+		return { ok: false, error: `no backend could return the file (${reasons.join('; ')})` };
+	}
+
+	// On-demand integrity check (spec section 7): for every pointer, existence-check
+	// each backend it lists (S3 HEAD / local stat) and report the pointers with a
+	// missing backend. Read-only - it never writes, deletes, or repairs. A local
+	// backend that is not configured (no root) counts as broken for that pointer, so
+	// the user is told to set the root rather than silently seeing a false miss.
+	async checkBackendIntegrity(): Promise<BackendIntegrityFinding[]> {
+		const config = this.getConfig();
+		const findings: BackendIntegrityFinding[] = [];
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			let record: PointerRecord;
+			try {
+				record = decodePointer(await this.app.vault.read(file)).record;
+			} catch {
+				continue; // not a pointer note
+			}
+			const broken: BackendType[] = [];
+			for (const ref of record.backends) {
+				try {
+					const { backend, key } = this.backendForRef(ref, config);
+					await backend.head(key);
+				} catch {
+					broken.push(ref.type);
+				}
+			}
+			if (broken.length > 0) {
+				findings.push({ pointerPath: file.path, name: record.originalName, broken, totalBackends: record.backends.length });
+			}
+		}
+		return findings;
+	}
+
+	// "Add local mirror" / "Add S3 mirror" migration (spec section 7): for each
+	// pointer missing the target backend, read the object once from an existing
+	// backend (verified against the recorded hash), write it to the target, verify
+	// the copy, and append the new backend ref to the pointer in place. Never removes
+	// an existing backend, so an interrupted run is safe to re-run (idempotent: a
+	// pointer that already has the target is skipped).
+	async addLocalMirror(): Promise<MirrorResult> {
+		return this.addMirror('local');
+	}
+
+	async addS3Mirror(): Promise<MirrorResult> {
+		return this.addMirror('s3');
+	}
+
+	private async addMirror(target: BackendType): Promise<MirrorResult> {
+		const config = this.getConfig();
+		const result: MirrorResult = { added: 0, skipped: 0, failed: 0 };
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			let decoded;
+			try {
+				decoded = decodePointer(await this.app.vault.read(file));
+			} catch {
+				continue; // not a pointer note
+			}
+			const record = decoded.record;
+			const source = record.backends[0];
+			if (record.backends.some((backend) => backend.type === target) || source === undefined) {
+				result.skipped++;
+				continue;
+			}
+			try {
+				const { backend: srcBackend, key: sharedKey } = this.backendForRef(source, config);
+				const bytes = new Uint8Array(await (await srcBackend.get(sharedKey)).arrayBuffer());
+				if (record.hash !== null && (await sha256Hex(bytes)) !== record.hash) {
+					result.failed++; // source drifted - do not mirror bad bytes
+					continue;
+				}
+				// The object key is shared across backends (one layout), so the mirror
+				// reuses the source's key/path.
+				const newRef: BackendRef = target === 'local' ? { type: 'local', path: sharedKey } : { type: 's3', bucket: config.bucket, key: sharedKey, keyKind: 'hash' };
+				const { backend: dstBackend, key: dstKey } = this.backendForRef(newRef, config);
+				const checksumBase64 = await sha256Base64(bytes);
+				await dstBackend.put(dstKey, bytes, bytes.length, { checksumSha256: checksumBase64, contentType: record.contentType });
+				const outcome = await ladderVerifier(dstBackend, dstKey, { hash: record.hash ?? '', checksumBase64, size: bytes.length });
+				if (!outcome.ok) {
+					// The mirror could not be verified; roll it back and count a failure so
+					// the pointer is never told it has a backend that is not proven.
+					try {
+						await dstBackend.delete(dstKey);
+					} catch {
+						// best effort
+					}
+					result.failed++;
+					continue;
+				}
+				const updated: PointerRecord = { ...record, backends: [...record.backends, newRef] };
+				await this.app.vault.modify(file, encodePointer(updated, decoded.body, decoded.extraFrontmatter));
+				result.added++;
+			} catch {
+				result.failed++;
+			}
+		}
+		return result;
 	}
 
 	private async writePointer(path: string, content: string): Promise<void> {
