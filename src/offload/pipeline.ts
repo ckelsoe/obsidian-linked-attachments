@@ -1,4 +1,4 @@
-import { encodePointer, PointerRecord, VerificationTier } from '../pointer/codec';
+import { encodePointer, LA_VERSION, PointerRecord, VerificationTier } from '../pointer/codec';
 import { sha256Base64 } from '../hash/sha256';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { StorageBackend } from '../storage/backend';
@@ -122,12 +122,10 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	}
 
 	const record: PointerRecord = {
-		laVersion: 1,
+		laVersion: LA_VERSION,
 		id: deps.newId(),
 		hash,
-		bucket: deps.bucket,
-		key,
-		keyKind: plan.keyKind,
+		backends: [{ type: 's3', bucket: deps.bucket, key, keyKind: plan.keyKind }],
 		originalName: plan.originalName,
 		originalExt: plan.originalExt,
 		originalPath: file.path,
@@ -224,12 +222,10 @@ async function tryDedup(
 	}
 
 	const record: PointerRecord = {
-		laVersion: 1,
+		laVersion: LA_VERSION,
 		id: deps.newId(),
 		hash: plan.hash,
-		bucket: existing.bucket,
-		key: existing.key,
-		keyKind: existing.keyKind,
+		backends: [{ type: 's3', bucket: existing.bucket, key: existing.key, keyKind: existing.keyKind }],
 		originalName: plan.originalName,
 		originalExt: plan.originalExt,
 		originalPath: file.path,

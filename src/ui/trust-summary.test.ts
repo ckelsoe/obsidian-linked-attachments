@@ -11,9 +11,14 @@ const record = (tier: VerificationTier): PointerRecord => ({
 	laVersion: 1,
 	id: 'id',
 	hash: 'h',
-	bucket: 'b',
-	key: 'k',
-	keyKind: 'hash',
+	backends: [
+		{
+			type: 's3',
+			bucket: 'b',
+			key: 'k',
+			keyKind: 'hash',
+		},
+	],
 	originalName: 'file.pdf',
 	originalExt: 'pdf',
 	originalPath: 'file.pdf',

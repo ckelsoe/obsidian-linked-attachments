@@ -18,7 +18,7 @@ import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offl
 import { CheckoutManager, CheckoutDeps, CheckoutResult, CheckinResult } from '../checkout/checkout-manager';
 import { dirtyState, DirtyState, readCheckoutBase, workingCopyPath } from '../checkout/checkout-state';
 import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
-import { decodePointer, encodePointer, PointerRecord } from '../pointer/codec';
+import { decodePointer, encodePointer, PointerRecord, requireS3Backend } from '../pointer/codec';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
 import { sha256Hex } from '../hash/sha256';
@@ -287,7 +287,7 @@ export class AttachmentService {
 			return { ok: false, restoredPath: null, error: `a file already exists at ${targetPath}; not overwriting` };
 		}
 
-		const got = await this.backend(config).get(record.key);
+		const got = await this.backend(config).get(requireS3Backend(record).key);
 		const bytes = new Uint8Array(await got.arrayBuffer());
 		// Restore is a verify path too: confirm the bytes hash to the recorded
 		// identity before writing them back (never restore drifted bytes silently).

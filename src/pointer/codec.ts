@@ -16,9 +16,38 @@ import { MANAGED_END, MANAGED_START, renderManagedBlock } from './managed-block'
 
 export type KeyKind = 'hash' | 'external';
 export type VerificationTier = 'content' | 'md5' | 'existence' | 'asserted';
+export type BackendType = 's3' | 'local';
 
 const KEY_KINDS: readonly KeyKind[] = ['hash', 'external'];
 const VERIFICATION_TIERS: readonly VerificationTier[] = ['content', 'md5', 'existence', 'asserted'];
+
+// The current pointer schema version. v1 = the flat la_bucket/la_key/la_key_kind
+// shape (a single implicit S3 backend). v2 = the la_backends list below, which
+// lets one object be held by several backends (S3, a local folder, and future
+// backends) in read-preference order. decodePointer reads both; encodePointer
+// always writes v2.
+export const LA_VERSION = 2;
+
+// One backend that holds the object, addressed in that backend's own namespace.
+// A discriminated union so a new backend (e.g. a native cloud API) is added by
+// extending BackendRef and the codec, not by widening a flat field. The list on
+// a PointerRecord is ORDERED: the first entry is the preferred read path, the
+// rest are fallbacks (spec section 3 access axis).
+export interface S3BackendRef {
+	type: 's3';
+	bucket: string;
+	key: string;
+	keyKind: KeyKind;
+}
+export interface LocalBackendRef {
+	type: 'local';
+	// Forward-slash path relative to the user's configured local root, resolved
+	// against that root at read time (root-relative portability: the same pointer
+	// works on two machines that mount the synced folder at different absolute
+	// paths). Usually identical to the S3 key for a paired object.
+	path: string;
+}
+export type BackendRef = S3BackendRef | LocalBackendRef;
 
 // The in-memory form of a pointer note's machine fields. Nullable fields are
 // null for foreign adopted objects (hash) and single-part / non-multipart
@@ -27,9 +56,10 @@ export interface PointerRecord {
 	laVersion: number;
 	id: string;
 	hash: string | null;
-	bucket: string;
-	key: string;
-	keyKind: KeyKind;
+	// Every backend that currently holds this object, in read-preference order.
+	// Always at least one entry (a pointer with zero valid backends is never
+	// written - spec section 3 exit guarantee).
+	backends: BackendRef[];
 	originalName: string;
 	originalExt: string;
 	originalPath: string;
@@ -68,9 +98,7 @@ const FRONTMATTER_KEYS = {
 	laVersion: 'la_version',
 	id: 'la_id',
 	hash: 'la_hash',
-	bucket: 'la_bucket',
-	key: 'la_key',
-	keyKind: 'la_key_kind',
+	backends: 'la_backends',
 	originalName: 'la_original_name',
 	originalExt: 'la_original_ext',
 	originalPath: 'la_original_path',
@@ -87,7 +115,16 @@ const FRONTMATTER_KEYS = {
 	supersedes: 'la_supersedes',
 } as const;
 
-const KNOWN_FRONTMATTER_KEYS = new Set<string>(Object.values(FRONTMATTER_KEYS));
+// The v1 flat backend keys. Not written anymore (encode emits la_backends), but
+// listed as "known" so a v1 pointer's flat keys are consumed on decode rather
+// than preserved as extras and duplicated back on re-encode.
+const LEGACY_BACKEND_KEYS = {
+	bucket: 'la_bucket',
+	key: 'la_key',
+	keyKind: 'la_key_kind',
+} as const;
+
+const KNOWN_FRONTMATTER_KEYS = new Set<string>([...Object.values(FRONTMATTER_KEYS), ...Object.values(LEGACY_BACKEND_KEYS)]);
 
 const FENCE = '---\n';
 
@@ -102,14 +139,46 @@ export function extractExtension(name: string): string {
 	return name.slice(dot + 1);
 }
 
+// --- backend accessors ------------------------------------------------------
+
+// The S3 backend on a pointer, or null if it has none (a local-only pointer).
+export function s3Backend(record: PointerRecord): S3BackendRef | null {
+	return record.backends.find((backend): backend is S3BackendRef => backend.type === 's3') ?? null;
+}
+
+// The local backend on a pointer, or null if it has none (an S3-only pointer).
+export function localBackend(record: PointerRecord): LocalBackendRef | null {
+	return record.backends.find((backend): backend is LocalBackendRef => backend.type === 'local') ?? null;
+}
+
+// The S3 backend on a pointer, asserting it has one. For code paths that are
+// inherently S3 (multipart, presign, the S3 reconcile scan); a local-only
+// pointer reaching one of these is a programming error, surfaced as such.
+export function requireS3Backend(record: PointerRecord): S3BackendRef {
+	const s3 = s3Backend(record);
+	if (s3 === null) {
+		throw new PointerParseError('pointer has no S3 backend');
+	}
+	return s3;
+}
+
+// The preferred read backend: the first entry, in read-preference order. A record
+// always carries at least one backend; a caller that cannot prove that to the
+// type system gets a typed error rather than an undefined.
+export function preferredBackend(record: PointerRecord): BackendRef {
+	const first = record.backends[0];
+	if (first === undefined) {
+		throw new PointerParseError('pointer has no backends');
+	}
+	return first;
+}
+
 export function encodePointer(record: PointerRecord, body: string, extraFrontmatter?: Record<string, unknown>): string {
 	const frontmatter: Record<string, unknown> = {
 		[FRONTMATTER_KEYS.laVersion]: record.laVersion,
 		[FRONTMATTER_KEYS.id]: record.id,
 		[FRONTMATTER_KEYS.hash]: record.hash,
-		[FRONTMATTER_KEYS.bucket]: record.bucket,
-		[FRONTMATTER_KEYS.key]: record.key,
-		[FRONTMATTER_KEYS.keyKind]: record.keyKind,
+		[FRONTMATTER_KEYS.backends]: record.backends.map(backendToYaml),
 		[FRONTMATTER_KEYS.originalName]: record.originalName,
 		[FRONTMATTER_KEYS.originalExt]: record.originalExt,
 		[FRONTMATTER_KEYS.originalPath]: record.originalPath,
@@ -204,9 +273,7 @@ function buildRecord(fm: Record<string, unknown>): PointerRecord {
 		laVersion: requireNumber(fm, FRONTMATTER_KEYS.laVersion),
 		id: requireString(fm, FRONTMATTER_KEYS.id),
 		hash: nullableString(fm, FRONTMATTER_KEYS.hash),
-		bucket: requireString(fm, FRONTMATTER_KEYS.bucket),
-		key: requireString(fm, FRONTMATTER_KEYS.key),
-		keyKind: requireEnum(fm, FRONTMATTER_KEYS.keyKind, KEY_KINDS),
+		backends: parseBackends(fm),
 		originalName: requireString(fm, FRONTMATTER_KEYS.originalName),
 		originalExt: requireString(fm, FRONTMATTER_KEYS.originalExt),
 		originalPath: requireString(fm, FRONTMATTER_KEYS.originalPath),
@@ -222,6 +289,68 @@ function buildRecord(fm: Record<string, unknown>): PointerRecord {
 		sourceVersion: nullableString(fm, FRONTMATTER_KEYS.sourceVersion),
 		supersedes: nullableString(fm, FRONTMATTER_KEYS.supersedes),
 	};
+}
+
+function backendToYaml(backend: BackendRef): Record<string, unknown> {
+	if (backend.type === 's3') {
+		return { type: 's3', bucket: backend.bucket, key: backend.key, key_kind: backend.keyKind };
+	}
+	return { type: 'local', path: backend.path };
+}
+
+function parseBackends(fm: Record<string, unknown>): BackendRef[] {
+	const raw = fm[FRONTMATTER_KEYS.backends];
+	if (raw === undefined) {
+		// v1 back-compat: no la_backends means the flat la_bucket/la_key/la_key_kind
+		// described a single implicit S3 backend. Synthesize it so an existing
+		// S3-only pointer decodes unchanged, with no migration step.
+		return [
+			{
+				type: 's3',
+				bucket: requireString(fm, LEGACY_BACKEND_KEYS.bucket),
+				key: requireString(fm, LEGACY_BACKEND_KEYS.key),
+				keyKind: requireEnum(fm, LEGACY_BACKEND_KEYS.keyKind, KEY_KINDS),
+			},
+		];
+	}
+	if (!Array.isArray(raw) || raw.length === 0) {
+		throw new PointerParseError(`field ${FRONTMATTER_KEYS.backends} must be a non-empty list of backends`);
+	}
+	return raw.map((entry, index) => parseBackendEntry(entry, index));
+}
+
+function parseBackendEntry(entry: unknown, index: number): BackendRef {
+	if (!isPlainObject(entry)) {
+		throw new PointerParseError(`backend #${index} is not a mapping`);
+	}
+	const type = entry.type;
+	if (type === 's3') {
+		return {
+			type: 's3',
+			bucket: requireBackendString(entry, 'bucket', index),
+			key: requireBackendString(entry, 'key', index),
+			keyKind: parseKeyKind(entry.key_kind, index),
+		};
+	}
+	if (type === 'local') {
+		return { type: 'local', path: requireBackendString(entry, 'path', index) };
+	}
+	throw new PointerParseError(`backend #${index} has unknown type ${String(type)}`);
+}
+
+function requireBackendString(entry: Record<string, unknown>, field: string, index: number): string {
+	const value = entry[field];
+	if (typeof value !== 'string' || value.length === 0) {
+		throw new PointerParseError(`backend #${index} field ${field} is required and must be a non-empty string`);
+	}
+	return value;
+}
+
+function parseKeyKind(value: unknown, index: number): KeyKind {
+	if (value === 'hash' || value === 'external') {
+		return value;
+	}
+	throw new PointerParseError(`backend #${index} key_kind must be one of ${KEY_KINDS.join(', ')}`);
 }
 
 function extractExtras(fm: Record<string, unknown>): Record<string, unknown> {

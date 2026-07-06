@@ -8,6 +8,7 @@ import {
 import { MemoryBackend } from '../storage/memory-backend';
 import { StorageBackend } from '../storage/backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
+import { requireS3Backend } from '../pointer/codec';
 
 // Tier 0: adopt against MemoryBackend. The moat guarantee is that bulk adopt is
 // LIST-only - zero head/get - so a call-counting wrapper backs the lock test.
@@ -152,8 +153,8 @@ describe('adopt-from-bucket acceptance (la-p2-09)', () => {
 		const { record, pointerPath } = buildAdoptedPointer(row, options);
 		expect(record.verificationTier).toBe('asserted');
 		expect(record.hash).toBeNull();
-		expect(record.keyKind).toBe('external');
-		expect(record.key).toBe('docs/report.pdf');
+		expect(requireS3Backend(record).keyKind).toBe('external');
+		expect(requireS3Backend(record).key).toBe('docs/report.pdf');
 		expect(record.byteSize).toBe(4096);
 		expect(record.originalPath).toBe('docs/report.pdf');
 		expect(pointerPath).toBe('docs/report.pdf.md');
@@ -184,7 +185,7 @@ describe('adopt-from-bucket acceptance (la-p2-09)', () => {
 		if ('record' in result) {
 			expect(result.record.verificationTier).toBe('asserted');
 			expect(result.record.hash).toBe('claimedhash123');
-			expect(result.record.keyKind).toBe('hash');
+			expect(requireS3Backend(result.record).keyKind).toBe('hash');
 		} else {
 			throw new Error('expected a record');
 		}

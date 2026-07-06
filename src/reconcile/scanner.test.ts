@@ -9,6 +9,7 @@ import {
 import { MemoryBackend } from '../storage/memory-backend';
 import { StorageBackend } from '../storage/backend';
 import { ManifestEntry } from '../manifest/manifest';
+import { requireS3Backend } from '../pointer/codec';
 
 // Tier 0: the reconciliation diff is pure; the orchestrator runs LIST/HEAD
 // against MemoryBackend. The governing rule is surface/offer/flag, never
@@ -122,7 +123,7 @@ describe('reconciliation scanner acceptance (la-p2-10)', () => {
 		expect(pointers).toHaveLength(1);
 		expect(pointers[0]?.pointerPath).toBe('docs/new.pdf.md');
 		expect(pointers[0]?.record.verificationTier).toBe('asserted');
-		expect(pointers[0]?.record.key).toBe('docs/new.pdf');
+		expect(pointers[0] && requireS3Backend(pointers[0].record).key).toBe('docs/new.pdf');
 	});
 
 	// AC7 :: a full scan issues only LIST/HEAD - never a put or delete (surface,

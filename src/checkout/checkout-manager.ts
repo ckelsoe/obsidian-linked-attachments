@@ -1,4 +1,4 @@
-import { decodePointer, PointerRecord } from '../pointer/codec';
+import { decodePointer, PointerRecord, requireS3Backend } from '../pointer/codec';
 import { StorageBackend } from '../storage/backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { sha256Hex, sha256Base64 } from '../hash/sha256';
@@ -95,7 +95,7 @@ export class CheckoutManager {
 		// open it (never hand the user drifted/overwritten bytes).
 		let bytes: Uint8Array;
 		try {
-			bytes = new Uint8Array(await (await this.deps.backend.get(record.key)).arrayBuffer());
+			bytes = new Uint8Array(await (await this.deps.backend.get(requireS3Backend(record).key)).arrayBuffer());
 		} catch (error) {
 			return fail(`could not download the object: ${describe(error)}`);
 		}
@@ -164,7 +164,7 @@ export class CheckoutManager {
 		// verify keeps the working copy and the checkout markers (the edits are safe).
 		const checksumBase64 = await sha256Base64(working);
 		try {
-			await this.deps.backend.put(plan.record.key, working, working.length, {
+			await this.deps.backend.put(requireS3Backend(plan.record).key, working, working.length, {
 				checksumSha256: checksumBase64,
 				contentType: plan.record.contentType,
 				metadata: {
@@ -183,7 +183,7 @@ export class CheckoutManager {
 		const verify = this.deps.verify ?? checksumVerifier;
 		let outcome: VerifyOutcome;
 		try {
-			outcome = await verify(this.deps.backend, plan.record.key, { hash: plan.record.hash ?? '', checksumBase64, size: working.length });
+			outcome = await verify(this.deps.backend, requireS3Backend(plan.record).key, { hash: plan.record.hash ?? '', checksumBase64, size: working.length });
 		} catch (error) {
 			return failCheckin(`verify failed: ${describe(error)}`);
 		}

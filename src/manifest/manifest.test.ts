@@ -23,9 +23,14 @@ function recordFor(key: string, overrides: Partial<PointerRecord> = {}): Pointer
 		laVersion: 1,
 		id: `id-${key}`,
 		hash: HASH_A,
-		bucket: 's3-dev-test',
-		key,
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key,
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'x.pdf',
 		originalExt: 'pdf',
 		originalPath: `books/${key}.pdf`,

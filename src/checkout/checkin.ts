@@ -1,4 +1,4 @@
-import { PointerRecord } from '../pointer/codec';
+import { PointerRecord, requireS3Backend } from '../pointer/codec';
 import { supersedingKey } from '../key/layout';
 import { conflictCopyName } from './lock-manager';
 
@@ -51,7 +51,7 @@ export function planCheckin(input: CheckinPlanInput): CheckinPlan {
 			kind: 'conflict',
 			record: newRecord,
 			conflictName: conflictCopyName(record.originalName, 'another-device', input.now()),
-			conflictSourceKey: record.key,
+			conflictSourceKey: requireS3Backend(record).key,
 		};
 	}
 	return { kind: 'version', record: newRecord };
@@ -61,15 +61,18 @@ export function planCheckin(input: CheckinPlanInput): CheckinPlan {
 
 function supersedingRecord(input: CheckinPlanInput): PointerRecord {
 	const { record, workingHash, workingSize } = input;
+	const s3 = requireS3Backend(record);
 	const { key, supersedes } = supersedingKey(
 		{ vaultPrefix: input.vaultPrefix, originalPath: record.originalPath, hash: workingHash },
-		record.key,
+		s3.key,
 	);
+	// Check-in versions the S3 object. A local mirror (if any) still holds the prior
+	// bytes, so it is not carried onto the new version; re-mirroring is the "add
+	// local mirror" migration command's job, not check-in's.
 	return {
 		...record,
 		hash: workingHash,
-		key,
-		keyKind: 'hash',
+		backends: [{ type: 's3', bucket: s3.bucket, key, keyKind: 'hash' }],
 		byteSize: workingSize,
 		// Reset to asserted; the manager sets the achieved tier after the PUT verifies.
 		verificationTier: 'asserted',

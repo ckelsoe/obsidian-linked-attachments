@@ -9,6 +9,7 @@ import { MemoryBackend } from '../storage/memory-backend';
 import { StorageBackend } from '../storage/backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { sha256Base64 } from '../hash/sha256';
+import { requireS3Backend } from '../pointer/codec';
 
 // Tier 0: the pipeline runs against MemoryBackend with injected vault side
 // effects (writePointer / trashOriginal). No filesystem, no network.
@@ -149,11 +150,11 @@ describe('offload pipeline acceptance (la-p2-07)', () => {
 		const backend = new MemoryBackend();
 		const h = makeHarness(backend);
 		const result = await offloadFile(file('books/Cranfield.pdf', 'romans'), h.deps);
-		expect(result.record?.bucket).toBe('s3-dev-test');
+		expect(result.record && requireS3Backend(result.record).bucket).toBe('s3-dev-test');
 		expect(result.record?.verificationTier).toBe('content');
-		expect(result.record?.keyKind).toBe('hash');
+		expect(result.record && requireS3Backend(result.record).keyKind).toBe('hash');
 		expect(result.record?.hash).not.toBeNull();
-		const key = result.record?.key ?? '';
+		const key = result.record ? requireS3Backend(result.record).key : '';
 		const head = await backend.head(key);
 		expect(head.metadata?.[OBJECT_METADATA_KEYS.sha256]).toBe(result.record?.hash);
 		expect(head.metadata?.[OBJECT_METADATA_KEYS.originalPath]).toBe('books/Cranfield.pdf');
@@ -178,7 +179,7 @@ describe('offload pipeline property tests (la-p2-07)', () => {
 				const h = makeHarness(backend);
 				const result = await offloadFile({ path: 'data/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h.deps);
 				expect(result.ok).toBe(true);
-				const key = result.record?.key ?? '';
+				const key = result.record ? requireS3Backend(result.record).key : '';
 				const restored = new Uint8Array(await (await backend.get(key)).arrayBuffer());
 				expect(restored).toEqual(data);
 			}),
@@ -275,7 +276,8 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		expect(r1.deduped).toBe(false);
 		// register the first object so the second offload can find it
 		if (r1.record?.hash) {
-			index.set(r1.record.hash, { key: r1.record.key, bucket: r1.record.bucket, keyKind: r1.record.keyKind });
+			const s3 = requireS3Backend(r1.record);
+			index.set(r1.record.hash, { key: s3.key, bucket: s3.bucket, keyKind: s3.keyKind });
 		}
 
 		const h2 = sharedHarness(backend, index);
@@ -283,7 +285,7 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		expect(r2.ok).toBe(true);
 		expect(r2.deduped).toBe(true);
 		// the second pointer references the FIRST object's key
-		expect(r2.record?.key).toBe(r1.record?.key);
+		expect(r2.record && requireS3Backend(r2.record).key).toBe(r1.record && requireS3Backend(r1.record).key);
 		// ...but carries its OWN original path/name (restore must put it back right)
 		expect(r2.record?.originalPath).toBe('inbox/copy-of-cranfield.pdf');
 		expect(r2.record?.originalName).toBe('copy-of-cranfield.pdf');
@@ -304,7 +306,8 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		const bytes = 'identical content';
 		const h1 = sharedHarness(backend, index);
 		const r1 = await offloadFile(file('a.pdf', bytes), h1.deps);
-		index.set(r1.record!.hash!, { key: r1.record!.key, bucket: r1.record!.bucket, keyKind: r1.record!.keyKind });
+		const s3v = requireS3Backend(r1.record!);
+		index.set(r1.record!.hash!, { key: s3v.key, bucket: s3v.bucket, keyKind: s3v.keyKind });
 
 		const h2 = sharedHarness(backend, index);
 		const r2 = await offloadFile(file('b.pdf', bytes), h2.deps);
@@ -331,7 +334,7 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		expect(result.ok).toBe(true);
 		expect(result.deduped).toBe(false); // did not link to the drifted object
 		expect(h.events).toContain('upload'); // uploaded a fresh, correct copy
-		const head = await backend.head(result.record!.key);
+		const head = await backend.head(requireS3Backend(result.record!).key);
 		expect(head.checksumSha256).toBe(await sha256Base64(bytesOf(bytes)));
 	});
 
@@ -368,7 +371,8 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 				const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
 				const h1 = sharedHarness(backend, index);
 				const r1 = await offloadFile({ path: 'one/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h1.deps);
-				index.set(r1.record!.hash!, { key: r1.record!.key, bucket: r1.record!.bucket, keyKind: r1.record!.keyKind });
+				const s3one = requireS3Backend(r1.record!);
+				index.set(r1.record!.hash!, { key: s3one.key, bucket: s3one.bucket, keyKind: s3one.keyKind });
 				const h2 = sharedHarness(backend, index);
 				const r2 = await offloadFile({ path: 'two/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h2.deps);
 				expect(r2.deduped).toBe(true);

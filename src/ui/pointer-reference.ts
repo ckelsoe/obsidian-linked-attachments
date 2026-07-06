@@ -14,11 +14,20 @@ export function formatPointerReference(record: PointerRecord): string {
 	if (record.contentType.length > 0) {
 		lines.push(`Format: ${record.contentType}`);
 	}
-	lines.push(`Bucket: ${record.bucket}`);
-	lines.push(`Key: ${record.key}`);
+	// One line per backend that holds the object, in read-preference order, each in
+	// its own address form: an S3 backend by bucket + key (open it in an S3 app), a
+	// local backend by its path under the configured local root (open it in the
+	// file explorer).
+	for (const backend of record.backends) {
+		if (backend.type === 's3') {
+			lines.push(`S3 bucket: ${backend.bucket}`);
+			lines.push(`S3 key: ${backend.key}`);
+		} else {
+			lines.push(`Local path: ${backend.path}`);
+		}
+	}
 	if (record.hash !== null) {
 		lines.push(`SHA-256: ${record.hash}`);
 	}
-	lines.push('Open this in your S3 app using the bucket and key above.');
 	return lines.join('\n');
 }

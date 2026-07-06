@@ -1,4 +1,4 @@
-import { extractExtension, PointerRecord } from '../pointer/codec';
+import { extractExtension, LA_VERSION, PointerRecord } from '../pointer/codec';
 import { ListEntry, StorageBackend } from '../storage/backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 
@@ -160,12 +160,10 @@ interface AssertedInput {
 function assertedRecord(input: AssertedInput): PointerRecord {
 	const name = basename(input.vaultPath);
 	return {
-		laVersion: 1,
+		laVersion: LA_VERSION,
 		id: input.id,
 		hash: input.hash,
-		bucket: input.bucket,
-		key: input.key,
-		keyKind: input.keyKind,
+		backends: [{ type: 's3', bucket: input.bucket, key: input.key, keyKind: input.keyKind }],
 		originalName: name,
 		originalExt: extractExtension(name),
 		originalPath: input.vaultPath,

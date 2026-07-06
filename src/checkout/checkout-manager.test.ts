@@ -2,7 +2,7 @@ import { CheckoutManager, CheckoutDeps } from './checkout-manager';
 import { workingCopyPath } from './checkout-state';
 import { MemoryBackend } from '../storage/memory-backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
-import { encodePointer, decodePointer, PointerRecord } from '../pointer/codec';
+import { encodePointer, decodePointer, PointerRecord, requireS3Backend } from '../pointer/codec';
 import { sha256Hex, sha256Base64 } from '../hash/sha256';
 
 // Tier 0: the checkout-manager runs against MemoryBackend with injected vault I/O
@@ -19,9 +19,14 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 		laVersion: 1,
 		id: 'ptr-1',
 		hash: 'PLACEHOLDER',
-		bucket: 's3-dev-test',
-		key: 'charles-main/budget--aaaaaa.xlsx',
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'charles-main/budget--aaaaaa.xlsx',
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'budget.xlsx',
 		originalExt: 'xlsx',
 		originalPath: 'finance/budget.xlsx',
@@ -104,7 +109,7 @@ async function seedOffloaded(h: Harness, content: string): Promise<{ pointerPath
 	const bytes = bytesOf(content);
 	const hash = await sha256Hex(bytes);
 	const rec = record({ hash, byteSize: bytes.length });
-	await h.backend.put(rec.key, bytes, bytes.length, {
+	await h.backend.put(requireS3Backend(rec).key, bytes, bytes.length, {
 		checksumSha256: await sha256Base64(bytes),
 		metadata: { [OBJECT_METADATA_KEYS.sha256]: hash },
 	});
@@ -132,7 +137,7 @@ describe('checkout (la-p6-32)', () => {
 	it('test_checkout_refuses_drifted_bytes', async () => {
 		const h = makeHarness();
 		const { pointerPath, rec } = await seedOffloaded(h, 'budget v1 contents');
-		await h.backend.seedObject(rec.key, bytesOf('tampered different bytes')); // drift
+		await h.backend.seedObject(requireS3Backend(rec).key, bytesOf('tampered different bytes')); // drift
 		const manager = new CheckoutManager(h.deps);
 		const result = await manager.checkout(pointerPath);
 		expect(result.ok).toBe(false);
@@ -190,15 +195,15 @@ describe('check-in (la-p6-32)', () => {
 
 		const updated = decodePointer(h.pointers.get(pointerPath) as string).record;
 		expect(updated.hash).toBe(await sha256Hex(edited));
-		expect(updated.key).not.toBe(rec.key);
-		expect(updated.supersedes).toBe(rec.key);
+		expect(requireS3Backend(updated).key).not.toBe(requireS3Backend(rec).key);
+		expect(updated.supersedes).toBe(requireS3Backend(rec).key);
 		expect(updated.copyState).toBe('offloaded');
 		expect(updated.verificationTier).toBe('content');
 		expect(updated.id).toBe('ptr-1'); // stable lineage anchor
 
 		// additive: the OLD object is retained AND the new one exists
-		expect((await h.backend.head(rec.key)).size).toBe(bytesOf('budget v1').length);
-		expect((await h.backend.head(updated.key)).size).toBe(edited.length);
+		expect((await h.backend.head(requireS3Backend(rec).key)).size).toBe(bytesOf('budget v1').length);
+		expect((await h.backend.head(requireS3Backend(updated).key)).size).toBe(edited.length);
 		// working copy removed
 		expect(h.working.has(wcPath)).toBe(false);
 	});
@@ -245,7 +250,11 @@ describe('check-in (la-p6-32)', () => {
 		const decoded = decodePointer(current);
 		h.pointers.set(
 			pointerPath,
-			encodePointer({ ...decoded.record, hash: v2Hash, key: v2Key }, decoded.body, decoded.extraFrontmatter),
+			encodePointer(
+				{ ...decoded.record, hash: v2Hash, backends: [{ type: 's3', bucket: 's3-dev-test', key: v2Key, keyKind: 'hash' }] },
+				decoded.body,
+				decoded.extraFrontmatter,
+			),
 		);
 
 		const result = await manager.checkin(pointerPath);

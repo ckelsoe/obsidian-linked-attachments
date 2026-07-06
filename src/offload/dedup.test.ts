@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from './dedup';
-import { PointerRecord } from '../pointer/codec';
+import { PointerRecord, requireS3Backend } from '../pointer/codec';
 import { PointerSource } from '../manifest/manifest';
 
 // Tier 0: the hash -> object index is pure (pointer records in, a map out). No
@@ -12,9 +12,14 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 		laVersion: 1,
 		id: 'ID',
 		hash: 'a'.repeat(64),
-		bucket: 's3-dev-test',
-		key: 'charles-main/books/Cranfield--aaaaaa.pdf',
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'charles-main/books/Cranfield--aaaaaa.pdf',
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'Cranfield.pdf',
 		originalExt: 'pdf',
 		originalPath: 'books/Cranfield.pdf',
@@ -48,24 +53,38 @@ describe('content-dedup hash index (la-p5-26)', () => {
 		const rec = record();
 		const index = buildHashIndex([source(rec)]);
 		const target = lookupByHash(index, rec.hash as string);
-		expect(target).toEqual({ key: rec.key, bucket: rec.bucket, keyKind: rec.keyKind });
+		const s3 = requireS3Backend(rec);
+		expect(target).toEqual({ key: s3.key, bucket: s3.bucket, keyKind: s3.keyKind });
 	});
 
 	// AC2 :: an adopted/foreign pointer (hash null) is NEVER a dedup target - we
 	// cannot claim its bytes match, so it must not link other files to it.
 	it('test_index_skips_null_hash', () => {
-		const index = buildHashIndex([source(record({ hash: null, keyKind: 'external' }))]);
+		const index = buildHashIndex([
+			source(
+				record({
+					hash: null,
+					backends: [{ type: 's3', bucket: 's3-dev-test', key: 'charles-main/books/Cranfield--aaaaaa.pdf', keyKind: 'external' }],
+				}),
+			),
+		]);
 		expect(index.size).toBe(0);
 	});
 
 	// AC3 :: two pointers for the same bytes -> one index entry (the first wins);
 	// lookup is unambiguous.
 	it('test_first_pointer_wins', () => {
-		const first = record({ key: 'charles-main/a--aaaaaa.pdf', originalPath: 'a.pdf' });
-		const second = record({ key: 'charles-main/b--aaaaaa.pdf', originalPath: 'b.pdf' });
+		const first = record({
+			backends: [{ type: 's3', bucket: 's3-dev-test', key: 'charles-main/a--aaaaaa.pdf', keyKind: 'hash' }],
+			originalPath: 'a.pdf',
+		});
+		const second = record({
+			backends: [{ type: 's3', bucket: 's3-dev-test', key: 'charles-main/b--aaaaaa.pdf', keyKind: 'hash' }],
+			originalPath: 'b.pdf',
+		});
 		const index = buildHashIndex([source(first), source(second)]);
 		expect(index.size).toBe(1);
-		expect(lookupByHash(index, first.hash as string)?.key).toBe(first.key);
+		expect(lookupByHash(index, first.hash as string)?.key).toBe(requireS3Backend(first).key);
 	});
 
 	// AC4 :: rememberObject lets a just-offloaded object be a dedup target for a
@@ -74,7 +93,7 @@ describe('content-dedup hash index (la-p5-26)', () => {
 		const index: HashIndex = new Map();
 		const rec = record();
 		rememberObject(index, rec);
-		expect(lookupByHash(index, rec.hash as string)?.key).toBe(rec.key);
+		expect(lookupByHash(index, rec.hash as string)?.key).toBe(requireS3Backend(rec).key);
 	});
 
 	// AC5 :: a miss returns null (no false dedup target).
@@ -104,7 +123,15 @@ describe('content-dedup hash index property (la-p5-26)', () => {
 					{ minLength: 1 },
 				),
 				(rows) => {
-					const sources = rows.map((r, i) => source(record({ hash: r.hash, key: `${r.key}-${i}` }), `p${i}.md`));
+					const sources = rows.map((r, i) =>
+						source(
+							record({
+								hash: r.hash,
+								backends: [{ type: 's3', bucket: 's3-dev-test', key: `${r.key}-${i}`, keyKind: 'hash' }],
+							}),
+							`p${i}.md`,
+						),
+					);
 					const index = buildHashIndex(sources);
 					const distinctHashes = new Set(rows.map((r) => r.hash));
 					expect(index.size).toBe(distinctHashes.size);

@@ -6,6 +6,7 @@ import {
 	decodePointer,
 	extractExtension,
 	refreshManagedBlock,
+	requireS3Backend,
 } from './codec';
 import { MANAGED_END, MANAGED_START } from './managed-block';
 
@@ -18,9 +19,14 @@ function fullRecord(): PointerRecord {
 		laVersion: 1,
 		id: '01J9Z0K3QECRANFIELD',
 		hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-		bucket: 's3-dev-test',
-		key: 'charles-main/31-books/Romans/Cranfield--9f86d0.pdf',
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'charles-main/31-books/Romans/Cranfield--9f86d0.pdf',
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'Cranfield.pdf',
 		originalExt: 'pdf',
 		originalPath: '31-books/Romans/Cranfield.pdf',
@@ -60,7 +66,14 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 			partCount: null,
 			sourceVersion: null,
 			supersedes: null,
-			keyKind: 'external',
+			backends: [
+				{
+					type: 's3',
+					bucket: 's3-dev-test',
+					key: 'charles-main/31-books/Romans/Cranfield--9f86d0.pdf',
+					keyKind: 'external',
+				},
+			],
 			verificationTier: 'asserted',
 		};
 		const decoded = decodePointer(encodePointer(record, ''));
@@ -152,7 +165,7 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 		const decoded = decodePointer(reformatted);
 		expect(decoded.record.offloadedAt).toBe('2026-06-17T19:59:42.633Z');
 		expect(decoded.record.partSize).toBeNull();
-		expect(decoded.record.key).toBe('e/x--c0f0c5.epub');
+		expect(requireS3Backend(decoded.record).key).toBe('e/x--c0f0c5.epub');
 		expect(decoded.record.hash).toBe('c0f0c5');
 	});
 
@@ -164,6 +177,74 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 		expect(decoded.extraFrontmatter).toEqual({ tags: ['archive', 'romans'] });
 		const reencoded = encodePointer(decoded.record, decoded.body, decoded.extraFrontmatter);
 		expect(decodePointer(reencoded).extraFrontmatter).toEqual({ tags: ['archive', 'romans'] });
+	});
+});
+
+describe('pointer codec backends schema (la-p1-02)', () => {
+	// A v1 pointer (flat la_bucket/la_key/la_key_kind, no la_backends) decodes into a
+	// single synthesized S3 backend, and the legacy flat keys are consumed rather than
+	// leaked into extraFrontmatter (so a re-encode does not duplicate them).
+	it('test_v1_legacy_decode_synthesizes_s3_backend', () => {
+		const v1 = [
+			'---',
+			'la_version: 1',
+			'la_id: la-legacy',
+			'la_hash: c0f0c5',
+			'la_bucket: s3-dev-test',
+			'la_key: e/x--c0f0c5.epub',
+			'la_key_kind: hash',
+			'la_original_name: x.epub',
+			'la_original_ext: epub',
+			'la_original_path: e/x.epub',
+			'la_byte_size: 421804',
+			'la_content_type: application/epub+zip',
+			'la_copy_state: offloaded',
+			'la_verification_tier: content',
+			'la_remote_checksum:',
+			'la_checksum_algo:',
+			'la_part_size:',
+			'la_part_count:',
+			'la_offloaded_at: "2026-06-17T19:59:42.633Z"',
+			'la_source_version:',
+			'la_supersedes:',
+			'---',
+			MANAGED_START,
+			'[Open x](obsidian://x)',
+			MANAGED_END,
+			'legacy body\n',
+		].join('\n');
+		const decoded = decodePointer(v1);
+		expect(decoded.record.backends).toEqual([
+			{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+		]);
+		expect(decoded.extraFrontmatter).not.toHaveProperty('la_bucket');
+		expect(decoded.extraFrontmatter).not.toHaveProperty('la_key');
+		expect(decoded.extraFrontmatter).not.toHaveProperty('la_key_kind');
+	});
+
+	// A paired object (an S3 backend and a local backend) round-trips through the
+	// la_backends list with both entries preserved in read-preference order.
+	it('test_paired_backends_roundtrip', () => {
+		const record: PointerRecord = {
+			...fullRecord(),
+			backends: [
+				{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+				{ type: 'local', path: 'books/x.pdf' },
+			],
+		};
+		const decoded = decodePointer(encodePointer(record, USER_BODY));
+		expect(decoded.record.backends).toEqual([
+			{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+			{ type: 'local', path: 'books/x.pdf' },
+		]);
+	});
+
+	// encode writes the v2 la_backends list, never the v1 flat la_bucket/la_key keys.
+	it('test_encode_writes_la_backends_not_flat', () => {
+		const text = encodePointer(fullRecord(), USER_BODY);
+		expect(text).toContain('la_backends');
+		expect(text).not.toContain('la_bucket:');
+		expect(text).not.toContain('la_key:');
 	});
 });
 
@@ -226,7 +307,7 @@ describe('pointer codec failure injection (la-p1-02)', () => {
 
 	// Frontmatter present but missing a required field is malformed; raise.
 	it('fault_missing_required_field_raises', () => {
-		const text = encodePointer(fullRecord(), USER_BODY).replace(/^la_bucket:.*$/m, '');
+		const text = encodePointer(fullRecord(), USER_BODY).replace(/^la_id:.*$/m, '');
 		expect(() => decodePointer(text)).toThrow(PointerParseError);
 	});
 

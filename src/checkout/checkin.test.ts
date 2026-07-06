@@ -1,5 +1,5 @@
 import { planCheckin, CheckinPlanInput } from './checkin';
-import { PointerRecord } from '../pointer/codec';
+import { PointerRecord, requireS3Backend } from '../pointer/codec';
 
 // Tier 0: the check-in decision is pure. Check-in is ALWAYS additive (a changed
 // file is a new content-addressed version; the prior object is retained), never a
@@ -11,9 +11,14 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 		laVersion: 1,
 		id: 'ptr-1',
 		hash: 'a'.repeat(64),
-		bucket: 's3-dev-test',
-		key: 'charles-main/budget--aaaaaa.xlsx',
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'charles-main/budget--aaaaaa.xlsx',
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'budget.xlsx',
 		originalExt: 'xlsx',
 		originalPath: 'finance/budget.xlsx',
@@ -59,8 +64,8 @@ describe('check-in planning (la-p6-31)', () => {
 		expect(plan.kind).toBe('version');
 		if (plan.kind === 'version') {
 			expect(plan.record.hash).toBe('b'.repeat(64));
-			expect(plan.record.key).not.toBe(record().key);
-			expect(plan.record.supersedes).toBe(record().key);
+			expect(requireS3Backend(plan.record).key).not.toBe(requireS3Backend(record()).key);
+			expect(plan.record.supersedes).toBe(requireS3Backend(record()).key);
 			expect(plan.record.id).toBe('ptr-1'); // the pointer note (lineage anchor) is stable
 			expect(plan.record.copyState).toBe('offloaded'); // checked back in
 			expect(plan.record.verificationTier).toBe('asserted'); // until the PUT verifies
@@ -75,7 +80,10 @@ describe('check-in planning (la-p6-31)', () => {
 	// preserve the superseded cloud version visibly. Never a merge.
 	it('test_conflict_when_cloud_diverged', () => {
 		// the pointer now points at a DIFFERENT current version than we checked out
-		const diverged = record({ hash: 'c'.repeat(64), key: 'charles-main/budget--cccccc.xlsx' });
+		const diverged = record({
+			hash: 'c'.repeat(64),
+			backends: [{ type: 's3', bucket: 's3-dev-test', key: 'charles-main/budget--cccccc.xlsx', keyKind: 'hash' }],
+		});
 		const plan = planCheckin(input({ record: diverged, checkoutBaseHash: 'a'.repeat(64) }));
 		expect(plan.kind).toBe('conflict');
 		if (plan.kind === 'conflict') {
@@ -99,8 +107,8 @@ describe('check-in planning (la-p6-31)', () => {
 	it('test_new_key_is_content_addressed', () => {
 		const plan = planCheckin(input());
 		if (plan.kind === 'version') {
-			expect(plan.record.key).toContain('bbbbbb'); // short hash of the working bytes
-			expect(plan.record.keyKind).toBe('hash');
+			expect(requireS3Backend(plan.record).key).toContain('bbbbbb'); // short hash of the working bytes
+			expect(requireS3Backend(plan.record).keyKind).toBe('hash');
 		}
 	});
 });
