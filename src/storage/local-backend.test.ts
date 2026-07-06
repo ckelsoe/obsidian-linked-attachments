@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as nodePath from 'path';
-import { LocalBackend } from './local-backend';
+import { LocalBackend, resolveLocalRoot } from './local-backend';
 import { BackendError, ObjectNotFoundError } from './backend';
 import { sha256Base64, sha256Hex } from '../hash/sha256';
 import { verifyByLadder } from '../offload/verify';
@@ -204,6 +204,24 @@ describe('LocalBackend acceptance', () => {
 		expect(result.checksumSha256).toBeUndefined();
 		expect((await backend.get('k')).checksumSha256).toBeUndefined();
 		expect((await backend.head('k')).checksumSha256).toBeUndefined();
+	});
+});
+
+describe('resolveLocalRoot', () => {
+	// A path with surrounding quotes (a common "Copy as path" paste) resolves the
+	// same as the bare path: the value goes to fs, never a shell, so quotes would
+	// otherwise become a literal part of the path. Spaces need no quoting.
+	it('test_strips_surrounding_quotes', () => {
+		const bare = 'a/b c/la-test';
+		expect(resolveLocalRoot(`"${bare}"`)).toBe(resolveLocalRoot(bare));
+		expect(resolveLocalRoot(`'${bare}'`)).toBe(resolveLocalRoot(bare));
+	});
+
+	// A blank or whitespace-only root resolves to '' (the caller reads that as "not
+	// configured"), never the current working directory.
+	it('test_blank_root_is_empty', () => {
+		expect(resolveLocalRoot('')).toBe('');
+		expect(resolveLocalRoot('   ')).toBe('');
 	});
 });
 

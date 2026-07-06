@@ -328,11 +328,21 @@ export class LocalBackend implements StorageBackend {
 // $VAR / ${VAR} (POSIX), and a leading ~ for the home dir. Returns '' for a
 // blank input, which the caller reads as "no local root configured".
 export function resolveLocalRoot(raw: string): string {
-	const trimmed = raw.trim();
+	// Strip surrounding quotes (a common paste artifact from Explorer's "Copy as
+	// path"): the path goes straight to fs, never a shell, so a literal quote would
+	// become part of the path and fail. A bare path with spaces needs no quoting.
+	const trimmed = stripSurroundingQuotes(raw.trim());
 	if (trimmed.length === 0) {
 		return '';
 	}
 	return nodePath.resolve(expandEnv(trimmed));
+}
+
+function stripSurroundingQuotes(value: string): string {
+	if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+		return value.slice(1, -1);
+	}
+	return value;
 }
 
 function expandEnv(input: string): string {
