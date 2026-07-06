@@ -202,7 +202,7 @@ export function encodePointer(record: PointerRecord, body: string, extraFrontmat
 	// added implicitly for any value that would otherwise re-parse as a non-string
 	// (timestamps, "yes"/"no", numbers), keeping every string a string on decode.
 	const frontmatterText = dumpYaml(frontmatter, { lineWidth: -1 });
-	const block = renderManagedBlock({ id: record.id, originalName: record.originalName });
+	const block = renderManagedBlock({ id: record.id, originalName: record.originalName, backends: record.backends.map((backend) => backend.type) });
 	return `${FENCE}${frontmatterText}${FENCE}${block}\n${body}`;
 }
 
@@ -238,7 +238,7 @@ export function decodePointer(text: string): DecodedPointer {
 // touching identity.
 export function refreshManagedBlock(text: string, record: PointerRecord): string {
 	const span = locateManagedBlock(text);
-	const block = renderManagedBlock({ id: record.id, originalName: record.originalName });
+	const block = renderManagedBlock({ id: record.id, originalName: record.originalName, backends: record.backends.map((backend) => backend.type) });
 	return text.slice(0, span.start) + block + text.slice(span.end);
 }
 

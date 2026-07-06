@@ -256,6 +256,23 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 		expect(text).toContain('la_version: 2');
 		expect(text).not.toContain('la_version: 1');
 	});
+
+	// The managed block shows a working action link for each backend the pointer
+	// holds: open/reveal for a local copy, copy-reference for S3. A paired pointer
+	// shows both; the links carry only the id (portable across machines).
+	it('test_managed_block_shows_a_link_per_backend', () => {
+		const record: PointerRecord = {
+			...fullRecord(),
+			backends: [
+				{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+				{ type: 'local', path: 'books/x.pdf' },
+			],
+		};
+		const text = encodePointer(record, USER_BODY);
+		expect(text).toContain(`action=open&backend=local&id=${record.id}`);
+		expect(text).toContain(`action=reveal&backend=local&id=${record.id}`);
+		expect(text).toContain(`action=copy&backend=s3&id=${record.id}`);
+	});
 });
 
 describe('pointer codec property tests (la-p1-02)', () => {

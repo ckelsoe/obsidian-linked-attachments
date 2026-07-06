@@ -158,6 +158,16 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			},
 		});
 
+		// Regenerate the open/reveal/copy links in existing pointer notes to the
+		// current format (e.g. after upgrading, so older pointers show every backend).
+		this.addCommand({
+			id: 'refresh-pointer-links',
+			name: 'Refresh pointer note links',
+			callback: () => {
+				void this.runRefreshPointerBlocks();
+			},
+		});
+
 		// Migration: give every S3-only pointer a local copy too (upgrade to paired).
 		this.addCommand({
 			id: 'add-local-mirror',
@@ -737,15 +747,26 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// The obsidian://linked-attachments?action=open&id=... handler for the managed
 	// block's Open link: find the pointer by id and open its local copy.
 	private async handleOpenProtocol(params: ObsidianProtocolData): Promise<void> {
-		if (params.action !== 'open' || typeof params.id !== 'string' || params.id.length === 0) {
+		const id = params.id;
+		if (typeof id !== 'string' || id.length === 0) {
 			return;
 		}
-		const record = await this.attachments.findRecordById(params.id);
+		const record = await this.attachments.findRecordById(id);
 		if (record === null) {
 			new Notice('Could not find that linked attachment in this vault.');
 			return;
 		}
-		await this.openRecord(record);
+		switch (params.action) {
+			case 'reveal':
+				this.revealRecord(record);
+				return;
+			case 'copy':
+				await this.copyRecordReference(record);
+				return;
+			default:
+				await this.openRecord(record);
+				return;
+		}
 	}
 
 	private async openAttachment(file: TFile): Promise<void> {
@@ -753,6 +774,11 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		if (record !== null) {
 			await this.openRecord(record);
 		}
+	}
+
+	private async copyRecordReference(record: PointerRecord): Promise<void> {
+		await navigator.clipboard.writeText(formatPointerReference(record));
+		new Notice('Storage reference copied.');
 	}
 
 	// Open the local copy in its default app. It lives outside the vault, so this
@@ -775,9 +801,12 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	private async revealLocalCopy(file: TFile): Promise<void> {
 		const record = await this.readPointer(file);
-		if (record === null) {
-			return;
+		if (record !== null) {
+			this.revealRecord(record);
 		}
+	}
+
+	private revealRecord(record: PointerRecord): void {
 		const absolutePath = this.attachments.localAbsolutePath(record);
 		if (absolutePath === null) {
 			new Notice('This pointer has no local copy to reveal.');
@@ -787,6 +816,15 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			shell.showItemInFolder(absolutePath);
 		} catch (error) {
 			new Notice(`Could not reveal the file: ${describeError(error)}`);
+		}
+	}
+
+	private async runRefreshPointerBlocks(): Promise<void> {
+		try {
+			const refreshed = await this.attachments.refreshPointerBlocks();
+			new Notice(`Refreshed links in ${refreshed} pointer note(s).`);
+		} catch (error) {
+			new Notice(`Refreshing pointer links failed: ${describeError(error)}`);
 		}
 	}
 

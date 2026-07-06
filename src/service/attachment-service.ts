@@ -20,7 +20,7 @@ import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offl
 import { CheckoutManager, CheckoutDeps, CheckoutResult, CheckinResult } from '../checkout/checkout-manager';
 import { dirtyState, DirtyState, readCheckoutBase, workingCopyPath } from '../checkout/checkout-state';
 import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
-import { BackendRef, BackendType, decodePointer, encodePointer, localBackend, PointerRecord } from '../pointer/codec';
+import { BackendRef, BackendType, decodePointer, encodePointer, localBackend, PointerRecord, refreshManagedBlock } from '../pointer/codec';
 import { StorageBackend } from '../storage/backend';
 import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
@@ -645,6 +645,28 @@ export class AttachmentService {
 			return null;
 		}
 		return new LocalBackend(root).displayKey(local.path);
+	}
+
+	// Regenerate the managed block of every pointer note (upgrading its open links to
+	// the current format), leaving frontmatter and the user body byte-identical.
+	// Returns how many notes changed.
+	async refreshPointerBlocks(): Promise<number> {
+		let refreshed = 0;
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			const text = await this.app.vault.read(file);
+			let record: PointerRecord;
+			try {
+				record = decodePointer(text).record;
+			} catch {
+				continue; // not a pointer note
+			}
+			const updated = refreshManagedBlock(text, record);
+			if (updated !== text) {
+				await this.app.vault.modify(file, updated);
+				refreshed++;
+			}
+		}
+		return refreshed;
 	}
 
 	// Find a pointer record by its id (the protocol handler only carries the id).
