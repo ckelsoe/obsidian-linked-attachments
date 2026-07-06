@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Store offloaded files in a local folder, not just S3. A new Storage mode setting offers "S3 only" (unchanged), "Local only" (move files to a folder outside the vault, such as a synced OneDrive, Dropbox, or NAS path), and "Local and S3" (write both, read from the fast local copy, and keep S3 as an off-machine backup). Set the local folder in settings; environment variables like %OneDriveCommercial% and $HOME are expanded so one setting resolves the right folder on each machine. Offloaded files mirror their vault path under the folder.
+- Paired offload is atomic: in "Local and S3" mode both copies are written and verified before the local original is trashed, and if either copy fails the other is rolled back and your original is kept. You are never left with a pointer whose storage does not actually hold the file.
+- Open and restore now prefer the local copy when both exist and fall back to S3 if the local copy is missing, so a file always opens as long as any of its backends still has it.
+- Check backend integrity: a read-only command that confirms every pointer's storage still holds its file and reports any that are missing.
+- Add a local mirror / Add an S3 mirror: commands that upgrade your existing pointers in place, copying each file to the other backend and verifying the copy, so you can move from S3 only to paired (or the reverse) without re-offloading by hand.
+
+### Changed
+- This is now a desktop-only version. Writing to a local folder uses desktop file access that the mobile app does not provide, so the plugin no longer loads on Obsidian mobile.
+- Existing S3 pointer notes keep working unchanged; they are read as a single S3 backend and upgraded to the new format only when you next write them.
+
 ## [2.2.1] - 2026-06-22
 
 ### Fixed
