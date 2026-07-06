@@ -747,6 +747,9 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// The obsidian://linked-attachments?action=open&id=... handler for the managed
 	// block's Open link: find the pointer by id and open its local copy.
 	private async handleOpenProtocol(params: ObsidianProtocolData): Promise<void> {
+		// Logged so a failing link can be traced: if this never fires, the protocol
+		// route is the problem; if it fires but nothing opens, the shell call is.
+		this.logger.info('Pointer link invoked.', { action: params.action ?? '(none)', hasId: typeof params.id === 'string' });
 		const id = params.id;
 		if (typeof id !== 'string' || id.length === 0) {
 			return;
@@ -781,21 +784,40 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		new Notice('Storage reference copied.');
 	}
 
-	// Open the local copy in its default app. It lives outside the vault, so this
-	// uses the OS shell (openPath) rather than Obsidian's in-vault openWithDefaultApp.
+	// Open the attachment in its default app. Prefer the local copy (it lives outside
+	// the vault, so this uses the OS shell, not Obsidian's in-vault openWithDefaultApp).
+	// With no local copy, download the S3 copy to a temp file and open that.
 	private async openRecord(record: PointerRecord): Promise<void> {
-		const absolutePath = this.attachments.localAbsolutePath(record);
-		if (absolutePath === null) {
-			new Notice('No local copy to open. Restore it, or copy the storage reference to open the S3 copy in your S3 app.');
+		const localPath = this.attachments.localAbsolutePath(record);
+		if (localPath !== null) {
+			await this.openInShell(localPath);
 			return;
 		}
+		new Notice('Downloading to open...');
 		try {
-			const error = await shell.openPath(absolutePath);
-			if (error.length > 0) {
-				new Notice(`Could not open the file: ${error}`);
+			const tempPath = await this.attachments.downloadForOpen(record);
+			if (tempPath === null) {
+				new Notice('This attachment has no openable copy.');
+				return;
+			}
+			await this.openInShell(tempPath);
+		} catch (error) {
+			new Notice(`Could not download to open: ${describeError(error)}`);
+			this.logger.error('Open via download failed.', { id: record.id, error: describeError(error) });
+		}
+	}
+
+	private async openInShell(absolutePath: string): Promise<void> {
+		this.logger.info('Opening in shell.', { path: absolutePath });
+		try {
+			const openError = await shell.openPath(absolutePath);
+			if (openError.length > 0) {
+				new Notice(`Could not open the file: ${openError}`);
+				this.logger.warn('shell.openPath returned an error.', { path: absolutePath, error: openError });
 			}
 		} catch (error) {
 			new Notice(`Could not open the file: ${describeError(error)}`);
+			this.logger.error('shell.openPath threw.', { path: absolutePath, error: describeError(error) });
 		}
 	}
 

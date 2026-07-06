@@ -345,6 +345,12 @@ function stripSurroundingQuotes(value: string): string {
 	return value;
 }
 
+// The OS temp directory, used as a scratch location to download an S3-only object
+// to open it in a default app (there is no local copy to open directly).
+export function osTempDir(): string {
+	return os.tmpdir();
+}
+
 function expandEnv(input: string): string {
 	let out = input.replace(/%([^%]+)%/g, (whole: string, name: string) => process.env[name] ?? whole);
 	out = out.replace(/\$\{([^}]+)\}/g, (whole: string, name: string) => process.env[name] ?? whole);

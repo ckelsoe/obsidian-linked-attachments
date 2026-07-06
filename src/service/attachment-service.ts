@@ -3,7 +3,7 @@ import { signRequest } from '../../sigv4';
 import { S3AddressingStyle, CredentialStore } from '../../credentials';
 import { S3ConnectionConfig } from '../../s3-url';
 import { S3Backend } from '../storage/s3-backend';
-import { LocalBackend, resolveLocalRoot } from '../storage/local-backend';
+import { LocalBackend, osTempDir, resolveLocalRoot } from '../storage/local-backend';
 import { requestUrlTransport } from '../storage/requesturl-transport';
 import { toArrayBuffer } from '../storage/body';
 import { StorageMode } from '../../settings';
@@ -667,6 +667,21 @@ export class AttachmentService {
 			}
 		}
 		return refreshed;
+	}
+
+	// Download the object (verified against the recorded hash) to a temp file and
+	// return its absolute path, so an S3-only pointer with no local copy can still be
+	// opened in a default app. Namespaced by the pointer id so distinct objects do
+	// not collide in the temp dir.
+	async downloadForOpen(record: PointerRecord): Promise<string | null> {
+		const fetched = await this.fetchFromBackends(record, this.getConfig());
+		if (!fetched.ok) {
+			throw new Error(fetched.error);
+		}
+		const tempBackend = new LocalBackend(osTempDir());
+		const cacheKey = `linked-attachments-open/${record.id}/${record.originalName}`;
+		await tempBackend.put(cacheKey, fetched.bytes, fetched.bytes.length);
+		return tempBackend.displayKey(cacheKey);
 	}
 
 	// Find a pointer record by its id (the protocol handler only carries the id).
