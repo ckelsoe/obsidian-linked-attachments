@@ -1,4 +1,4 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SettingGroupItem, SecretComponent, TextComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
@@ -122,6 +122,11 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			},
 			{
 				type: 'group',
+				heading: 'Backfill existing pointers',
+				items: this.backfillItems(),
+			},
+			{
+				type: 'group',
 				heading: 'Round-trip rehearsal',
 				items: [
 					{
@@ -232,6 +237,12 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
 		await this.plugin.saveSettings();
+		// The backfill group's buttons are derived from storageMode, so a mode change
+		// adds or removes items. update() re-runs getSettingDefinitions() and rebuilds
+		// (refreshDomState() only re-evaluates predicates, not structure).
+		if (key === 'storageMode') {
+			this.update();
+		}
 	}
 
 	// The per-extension rule table. A composite, variable-length control, so it is a
@@ -346,6 +357,62 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				textComponent?.setValue(picked);
 			}),
 		);
+	}
+
+	// One backfill button per backend the current storage mode writes. A pointer
+	// created under a past mode can lack a backend the mode now uses, so each active
+	// backend gets a "copy the missing files in now" button. Recomputed whenever the
+	// storage-mode dropdown changes (setControlValue calls update()), so the buttons
+	// track the mode live without a settings reopen.
+	private backfillItems(): SettingGroupItem[] {
+		const mode = this.plugin.settings.storageMode;
+		const targets: Array<'local' | 's3'> = [];
+		if (mode === 'local-only' || mode === 'local-s3') {
+			targets.push('local');
+		}
+		if (mode === 's3-only' || mode === 'local-s3') {
+			targets.push('s3');
+		}
+		return targets.map((target) => ({
+			name: target === 'local' ? 'Copy all files to the local mirror now' : 'Copy all files to the S3 mirror now',
+			desc: `Give every existing pointer the ${target === 'local' ? 'local' : 'S3'} copy it is missing, read from its other backend and verified on write. Safe to re-run: a pointer that already has this copy is skipped.`,
+			searchable: false,
+			render: (setting: Setting) => { this.renderBackfillRow(setting, target); },
+		}));
+	}
+
+	private renderBackfillRow(setting: Setting, target: 'local' | 's3'): void {
+		const statusEl = setting.descEl.createDiv({ cls: 'linked-attachments-secret-status' });
+		setting.addButton((btn) =>
+			btn.setButtonText(target === 'local' ? 'Copy to local' : 'Copy to S3').onClick(async () => {
+				const gate = this.backfillReady(target);
+				if (!gate.ok) {
+					this.applyStatus(statusEl, gate.reason, 'error');
+					return;
+				}
+				btn.setDisabled(true);
+				this.applyStatus(statusEl, 'Copying...', 'neutral');
+				const result = await this.plugin.runAddMirror(target);
+				btn.setDisabled(false);
+				if (result === null) {
+					this.applyStatus(statusEl, 'Backfill failed; see the notice for details.', 'error');
+					return;
+				}
+				this.applyStatus(statusEl, `${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`, result.failed > 0 ? 'error' : 'ok');
+			}),
+		);
+	}
+
+	// Same readiness gate the add-mirror commands use, so the button matches command
+	// availability. Returns the hint to show inline when a backend is not configured.
+	private backfillReady(target: 'local' | 's3'): { ok: true } | { ok: false; reason: string } {
+		if (target === 'local') {
+			return this.plugin.settings.localRoot.trim().length > 0
+				? { ok: true }
+				: { ok: false, reason: 'Set the local folder above first.' };
+		}
+		const ready = this.plugin.settings.endpoint.length > 0 && this.plugin.settings.bucket.length > 0 && this.plugin.credentials.hasCompleteCredentials();
+		return ready ? { ok: true } : { ok: false, reason: 'Set the endpoint, bucket, and credentials first.' };
 	}
 
 	private renderConnectionTestRow(setting: Setting): void {
