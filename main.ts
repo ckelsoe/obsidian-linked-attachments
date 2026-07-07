@@ -12,7 +12,7 @@ import { planVaultSweep, SweepFile } from './src/offload/vault-sweep';
 import { CredentialStore, describeError } from './credentials';
 import { LinkedAttachmentsSettingTab } from './settings-tab';
 import { Logger } from './logger';
-import { AttachmentService } from './src/service/attachment-service';
+import { AttachmentService, MirrorResult } from './src/service/attachment-service';
 import { OffloadPreviewModal } from './src/ui/offload-preview-modal';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 import { LogViewModal } from './src/ui/log-view-modal';
@@ -992,15 +992,19 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		}
 	}
 
-	private async runAddMirror(target: 'local' | 's3'): Promise<void> {
+	// Returns the counts so the settings-tab buttons can show an inline result
+	// alongside the Notice; null signals the run threw (the Notice carries the reason).
+	async runAddMirror(target: 'local' | 's3'): Promise<MirrorResult | null> {
 		const label = target === 'local' ? 'local' : 'S3';
 		new Notice(`Adding ${label} mirror to existing pointers...`);
 		try {
 			const result = target === 'local' ? await this.attachments.addLocalMirror() : await this.attachments.addS3Mirror();
 			new Notice(`${label} mirror: ${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`);
 			this.logger.info('Add mirror complete.', { target, added: result.added, skipped: result.skipped, failed: result.failed });
+			return result;
 		} catch (error) {
 			new Notice(`Adding ${label} mirror failed: ${describeError(error)}`);
+			return null;
 		}
 	}
 
