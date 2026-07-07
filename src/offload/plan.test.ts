@@ -4,7 +4,7 @@ import { layoutHashKey } from '../key/layout';
 import { sha256Hex } from '../hash/sha256';
 import { offloadFile, OffloadDeps } from './pipeline';
 import { MemoryBackend } from '../storage/memory-backend';
-import { decodePointer } from '../pointer/codec';
+import { decodePointer, requireS3Backend } from '../pointer/codec';
 
 // B7 dry-run preview (development-plan section 8, v1 onboarding floor). planOffload
 // computes exactly what an offload WOULD do without performing it: it takes no
@@ -46,7 +46,7 @@ describe('planOffload', () => {
 		const backend = new MemoryBackend();
 		let committed = '';
 		const deps: OffloadDeps = {
-			backend,
+			targets: [{ backend, toRef: (key) => ({ type: 's3', bucket: 'my-bucket', key, keyKind: 'hash' }) }],
 			bucket: 'my-bucket',
 			vaultPrefix: 'charles-main',
 			writePointer: (_path, content) => { committed = content; return Promise.resolve(); },
@@ -56,11 +56,11 @@ describe('planOffload', () => {
 		};
 		const result = await offloadFile(input, deps);
 		expect(result.ok).toBe(true);
-		expect(result.record?.key).toBe(plan.key);
+		expect(result.record && requireS3Backend(result.record).key).toBe(plan.key);
 		expect(result.pointerPath).toBe(plan.pointerPath);
 		expect(result.record?.hash).toBe(plan.hash);
 		// the actually-committed pointer carries the previewed key (no surprise)
-		expect(decodePointer(committed).record.key).toBe(plan.key);
+		expect(requireS3Backend(decodePointer(committed).record).key).toBe(plan.key);
 	});
 
 	it('prop_plan_deterministic :: same inputs produce an identical plan', async () => {

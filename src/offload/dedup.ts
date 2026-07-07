@@ -1,4 +1,4 @@
-import { KeyKind, PointerRecord } from '../pointer/codec';
+import { KeyKind, PointerRecord, s3Backend } from '../pointer/codec';
 import { PointerSource } from '../manifest/manifest';
 
 // Content-dedup at offload (spec section 10 invariant). A hash -> existing-object
@@ -40,7 +40,14 @@ export function rememberObject(index: HashIndex, record: PointerRecord): void {
 	if (record.hash === null || index.has(record.hash)) {
 		return;
 	}
-	index.set(record.hash, { key: record.key, bucket: record.bucket, keyKind: record.keyKind });
+	// Dedup targets an existing S3 object (an offload links a new pointer to it
+	// instead of re-uploading). A local-only pointer has no S3 object to dedup
+	// against, so it is not indexed here.
+	const s3 = s3Backend(record);
+	if (s3 === null) {
+		return;
+	}
+	index.set(record.hash, { key: s3.key, bucket: s3.bucket, keyKind: s3.keyKind });
 }
 
 export function lookupByHash(index: HashIndex, hash: string): DedupTarget | null {

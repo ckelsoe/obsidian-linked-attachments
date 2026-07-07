@@ -1,4 +1,5 @@
-import { Notice, Platform, Plugin, TFile } from 'obsidian';
+import { Notice, ObsidianProtocolData, Platform, Plugin, TFile } from 'obsidian';
+import { shell } from 'electron';
 import {
 	LinkedAttachmentsSettings,
 	DEFAULT_SETTINGS,
@@ -21,7 +22,8 @@ import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
 import { formatPointerReference } from './src/ui/pointer-reference';
-import { decodePointer } from './src/pointer/codec';
+import { BackendType, decodePointer, PointerRecord } from './src/pointer/codec';
+import { parsePointerLink } from './src/pointer/pointer-link';
 import { dirtyColor, dirtyLabel } from './src/checkout/checkout-state';
 import { ConfirmModal } from './src/ui/confirm-modal';
 
@@ -32,6 +34,20 @@ const RENAMED_SECRET_IDS: Record<string, string> = {
 	'linked-attachments-access-key-id': DEFAULT_ACCESS_KEY_SECRET_ID,
 	'linked-attachments-secret-access-key': DEFAULT_SECRET_KEY_SECRET_ID,
 };
+
+// Resolve the Electron shell used to open/reveal a copy that lives OUTSIDE the vault
+// (Obsidian's openWithDefaultApp only handles in-vault paths). Prefer the direct
+// electron binding; on a runtime where the renderer's electron.shell is undefined
+// (context isolation) fall back to @electron/remote, which Obsidian provides (the same
+// module the folder picker uses). Throws only if neither exposes a shell.
+async function resolveShell(): Promise<typeof shell> {
+	if (shell !== undefined && typeof shell.openPath === 'function') {
+		return shell;
+	}
+	const remote = await import('@electron/remote');
+	return remote.shell;
+}
+
 
 // Plugin entry point. Per the workspace code-structure rules this class is wiring
 // only: lifecycle, settings persistence, and constructing the services. The
@@ -67,6 +83,8 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			region: this.settings.region,
 			bucket: this.settings.bucket,
 			addressingStyle: this.settings.addressingStyle,
+			storageMode: this.settings.storageMode,
+			localRoot: this.settings.localRoot,
 		}));
 
 		// Offload the active file (an attachment opened in a tab) to storage.
@@ -118,8 +136,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'resume-interrupted-offload',
 			name: 'Resume an interrupted offload',
 			checkCallback: (checking: boolean): boolean => {
-				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
-				if (!ready) {
+				if (!this.storageConfigured()) {
 					return false;
 				}
 				if (!checking) {
@@ -136,12 +153,62 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'scan-vault-and-offload-by-type',
 			name: 'Scan vault and offload by file type',
 			checkCallback: (checking: boolean): boolean => {
+				if (!this.storageConfigured()) {
+					return false;
+				}
+				if (!checking) {
+					this.runVaultSweep();
+				}
+				return true;
+			},
+		});
+
+		// Read-only integrity scan: confirm every pointer's backends still hold their
+		// object (S3 HEAD / local stat), reporting the ones that do not.
+		this.addCommand({
+			id: 'check-backend-integrity',
+			name: 'Check backend integrity',
+			callback: () => {
+				void this.runIntegrityCheck();
+			},
+		});
+
+		// Regenerate the open/reveal/copy links in existing pointer notes to the
+		// current format (e.g. after upgrading, so older pointers show every backend).
+		this.addCommand({
+			id: 'refresh-pointer-links',
+			name: 'Refresh pointer note links',
+			callback: () => {
+				void this.runRefreshPointerBlocks();
+			},
+		});
+
+		// Migration: give every S3-only pointer a local copy too (upgrade to paired).
+		this.addCommand({
+			id: 'add-local-mirror',
+			name: 'Add a local mirror to existing pointers',
+			checkCallback: (checking: boolean): boolean => {
+				if (this.settings.localRoot.trim().length === 0) {
+					return false;
+				}
+				if (!checking) {
+					void this.runAddMirror('local');
+				}
+				return true;
+			},
+		});
+
+		// Migration: give every local-only pointer an S3 backup too.
+		this.addCommand({
+			id: 'add-s3-mirror',
+			name: 'Add an S3 mirror to existing pointers',
+			checkCallback: (checking: boolean): boolean => {
 				const ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
 				if (!ready) {
 					return false;
 				}
 				if (!checking) {
-					this.runVaultSweep();
+					void this.runAddMirror('s3');
 				}
 				return true;
 			},
@@ -258,6 +325,35 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 		// Right-click affordances: "Offload to storage" on a normal file, and
 		// "Restore from storage" on a pointer note (detected by its la_* frontmatter).
+		// The pointer's managed-block "Open" link is an obsidian://linked-attachments
+		// URI; register the handler so it actually opens the attachment (this was
+		// never registered before, so the link was inert).
+		this.registerObsidianProtocolHandler('linked-attachments', (params: ObsidianProtocolData) => {
+			void this.handleOpenProtocol(params);
+		});
+
+		// Clicking an obsidian:// link inside a note does not reliably reach the
+		// protocol handler: Obsidian routes it out through the OS protocol
+		// registration, which on a machine with multiple installs (or none
+		// registered) dead-ends silently, so open/reveal/copy appear to do nothing.
+		// Intercept the managed-block links in rendered markdown and dispatch in-app
+		// through the same handler instead. The href stays an obsidian:// URI so the
+		// link still degrades to inert, readable text when the plugin is disabled.
+		this.registerMarkdownPostProcessor((element) => {
+			const links = element.querySelectorAll<HTMLAnchorElement>('a[href^="obsidian://linked-attachments"]');
+			links.forEach((link) => {
+				const href = link.getAttribute('href');
+				if (href === null) {
+					return;
+				}
+				link.addEventListener('click', (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					void this.handleOpenProtocol(parsePointerLink(href));
+				});
+			});
+		});
+
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (!(file instanceof TFile)) {
@@ -293,6 +389,26 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 									void this.copyPointerReference(file);
 								});
 						});
+						// Open / reveal the local copy directly (desktop; the local copy
+						// lives outside the vault, so this uses the OS shell).
+						if (Platform.isDesktop) {
+							menu.addItem((item) => {
+								item
+									.setTitle('Open in default app')
+									.setIcon('external-link')
+									.onClick(() => {
+										void this.openAttachment(file);
+									});
+							});
+							menu.addItem((item) => {
+								item
+									.setTitle('Reveal local copy in file explorer')
+									.setIcon('folder-open')
+									.onClick(() => {
+										void this.revealLocalCopy(file);
+									});
+							});
+						}
 						// Checkout/check-in cycle (spec section 4a), desktop-only.
 						if (Platform.isDesktop) {
 							if (frontmatter['la_copy_state'] === 'checked-out') {
@@ -368,7 +484,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				triggerMode: this.settings.autoOffloadTriggerMode,
 				idleMinutes: this.settings.autoOffloadIdleMinutes,
 			}),
-			isReady: () => this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials(),
+			isReady: () => this.storageConfigured(),
 			offloadNow: (file) => this.executeOffload(file),
 			onError: (error) => this.logger.error('Auto-offload threw.', { error: describeError(error) }),
 		});
@@ -418,6 +534,8 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	onunload(): void {
 		this.autoOffload?.dispose();
+		// Best-effort purge of the download-and-open temp cache (S3-only opens).
+		void this.attachments.cleanOpenTempCache();
 	}
 
 	// Check out a pointer to edit it in the OS default app. Guarded.
@@ -562,12 +680,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	// Open the batch dry-run preview + progress modal for a multi-file selection.
 	private runBatchOffload(files: TFile[]): void {
-		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
-			new Notice('Set the endpoint and bucket in settings first.');
-			return;
-		}
-		if (!this.credentials.hasCompleteCredentials()) {
-			new Notice('Add your storage credentials in settings first.');
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		new BatchOffloadModal(this.app, this.attachments, files, (error) => {
@@ -582,7 +695,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// future add would. It reuses the batch dry-run preview + progress modal, so the
 	// user sees every file and the total and nothing moves until they confirm.
 	runVaultSweep(): void {
-		if (!this.requireStorageReady()) {
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		const byPath = new Map<string, TFile>();
@@ -654,12 +767,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// moves until the user confirms. Guarded so a failure computing the preview is a
 	// notice + a logged error, never an unhandled rejection.
 	private async runOffload(file: TFile): Promise<void> {
-		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
-			new Notice('Set the endpoint and bucket in settings first.');
-			return;
-		}
-		if (!this.credentials.hasCompleteCredentials()) {
-			new Notice('Add your storage credentials in settings first.');
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		try {
@@ -675,6 +783,227 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	// Run the verified upload, then the local original goes to system trash
 	// (recoverable). Never removes a file without a verified cloud copy.
+	// The obsidian://linked-attachments?action=open&id=... handler for the managed
+	// block's Open link: find the pointer by id and open its local copy.
+	private async handleOpenProtocol(params: ObsidianProtocolData): Promise<void> {
+		// The verb rides on `op` so it never collides with Obsidian's reserved
+		// `action` (the registered route). Legacy links from earlier builds carried
+		// the verb as `action`, so fall back to it for backward compatibility.
+		const op = typeof params.op === 'string' ? params.op : params.action;
+		// Logged so a failing link can be traced: if this never fires, the protocol
+		// route is the problem; if it fires but nothing opens, the shell call is.
+		this.logger.info('Pointer link invoked.', { op: op ?? '(none)', hasId: typeof params.id === 'string' });
+		const id = params.id;
+		if (typeof id !== 'string' || id.length === 0) {
+			return;
+		}
+		const record = await this.attachments.findRecordById(id);
+		if (record === null) {
+			new Notice('Could not find that linked attachment in this vault.');
+			return;
+		}
+		const backend: BackendType | undefined = params.backend === 's3' || params.backend === 'local' ? params.backend : undefined;
+		switch (op) {
+			case 'reveal':
+				await this.revealRecord(record);
+				return;
+			case 'copy':
+				await this.copyRecordReference(record);
+				return;
+			default:
+				await this.openRecord(record, backend);
+				return;
+		}
+	}
+
+	private async openAttachment(file: TFile): Promise<void> {
+		const record = await this.readPointer(file);
+		if (record !== null) {
+			await this.openRecord(record);
+		}
+	}
+
+	private async copyRecordReference(record: PointerRecord): Promise<void> {
+		await navigator.clipboard.writeText(formatPointerReference(record));
+		new Notice('Storage reference copied.');
+	}
+
+	// Open the attachment in its default app, telling the user WHICH copy opened.
+	// `preferred` comes from the clicked backend link: 'local' opens the on-disk copy
+	// directly (fast path, no download); 's3' downloads the cloud copy to a temp file
+	// and opens that. With no preference (a legacy link) it prefers local. A local
+	// copy that is configured but missing on disk falls back to the S3 copy so a
+	// paired pointer still opens; the Notice always names the copy that opened.
+	private async openRecord(record: PointerRecord, preferred?: BackendType): Promise<void> {
+		const hasS3 = record.backends.some((backend) => backend.type === 's3');
+		if (preferred !== 's3') {
+			// localCopyOnDisk stat-checks; a bare path resolve would send a missing file
+			// to the shell and dead-end.
+			const localPath = await this.attachments.localCopyOnDisk(record);
+			if (localPath !== null) {
+				if (await this.openInShell(localPath)) {
+					new Notice('Opened the local copy.');
+				}
+				return;
+			}
+			// No usable local copy. Only mention S3 when the pointer actually has one.
+			if (!hasS3) {
+				const hasLocal = record.backends.some((backend) => backend.type === 'local');
+				new Notice(
+					hasLocal
+						? 'The local copy is not on disk, and this attachment has no S3 backup to open.'
+						: 'This attachment has no openable copy.',
+				);
+				return;
+			}
+			new Notice('The local copy is not on disk; opening the S3 copy instead...');
+		} else {
+			new Notice('Downloading the S3 copy to open...');
+		}
+		try {
+			const tempPath = await this.attachments.downloadForOpen(record, 's3');
+			if (tempPath === null) {
+				new Notice('This attachment has no openable copy.');
+				return;
+			}
+			if (await this.openInShell(tempPath)) {
+				new Notice('Opened the S3 copy (downloaded to a temp file).');
+			}
+		} catch (error) {
+			new Notice(`Could not download to open: ${describeError(error)}`);
+			this.logger.error('Open via download failed.', { id: record.id, error: describeError(error) });
+		}
+	}
+
+	// Returns whether the file actually opened, so callers only report success when the
+	// OS shell accepted the path (openPath resolves to '' on success or an error string).
+	private async openInShell(absolutePath: string): Promise<boolean> {
+		this.logger.info('Opening in shell.', { path: absolutePath });
+		try {
+			const openError = await (await resolveShell()).openPath(absolutePath);
+			if (openError.length > 0) {
+				new Notice(`Could not open the file: ${openError}`);
+				this.logger.warn('shell.openPath returned an error.', { path: absolutePath, error: openError });
+				return false;
+			}
+			return true;
+		} catch (error) {
+			new Notice(`Could not open the file: ${describeError(error)}`);
+			this.logger.error('shell.openPath threw.', { path: absolutePath, error: describeError(error) });
+			return false;
+		}
+	}
+
+	private async revealLocalCopy(file: TFile): Promise<void> {
+		const record = await this.readPointer(file);
+		if (record !== null) {
+			await this.revealRecord(record);
+		}
+	}
+
+	private async revealRecord(record: PointerRecord): Promise<void> {
+		const absolutePath = this.attachments.localAbsolutePath(record);
+		if (absolutePath === null) {
+			new Notice('This pointer has no local copy to reveal.');
+			return;
+		}
+		try {
+			(await resolveShell()).showItemInFolder(absolutePath);
+		} catch (error) {
+			new Notice(`Could not reveal the file: ${describeError(error)}`);
+		}
+	}
+
+	private async runRefreshPointerBlocks(): Promise<void> {
+		try {
+			const refreshed = await this.attachments.refreshPointerBlocks();
+			new Notice(`Refreshed links in ${refreshed} pointer note(s).`);
+		} catch (error) {
+			new Notice(`Refreshing pointer links failed: ${describeError(error)}`);
+		}
+	}
+
+	private async readPointer(file: TFile): Promise<PointerRecord | null> {
+		try {
+			return decodePointer(await this.app.vault.read(file)).record;
+		} catch {
+			new Notice('Not a pointer note.');
+			return null;
+		}
+	}
+
+	// A setup hint matched to the active storage mode, so a local-only user is not
+	// told to configure S3 (and vice versa).
+	private storageSetupHint(): string {
+		switch (this.settings.storageMode) {
+			case 'local-only':
+				return 'Set the local folder in settings first.';
+			case 'local-s3':
+				return 'Set the local folder and your S3 endpoint, bucket, and credentials in settings first.';
+			default:
+				return 'Set your S3 endpoint, bucket, and credentials in settings first.';
+		}
+	}
+
+	// The offload/restore readiness gate, mode-aware (unlike requireStorageReady,
+	// which stays S3-only for the S3-only checkout/check-in cycle).
+	private requireStorageForOffload(): boolean {
+		if (this.storageConfigured()) {
+			return true;
+		}
+		new Notice(this.storageSetupHint());
+		return false;
+	}
+
+	// Whether the active storage mode is fully configured: S3 modes need endpoint +
+	// bucket + credentials; local-only needs a local root; paired needs both.
+	private storageConfigured(): boolean {
+		const s3Ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
+		const localReady = this.settings.localRoot.trim().length > 0;
+		switch (this.settings.storageMode) {
+			case 'local-only':
+				return localReady;
+			case 'local-s3':
+				return s3Ready && localReady;
+			default:
+				return s3Ready;
+		}
+	}
+
+	private async runIntegrityCheck(): Promise<void> {
+		new Notice('Checking backend integrity...');
+		try {
+			const findings = await this.attachments.checkBackendIntegrity();
+			if (findings.length === 0) {
+				new Notice('All pointers healthy: every backend holds its object.');
+				return;
+			}
+			new Notice(`${findings.length} pointer(s) have a missing backend. See the activity log for details.`);
+			for (const finding of findings) {
+				this.logger.warn('Backend integrity: missing backend.', {
+					pointer: finding.pointerPath,
+					name: finding.name,
+					broken: finding.broken.join(', '),
+					backends: finding.totalBackends,
+				});
+			}
+		} catch (error) {
+			new Notice(`Integrity check failed: ${describeError(error)}`);
+		}
+	}
+
+	private async runAddMirror(target: 'local' | 's3'): Promise<void> {
+		const label = target === 'local' ? 'local' : 'S3';
+		new Notice(`Adding ${label} mirror to existing pointers...`);
+		try {
+			const result = target === 'local' ? await this.attachments.addLocalMirror() : await this.attachments.addS3Mirror();
+			new Notice(`${label} mirror: ${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`);
+			this.logger.info('Add mirror complete.', { target, added: result.added, skipped: result.skipped, failed: result.failed });
+		} catch (error) {
+			new Notice(`Adding ${label} mirror failed: ${describeError(error)}`);
+		}
+	}
+
 	private async executeOffload(file: TFile): Promise<void> {
 		new Notice(`Offloading ${file.name}...`);
 		this.logger.info('Offload started.', { path: file.path });
@@ -698,12 +1027,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// Restore a pointer note: download, verify the bytes against the recorded hash,
 	// write the file back, and remove the pointer. Guarded.
 	private async runRestore(pointer: TFile): Promise<void> {
-		if (this.settings.endpoint.length === 0 || this.settings.bucket.length === 0) {
-			new Notice('Set the endpoint and bucket in settings first.');
-			return;
-		}
-		if (!this.credentials.hasCompleteCredentials()) {
-			new Notice('Add your storage credentials in settings first.');
+		if (!this.requireStorageForOffload()) {
 			return;
 		}
 		new Notice(`Restoring from ${pointer.name}...`);

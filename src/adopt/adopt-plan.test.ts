@@ -1,5 +1,6 @@
 import { planAdoption, summarizeRows } from './adopt-plan';
 import { AdoptRow } from './adopt-scan';
+import { requireS3Backend } from '../pointer/codec';
 
 // The adopt UI's safety guard: a selection becomes pointers only for rows that are
 // actually adoptable. Even if the checklist somehow offers a collision or an
@@ -29,14 +30,14 @@ describe('planAdoption', () => {
 			[row('a.pdf', 'adoptable'), row('b.pdf', 'collision'), row('c.pdf', 'already-adopted')],
 			options,
 		);
-		expect(pointers.map((p) => p.record.key)).toEqual(['a.pdf']);
+		expect(pointers.map((p) => requireS3Backend(p.record).key)).toEqual(['a.pdf']);
 	});
 
 	it('AC3 test_built_pointers_are_asserted', () => {
 		const [pointer] = planAdoption([row('a.pdf', 'adoptable')], options);
 		expect(pointer?.record.verificationTier).toBe('asserted');
 		expect(pointer?.record.hash).toBeNull();
-		expect(pointer?.record.keyKind).toBe('external');
+		expect(pointer && requireS3Backend(pointer.record).keyKind).toBe('external');
 	});
 
 	it('AC4 test_empty_is_empty', () => {

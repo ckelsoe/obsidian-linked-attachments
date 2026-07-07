@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { layoutHashKey, adoptExternalKey, supersedingKey, applyVaultRename } from './layout';
-import { PointerRecord } from '../pointer/codec';
+import { PointerRecord, requireS3Backend } from '../pointer/codec';
 
 // Tier 0: pure key derivation. No backend, no network.
 
@@ -12,9 +12,14 @@ function baseRecord(): PointerRecord {
 		laVersion: 1,
 		id: 'ID1',
 		hash: HASH_A,
-		bucket: 's3-dev-test',
-		key: 'charles-main/31-books/Romans/Cranfield--9f86d0.pdf',
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'charles-main/31-books/Romans/Cranfield--9f86d0.pdf',
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'Cranfield.pdf',
 		originalExt: 'pdf',
 		originalPath: '31-books/Romans/Cranfield.pdf',
@@ -73,7 +78,7 @@ describe('key layout acceptance (la-p1-04)', () => {
 	it('test_key_immutable_vs_rename', () => {
 		const record = baseRecord();
 		const renamed = applyVaultRename(record, '99-archive/Cranfield-moved.pdf');
-		expect(renamed.key).toBe(record.key);
+		expect(requireS3Backend(renamed).key).toBe(requireS3Backend(record).key);
 		expect(renamed.hash).toBe(record.hash);
 		expect(renamed.originalPath).toBe('99-archive/Cranfield-moved.pdf');
 		expect(renamed.originalName).toBe('Cranfield-moved.pdf');

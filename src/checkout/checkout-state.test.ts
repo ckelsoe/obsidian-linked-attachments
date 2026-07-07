@@ -18,9 +18,14 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 		laVersion: 1,
 		id: 'ptr-1',
 		hash: 'a'.repeat(64),
-		bucket: 's3-dev-test',
-		key: 'charles-main/budget--aaaaaa.xlsx',
-		keyKind: 'hash',
+		backends: [
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'charles-main/budget--aaaaaa.xlsx',
+				keyKind: 'hash',
+			},
+		],
 		originalName: 'budget.xlsx',
 		originalExt: 'xlsx',
 		originalPath: 'finance/budget.xlsx',

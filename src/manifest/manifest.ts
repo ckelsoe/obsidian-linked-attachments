@@ -1,4 +1,4 @@
-import { KeyKind, PointerRecord, VerificationTier } from '../pointer/codec';
+import { KeyKind, PointerRecord, s3Backend, VerificationTier } from '../pointer/codec';
 
 // The manifest cache (spec section 3, section 10). A fast index of every
 // offloaded object, REBUILDABLE and never the source of truth:
@@ -65,13 +65,20 @@ export type ManifestParseResult = { ok: true; manifest: Manifest } | { ok: false
 export function buildManifestFromPointers(sources: PointerSource[]): Manifest {
 	const entries: Record<string, ManifestEntry> = {};
 	for (const { pointerPath, record } of sources) {
+		// The manifest indexes the S3 object (LIST/HEAD reconcile is S3-side). A
+		// local-only pointer has no S3 object to reconcile against the bucket, so it
+		// is skipped here; local integrity is checked on the pointer's local backend.
+		const s3 = s3Backend(record);
+		if (s3 === null) {
+			continue;
+		}
 		// Duplicate keys resolve deterministically: last source wins.
-		entries[record.key] = {
-			key: record.key,
-			keyKind: record.keyKind,
+		entries[s3.key] = {
+			key: s3.key,
+			keyKind: s3.keyKind,
 			id: record.id,
 			hash: record.hash,
-			bucket: record.bucket,
+			bucket: s3.bucket,
 			byteSize: record.byteSize,
 			verificationTier: record.verificationTier,
 			originalPath: record.originalPath,

@@ -12,9 +12,14 @@ const record = (over: Partial<PointerRecord> = {}): PointerRecord => ({
 	laVersion: 1,
 	id: 'id',
 	hash: 'abc123',
-	bucket: 'my-bucket',
-	key: 'books/Romans/Cranfield--9f86d0.pdf',
-	keyKind: 'hash',
+	backends: [
+		{
+			type: 's3',
+			bucket: 'my-bucket',
+			key: 'books/Romans/Cranfield--9f86d0.pdf',
+			keyKind: 'hash',
+		},
+	],
 	originalName: 'Cranfield.pdf',
 	originalExt: 'pdf',
 	originalPath: 'books/Romans/Cranfield.pdf',
@@ -47,7 +52,8 @@ describe('formatPointerReference', () => {
 	});
 
 	it('tells the mobile user how to act on it', () => {
-		expect(formatPointerReference(record()).toLowerCase()).toContain('s3 app');
+		// The actionable handle is the S3 key, which the user opens in their own S3 app.
+		expect(formatPointerReference(record()).toLowerCase()).toContain('s3 key');
 	});
 
 	it('handles an adopted pointer with no content type or hash', () => {

@@ -1,4 +1,4 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SecretComponent, TextComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
@@ -19,6 +19,30 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
+			{
+				type: 'group',
+				heading: 'Storage',
+				items: [
+					{
+						name: 'Storage mode',
+						desc: 'Where offloaded files are written. S3 only uses your bucket. Local only moves files to a folder outside the vault (a synced OneDrive, Dropbox, or NAS path). Local and S3 writes both, reading from the local copy and keeping S3 as an off-machine backup.',
+						control: {
+							type: 'dropdown',
+							key: 'storageMode',
+							options: {
+								's3-only': 'S3 only',
+								'local-only': 'Local only',
+								'local-s3': 'Local and S3 (paired)',
+							},
+						},
+					},
+					{
+						name: 'Local folder',
+						desc: 'Path to the offload folder, used by the local and paired modes. Browse to pick it, or type a path (no quotes needed, spaces are fine). Environment variables are expanded (%OneDriveCommercial%, $HOME) so one setting resolves the right folder on each machine. Offloaded files mirror their vault path under here.',
+						render: (setting: Setting) => { this.renderLocalFolderRow(setting); },
+					},
+				],
+			},
 			{
 				type: 'group',
 				heading: 'Connection',
@@ -296,6 +320,34 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		});
 	}
 
+	// The local-folder field: a text input plus a Browse button that opens the OS
+	// folder picker (desktop-only, via Electron). Typing a path still works, so if
+	// the picker is unavailable the field degrades to plain text entry.
+	private renderLocalFolderRow(setting: Setting): void {
+		let textComponent: TextComponent | null = null;
+		setting.addText((text) => {
+			textComponent = text;
+			text
+				.setPlaceholder('Folder outside the vault')
+				.setValue(this.plugin.settings.localRoot)
+				.onChange(async (value) => {
+					this.plugin.settings.localRoot = value;
+					await this.plugin.saveSettings();
+				});
+		});
+		setting.addButton((btn) =>
+			btn.setButtonText('Browse').onClick(async () => {
+				const picked = await pickFolder(this.plugin.settings.localRoot);
+				if (picked === null) {
+					return;
+				}
+				this.plugin.settings.localRoot = picked;
+				await this.plugin.saveSettings();
+				textComponent?.setValue(picked);
+			}),
+		);
+	}
+
 	private renderConnectionTestRow(setting: Setting): void {
 		setting.addButton((btn) => {
 			this.testButton = btn;
@@ -363,5 +415,27 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		el.setText(text);
 		el.toggleClass('linked-attachments-secret-status-ok', kind === 'ok');
 		el.toggleClass('linked-attachments-secret-status-error', kind === 'error');
+	}
+}
+
+// Open the OS folder picker (Electron, desktop-only). Returns the chosen absolute
+// path, or null if the user cancels or the picker is unavailable (they can still
+// type the path). @electron/remote is external and provided by Obsidian's runtime.
+async function pickFolder(current: string): Promise<string | null> {
+	try {
+		const { dialog } = await import('@electron/remote');
+		const start = current.trim();
+		const result = await dialog.showOpenDialog({
+			title: 'Choose the local offload folder',
+			defaultPath: start.length > 0 && !start.includes('%') && !start.includes('$') ? start : undefined,
+			properties: ['openDirectory', 'createDirectory'],
+		});
+		if (result.canceled || result.filePaths.length === 0) {
+			return null;
+		}
+		return result.filePaths[0] ?? null;
+	} catch {
+		new Notice('Folder picker is unavailable here; type or paste the path instead.');
+		return null;
 	}
 }

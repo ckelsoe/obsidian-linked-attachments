@@ -14,6 +14,12 @@ export const DEFAULT_SECRET_KEY_SECRET_ID = 'la-secret-key';
 // Non-secret plugin configuration, persisted to data.json by Obsidian. The raw
 // access key and secret key are NOT here; only the secretStorage IDs that
 // reference them (accessKeyIdSecretName / secretAccessKeySecretName).
+// Where offloaded objects are written. `s3-only` is the historical behavior and
+// the default for existing installs. `local-only` writes to a folder outside the
+// vault (a synced OneDrive/Dropbox/NAS path); `local-s3` writes both, preferring
+// the local copy for reads and keeping S3 as the durable off-machine backup.
+export type StorageMode = 's3-only' | 'local-only' | 'local-s3';
+
 export interface LinkedAttachmentsSettings {
 	endpoint: string;
 	region: string;
@@ -21,6 +27,16 @@ export interface LinkedAttachmentsSettings {
 	addressingStyle: S3AddressingStyle;
 	accessKeyIdSecretName: string;
 	secretAccessKeySecretName: string;
+	// Storage mode + the local root. localRoot supports environment variable
+	// expansion (%OneDriveCommercial%, $HOME) at resolve time so one vault synced
+	// across machines resolves the same folder under each user profile. The offloaded
+	// file mirrors its vault-relative path under the root (the key layout is the
+	// single source of that path and already carries a content-hash suffix for
+	// collision safety and browsability), and the pointer stores that path
+	// root-relative so it stays portable across machines that mount the folder at
+	// different absolute locations.
+	storageMode: StorageMode;
+	localRoot: string;
 	// When on, debug-level app events are also written to the log. The bucket audit
 	// trail, warnings, and errors are logged regardless of this setting.
 	debugLogging: boolean;
@@ -49,6 +65,10 @@ export const DEFAULT_SETTINGS: LinkedAttachmentsSettings = {
 	addressingStyle: 'virtual-hosted',
 	accessKeyIdSecretName: DEFAULT_ACCESS_KEY_SECRET_ID,
 	secretAccessKeySecretName: DEFAULT_SECRET_KEY_SECRET_ID,
+	// Default to the historical S3-only behavior so an existing install is unchanged
+	// until the user opts into a local folder.
+	storageMode: 's3-only',
+	localRoot: '',
 	debugLogging: false,
 	// Auto-offload defaults: off, prompt-by-default. Idle-debounce is the opt-in
 	// mode; the idle window only applies when it is selected.
