@@ -341,7 +341,21 @@ export function resolveLocalRoot(raw: string): string {
 	if (trimmed.length === 0) {
 		return '';
 	}
-	return nodePath.resolve(expandEnv(trimmed));
+	const expanded = expandEnv(trimmed);
+	// Fail closed when the expanded root is not absolute. The stored env-var forms
+	// (%OneDriveCommercial%\sub, ${VAR}/sub, ~/sub) become absolute only once the
+	// variable resolves on this machine; if it is unset, expandEnv leaves the marker
+	// in place and the string stays relative. path.resolve would then join that
+	// relative string onto the process cwd, and a caller that only checks "root is
+	// non-empty" would offload verified bytes into that wrong, non-synced directory.
+	// Returning '' makes every existing guard (the localBackend factory throw, the
+	// open/reveal null checks, the readiness gate) read the root as "not configured
+	// here". A genuinely absolute path that happens to contain a literal $ or %
+	// (e.g. C:\$Recycle.Bin) stays absolute and resolves unchanged, as before.
+	if (!nodePath.isAbsolute(expanded)) {
+		return '';
+	}
+	return nodePath.resolve(expanded);
 }
 
 function stripSurroundingQuotes(value: string): string {

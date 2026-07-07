@@ -9,12 +9,25 @@ Offload large, cold files to your own S3-compatible bucket or a local folder, ke
 Choose where offloaded files go in settings:
 
 - **S3 only** — files go to your own S3-compatible bucket (Cloudflare R2, AWS S3, Backblaze B2, Wasabi, MinIO, and others).
-- **Local only** — files move to a folder outside the vault, such as a synced OneDrive, Dropbox, or NAS path. Reads are instant and no cloud account is required. Set the folder in settings; environment variables like `%OneDriveCommercial%` and `$HOME` are expanded so one setting works across machines.
+- **Local only** — files move to a folder outside the vault, such as a synced OneDrive, Dropbox, or NAS path. Reads are instant and no cloud account is required. Pick your provider and set the folder in settings.
 - **Local and S3 (paired)** — files are written to both: the local copy is the fast read path and the S3 copy is a durable off-machine backup. Opens prefer the local copy and fall back to S3 if it is missing.
 
 In every mode the original is only removed after the copy is verified byte-for-byte, and each offloaded file leaves a plain pointer note so you can always find and retrieve it. Use **Add a local mirror** or **Add an S3 mirror** to upgrade existing pointers from one mode to paired without re-offloading.
 
 > This version is desktop-only, because writing to a local folder uses desktop file access that the mobile app does not provide.
+
+## Local folders across machines
+
+A synced vault opens on more than one machine, and the same synced folder is rarely at the same absolute path everywhere: a different drive letter on another Windows PC, a completely different location on macOS. Linked Attachments resolves the local folder per machine so one synced vault just works:
+
+- The pointer note stores a portable, folder-relative key, never a machine-specific absolute path.
+- Settings hold a root per operating system. Set the folder once on each OS you open the vault on. Within one OS the setting is portable across machines: a Windows OneDrive folder is stored in its `%OneDriveCommercial%` form, so it resolves correctly on any drive letter with no re-editing.
+- The settings panel shows what the folder resolves to on the machine you are looking at, so you can confirm it before you trust a file.
+
+Two things to know:
+
+- **The plugin is required to open a local link.** A local attachment link resolves through the plugin. With the plugin disabled or uninstalled the link will not open, though the pointer note still reads as plain text and its frontmatter still records where the file lives, so nothing is lost.
+- **The bytes have to have synced.** The folder can resolve correctly while your sync client (OneDrive, Dropbox, and so on) has not finished downloading the file, or the pointer note itself has not synced to this machine yet. In that case the link cannot open here yet. In paired mode the S3 copy is opened instead; in local-only mode you get a message that the copy has not synced, not an error implying the file is gone.
 
 ## Installation
 

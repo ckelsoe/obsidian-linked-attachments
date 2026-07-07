@@ -1,7 +1,9 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SettingGroupItem, SecretComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SettingGroupItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
-import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
+import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID, OSKey, StorageProvider } from './settings';
+import { activeOS, normalizePickedPath, selectActiveRoot } from './src/storage/local-root';
+import { resolveLocalRoot } from './src/storage/local-backend';
 import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 import { LogViewModal } from './src/ui/log-view-modal';
@@ -38,8 +40,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Local folder',
-						desc: 'Path to the offload folder, used by the local and paired modes. Browse to pick it, or type a path (no quotes needed, spaces are fine). Environment variables are expanded (%OneDriveCommercial%, $HOME) so one setting resolves the right folder on each machine. Offloaded files mirror their vault path under here.',
-						render: (setting: Setting) => { this.renderLocalFolderRow(setting); },
+						desc: 'Where the local and paired modes write, resolved per machine. Pick your sync provider, set the folder for each operating system you open this vault on, and an optional subfolder shared across them. A Windows OneDrive pick is stored in its %OneDriveCommercial% form so the same setting resolves on any drive letter. The bytes only appear here after your sync client downloads them, and the pointer note must have synced too, so a just-added file can lag on a second machine.',
+						searchable: false,
+						render: (setting: Setting) => { this.renderLocalStorageRows(setting); },
 					},
 				],
 			},
@@ -331,32 +334,133 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		});
 	}
 
-	// The local-folder field: a text input plus a Browse button that opens the OS
-	// folder picker (desktop-only, via Electron). Typing a path still works, so if
-	// the picker is unavailable the field degrades to plain text entry.
-	private renderLocalFolderRow(setting: Setting): void {
-		let textComponent: TextComponent | null = null;
-		setting.addText((text) => {
-			textComponent = text;
-			text
-				.setPlaceholder('Folder outside the vault')
-				.setValue(this.plugin.settings.localRoot)
-				.onChange(async (value) => {
-					this.plugin.settings.localRoot = value;
-					await this.plugin.saveSettings();
-				});
+	private static readonly PROVIDER_LABELS: Record<StorageProvider, string> = {
+		'onedrive-business': 'OneDrive (business)',
+		'onedrive-personal': 'OneDrive (personal)',
+		'dropbox': 'Dropbox',
+		'box': 'Box',
+		'icloud': 'iCloud Drive',
+		'google-drive': 'Google Drive',
+		'custom': 'Custom folder or NAS',
+	};
+
+	private static readonly OS_LABELS: Record<OSKey, string> = {
+		win: 'Windows',
+		mac: 'macOS',
+		linux: 'Linux',
+	};
+
+	private static readonly OS_PLACEHOLDERS: Record<OSKey, string> = {
+		win: '%OneDriveCommercial%\\vault-attachments',
+		mac: '~/Library/CloudStorage/OneDrive-Tenant/vault-attachments',
+		linux: '/mnt/sync/vault-attachments',
+	};
+
+	// The cross-machine local-root control (spec 2026-07-07). A composite,
+	// variable-length control, so it renders full-width below the title/description
+	// (the workspace stacked-row convention) and self-persists: a provider dropdown,
+	// a portable subfolder, one root row per OS with the active machine highlighted
+	// and a Browse button (which normalizes the pick to its env-var form), and a
+	// banner showing what this machine resolves to right now.
+	private renderLocalStorageRows(setting: Setting): void {
+		setting.settingEl.addClass('linked-attachments-local-setting');
+		const local = this.plugin.settings.localAttachment;
+		const wrap = setting.settingEl.createDiv({ cls: 'linked-attachments-local' });
+		const thisOS = activeOS();
+
+		const banner = wrap.createDiv({ cls: 'linked-attachments-local-banner' });
+		const refreshBanner = (): void => {
+			const osLabel = LinkedAttachmentsSettingTab.OS_LABELS[thisOS];
+			const stored = selectActiveRoot(this.plugin.settings);
+			const resolved = resolveLocalRoot(stored);
+			let text: string;
+			let warn: boolean;
+			if (stored.length === 0) {
+				text = `On this machine (${osLabel}) no local folder is set yet.`;
+				warn = true;
+			} else if (resolved.length === 0) {
+				// A stored env-var form that does not resolve on this machine (the
+				// variable is not set here), so the folder is effectively unconfigured.
+				text = `On this machine (${osLabel}) the folder could not be resolved; a variable like %OneDriveCommercial% is not set here. Set this machine's folder directly.`;
+				warn = true;
+			} else {
+				text = `On this machine (${osLabel}) this resolves to: ${resolved}`;
+				warn = false;
+			}
+			banner.setText(text);
+			banner.toggleClass('linked-attachments-local-banner-unset', warn);
+		};
+
+		const providerRow = wrap.createDiv({ cls: 'linked-attachments-local-row' });
+		providerRow.createEl('label', { text: 'Sync provider', cls: 'linked-attachments-local-label' });
+		const providerSelect = providerRow.createEl('select', { cls: 'dropdown' });
+		for (const [value, label] of Object.entries(LinkedAttachmentsSettingTab.PROVIDER_LABELS)) {
+			const option = providerSelect.createEl('option', { text: label, value });
+			if (value === local.provider) {
+				option.selected = true;
+			}
+		}
+		providerSelect.addEventListener('change', () => {
+			local.provider = providerSelect.value as StorageProvider;
+			void this.plugin.saveSettings();
 		});
-		setting.addButton((btn) =>
-			btn.setButtonText('Browse').onClick(async () => {
-				const picked = await pickFolder(this.plugin.settings.localRoot);
-				if (picked === null) {
-					return;
+
+		const subRow = wrap.createDiv({ cls: 'linked-attachments-local-row' });
+		subRow.createEl('label', { text: 'Subfolder shared across machines', cls: 'linked-attachments-local-label' });
+		const subInput = subRow.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
+		subInput.value = local.subpath;
+		subInput.placeholder = 'Optional shared subfolder';
+		subInput.addEventListener('change', () => {
+			local.subpath = subInput.value.trim();
+			void this.plugin.saveSettings();
+			refreshBanner();
+		});
+
+		(['win', 'mac', 'linux'] as OSKey[]).forEach((key) => {
+			const row = wrap.createDiv({ cls: 'linked-attachments-local-row' });
+			row.toggleClass('linked-attachments-local-active', key === thisOS);
+			const label = row.createEl('label', { cls: 'linked-attachments-local-label' });
+			label.setText(
+				key === thisOS
+					? `${LinkedAttachmentsSettingTab.OS_LABELS[key]} (this machine)`
+					: LinkedAttachmentsSettingTab.OS_LABELS[key],
+			);
+			const input = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
+			input.value = local.roots[key] ?? '';
+			input.placeholder = LinkedAttachmentsSettingTab.OS_PLACEHOLDERS[key];
+			input.addEventListener('change', () => {
+				const value = input.value.trim();
+				if (value.length === 0) {
+					delete local.roots[key];
+				} else {
+					local.roots[key] = value;
 				}
-				this.plugin.settings.localRoot = picked;
-				await this.plugin.saveSettings();
-				textComponent?.setValue(picked);
-			}),
-		);
+				void this.plugin.saveSettings();
+				refreshBanner();
+			});
+			// Browse only on the active OS: a folder picker on this machine cannot pick
+			// another OS's path, and a stray pick would store a non-portable literal.
+			if (key === thisOS) {
+				const browse = row.createEl('button', { text: 'Browse', cls: 'linked-attachments-local-browse' });
+				browse.addEventListener('click', () => {
+					void (async (): Promise<void> => {
+						// Seed the picker with the resolved absolute path, not the stored
+						// %VAR% / ~ form, which Electron's showOpenDialog cannot expand.
+						const picked = await pickFolder(resolveLocalRoot(local.roots[key] ?? ''));
+						if (picked === null) {
+							return;
+						}
+						const normalized = normalizePickedPath(picked);
+						local.roots[key] = normalized;
+						input.value = normalized;
+						await this.plugin.saveSettings();
+						refreshBanner();
+					})();
+				});
+			}
+		});
+
+		refreshBanner();
 	}
 
 	// One backfill button per backend the current storage mode writes. A pointer
@@ -407,9 +511,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	// availability. Returns the hint to show inline when a backend is not configured.
 	private backfillReady(target: 'local' | 's3'): { ok: true } | { ok: false; reason: string } {
 		if (target === 'local') {
-			return this.plugin.settings.localRoot.trim().length > 0
+			return resolveLocalRoot(selectActiveRoot(this.plugin.settings)).length > 0
 				? { ok: true }
-				: { ok: false, reason: 'Set the local folder above first.' };
+				: { ok: false, reason: 'Set this machine\'s local folder above first.' };
 		}
 		const ready = this.plugin.settings.endpoint.length > 0 && this.plugin.settings.bucket.length > 0 && this.plugin.credentials.hasCompleteCredentials();
 		return ready ? { ok: true } : { ok: false, reason: 'Set the endpoint, bucket, and credentials first.' };

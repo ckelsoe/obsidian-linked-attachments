@@ -21,6 +21,8 @@ import { AdoptModal } from './src/ui/adopt-modal';
 import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
+import { activeOS, migratedLocalAttachment, selectActiveRoot } from './src/storage/local-root';
+import { resolveLocalRoot } from './src/storage/local-backend';
 import { formatPointerReference } from './src/ui/pointer-reference';
 import { BackendType, decodePointer, PointerRecord } from './src/pointer/codec';
 import { parsePointerLink } from './src/pointer/pointer-link';
@@ -84,7 +86,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			bucket: this.settings.bucket,
 			addressingStyle: this.settings.addressingStyle,
 			storageMode: this.settings.storageMode,
-			localRoot: this.settings.localRoot,
+			localRoot: selectActiveRoot(this.settings),
 		}));
 
 		// Offload the active file (an attachment opened in a tab) to storage.
@@ -188,7 +190,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'add-local-mirror',
 			name: 'Add a local mirror to existing pointers',
 			checkCallback: (checking: boolean): boolean => {
-				if (this.settings.localRoot.trim().length === 0) {
+				if (this.resolvedLocalRoot().length === 0) {
 					return false;
 				}
 				if (!checking) {
@@ -851,7 +853,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				const hasLocal = record.backends.some((backend) => backend.type === 'local');
 				new Notice(
 					hasLocal
-						? 'The local copy is not on disk, and this attachment has no S3 backup to open.'
+						? 'The local copy has not synced to this machine yet, or it is online-only, and this attachment has no S3 backup to open.'
 						: 'This attachment has no openable copy.',
 				);
 				return;
@@ -955,11 +957,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		return false;
 	}
 
+	// The local root resolved for THIS machine, or '' when it is not configured or
+	// resolvable here (no slot for this OS, or an env var that does not resolve on
+	// this machine). Readiness is gated on this, not the stored form, so a machine
+	// missing the folder is treated as not-configured rather than offloading to a
+	// wrong cwd-relative path.
+	private resolvedLocalRoot(): string {
+		return resolveLocalRoot(selectActiveRoot(this.settings));
+	}
+
 	// Whether the active storage mode is fully configured: S3 modes need endpoint +
 	// bucket + credentials; local-only needs a local root; paired needs both.
 	private storageConfigured(): boolean {
 		const s3Ready = this.settings.endpoint.length > 0 && this.settings.bucket.length > 0 && this.credentials.hasCompleteCredentials();
-		const localReady = this.settings.localRoot.trim().length > 0;
+		const localReady = this.resolvedLocalRoot().length > 0;
 		switch (this.settings.storageMode) {
 			case 'local-only':
 				return localReady;
@@ -1063,6 +1074,29 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			| null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
 
+		// Object.assign shallow-copies, so a fresh install shares the module-level
+		// DEFAULT_SETTINGS.localAttachment (and its roots) by reference; the settings
+		// UI mutates roots in place, which would pollute the default for every other
+		// vault in this app session. Clone it so each vault owns its own object.
+		this.settings.localAttachment = {
+			...this.settings.localAttachment,
+			roots: { ...this.settings.localAttachment.roots },
+		};
+
+		// Migrate the legacy single `localRoot` to the per-OS cross-machine shape,
+		// once. An older data.json has no `localAttachment`, so Object.assign left the
+		// DEFAULT_SETTINGS empty shape in place; a non-empty legacy value becomes this
+		// machine's slot under provider 'custom'. A data.json already in the new shape,
+		// or a blank legacy value, is left untouched. It is persisted at the end of
+		// this method (after every other normalization) so the next load reads the new
+		// shape and never re-runs the migration, which would otherwise map the old
+		// single-machine path into a second OS's slot on a synced machine.
+		const migrated = migratedLocalAttachment(raw?.localAttachment, raw?.localRoot, activeOS());
+		const didMigrateLocalRoot = migrated !== null;
+		if (migrated !== null) {
+			this.settings.localAttachment = migrated;
+		}
+
 		// Map a saved old-default secret name to its current short name.
 		const renamedAccess = RENAMED_SECRET_IDS[this.settings.accessKeyIdSecretName];
 		if (renamedAccess !== undefined) {
@@ -1096,6 +1130,13 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		// Normalize whichever rule set we ended up with (dedupe by type, clamp
 		// thresholds), so persisted or migrated data is always in canonical shape.
 		this.settings.offloadRules = normalizeRules(this.settings.offloadRules);
+
+		// Persist once, only if the local-root migration ran, now that every
+		// normalization above has been applied. This writes the fully canonical shape
+		// so a re-load never sees the legacy single-string form again.
+		if (didMigrateLocalRoot) {
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings(): Promise<void> {

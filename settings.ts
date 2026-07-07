@@ -20,6 +20,46 @@ export const DEFAULT_SECRET_KEY_SECRET_ID = 'la-secret-key';
 // the local copy for reads and keeping S3 as the durable off-machine backup.
 export type StorageMode = 's3-only' | 'local-only' | 'local-s3';
 
+// Which sync provider holds the local root. Phase 1 stores this as metadata and
+// uses it only to tailor help text; the resolution itself is provider-agnostic
+// (an env-var-normalized path per OS). Phase 2 will use it to drive auto-detect.
+// 'custom' is the escape hatch: a per-machine absolute folder that covers every
+// provider and NAS with no provider knowledge.
+export type StorageProvider =
+	| 'onedrive-business'
+	| 'onedrive-personal'
+	| 'dropbox'
+	| 'box'
+	| 'icloud'
+	| 'google-drive'
+	| 'custom';
+
+// The three operating systems the plugin distinguishes for root resolution. A
+// synced vault needs one root entry per OS it opens on; within an OS the env-var
+// form (only OneDrive publishes one) makes the single entry portable across
+// machines with different drive letters or user profiles.
+export type OSKey = 'win' | 'mac' | 'linux';
+
+// Cross-machine local root (spec 2026-07-07). Replaces the single per-vault
+// `localRoot` string: that one string cannot be correct on every machine at once
+// (different drive letters, Windows vs macOS). The portable per-pointer key is
+// unchanged; the absolute root is resolved per machine from `roots[activeOS]`
+// joined with `subpath`, then run through `resolveLocalRoot` (env-var expansion).
+export interface LocalAttachmentSettings {
+	provider: StorageProvider;
+	// Folder inside the synced root, shared across every OS (portable). Empty for
+	// a custom root that already names the full offload folder per OS.
+	subpath: string;
+	// Env-var-normalized root value per OS. A Windows OneDrive pick is stored as
+	// `%OneDriveCommercial%\...` so it survives a different drive letter; macOS has
+	// no env var, so a `~`-relative known path is used.
+	roots: {
+		win?: string;
+		mac?: string;
+		linux?: string;
+	};
+}
+
 export interface LinkedAttachmentsSettings {
 	endpoint: string;
 	region: string;
@@ -27,15 +67,16 @@ export interface LinkedAttachmentsSettings {
 	addressingStyle: S3AddressingStyle;
 	accessKeyIdSecretName: string;
 	secretAccessKeySecretName: string;
-	// Storage mode + the local root. localRoot supports environment variable
-	// expansion (%OneDriveCommercial%, $HOME) at resolve time so one vault synced
-	// across machines resolves the same folder under each user profile. The offloaded
-	// file mirrors its vault-relative path under the root (the key layout is the
-	// single source of that path and already carries a content-hash suffix for
-	// collision safety and browsability), and the pointer stores that path
-	// root-relative so it stays portable across machines that mount the folder at
-	// different absolute locations.
+	// Storage mode plus the cross-machine local root. `localAttachment` holds the
+	// per-OS roots and provider; `localRoot` is the legacy single-string form kept
+	// only so an older data.json migrates forward (loadSettings maps a non-empty
+	// legacy value to localAttachment.roots[thisOS] with provider 'custom'). All
+	// runtime reads go through selectActiveRoot, never localRoot directly. The
+	// offloaded file mirrors its vault-relative path under the resolved root, and
+	// the pointer stores that path root-relative so it stays portable across
+	// machines that mount the folder at different absolute locations.
 	storageMode: StorageMode;
+	localAttachment: LocalAttachmentSettings;
 	localRoot: string;
 	// When on, debug-level app events are also written to the log. The bucket audit
 	// trail, warnings, and errors are logged regardless of this setting.
@@ -68,6 +109,10 @@ export const DEFAULT_SETTINGS: LinkedAttachmentsSettings = {
 	// Default to the historical S3-only behavior so an existing install is unchanged
 	// until the user opts into a local folder.
 	storageMode: 's3-only',
+	// A fresh install starts with no local root on any OS; the user picks a provider
+	// and sets this machine's slot in settings. 'custom' is the neutral default so a
+	// blank install makes no provider claim.
+	localAttachment: { provider: 'custom', subpath: '', roots: {} },
 	localRoot: '',
 	debugLogging: false,
 	// Auto-offload defaults: off, prompt-by-default. Idle-debounce is the opt-in

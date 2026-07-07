@@ -212,9 +212,21 @@ describe('resolveLocalRoot', () => {
 	// same as the bare path: the value goes to fs, never a shell, so quotes would
 	// otherwise become a literal part of the path. Spaces need no quoting.
 	it('test_strips_surrounding_quotes', () => {
-		const bare = 'a/b c/la-test';
+		// An absolute path so it resolves to a real value on both platforms (a relative
+		// root now fails closed to '', which would make this assertion vacuous).
+		const bare = '/tmp/a b/la-test';
 		expect(resolveLocalRoot(`"${bare}"`)).toBe(resolveLocalRoot(bare));
 		expect(resolveLocalRoot(`'${bare}'`)).toBe(resolveLocalRoot(bare));
+		expect(resolveLocalRoot(bare).length).toBeGreaterThan(0);
+	});
+
+	// A genuinely absolute path that carries a literal $ (a real folder name, not an
+	// env reference that resolved) must pass through, not fail closed: path.resolve
+	// keeps it absolute, so there is no cwd-relative data-loss risk to guard against.
+	it('test_absolute_path_with_literal_dollar_is_kept', () => {
+		const resolved = resolveLocalRoot('/data/$Recycle/la-test');
+		expect(resolved.length).toBeGreaterThan(0);
+		expect(resolved).toContain('$Recycle');
 	});
 
 	// A blank or whitespace-only root resolves to '' (the caller reads that as "not
@@ -222,6 +234,19 @@ describe('resolveLocalRoot', () => {
 	it('test_blank_root_is_empty', () => {
 		expect(resolveLocalRoot('')).toBe('');
 		expect(resolveLocalRoot('   ')).toBe('');
+	});
+
+	// A delimited env var that does not resolve on this machine must fail closed to
+	// '' (read as "not configured here"), never a cwd-relative path that a later
+	// offload would write verified bytes into.
+	it('test_unresolved_env_var_fails_closed', () => {
+		const missing = 'LA_DEFINITELY_UNSET_VAR_9137';
+		delete process.env[missing];
+		expect(resolveLocalRoot(`%${missing}%\\sub`)).toBe('');
+		expect(resolveLocalRoot(`\${${missing}}/sub`)).toBe('');
+		// Bare $VAR form too: expandEnv leaves it in place, so it must fail closed
+		// rather than become a cwd-relative path.
+		expect(resolveLocalRoot(`$${missing}/sub`)).toBe('');
 	});
 });
 
