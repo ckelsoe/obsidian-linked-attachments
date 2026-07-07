@@ -1004,6 +1004,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			return result;
 		} catch (error) {
 			new Notice(`Adding ${label} mirror failed: ${describeError(error)}`);
+			this.logger.error('Add mirror failed.', { target, error: describeError(error) });
 			return null;
 		}
 	}
