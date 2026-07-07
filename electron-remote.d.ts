@@ -27,4 +27,11 @@ declare module '@electron/remote' {
 	export const dialog: {
 		showOpenDialog(options: OpenDialogOptions): Promise<OpenDialogReturnValue>;
 	};
+	// Same shell shape as the direct electron binding, reached through the main
+	// process. Used as a fallback when the renderer's electron.shell is undefined
+	// (context isolation).
+	export const shell: {
+		openPath(path: string): Promise<string>;
+		showItemInFolder(fullPath: string): void;
+	};
 }

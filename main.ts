@@ -22,7 +22,8 @@ import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
 import { formatPointerReference } from './src/ui/pointer-reference';
-import { decodePointer, PointerRecord } from './src/pointer/codec';
+import { BackendType, decodePointer, PointerRecord } from './src/pointer/codec';
+import { parsePointerLink } from './src/pointer/pointer-link';
 import { dirtyColor, dirtyLabel } from './src/checkout/checkout-state';
 import { ConfirmModal } from './src/ui/confirm-modal';
 
@@ -33,6 +34,20 @@ const RENAMED_SECRET_IDS: Record<string, string> = {
 	'linked-attachments-access-key-id': DEFAULT_ACCESS_KEY_SECRET_ID,
 	'linked-attachments-secret-access-key': DEFAULT_SECRET_KEY_SECRET_ID,
 };
+
+// Resolve the Electron shell used to open/reveal a copy that lives OUTSIDE the vault
+// (Obsidian's openWithDefaultApp only handles in-vault paths). Prefer the direct
+// electron binding; on a runtime where the renderer's electron.shell is undefined
+// (context isolation) fall back to @electron/remote, which Obsidian provides (the same
+// module the folder picker uses). Throws only if neither exposes a shell.
+async function resolveShell(): Promise<typeof shell> {
+	if (shell !== undefined && typeof shell.openPath === 'function') {
+		return shell;
+	}
+	const remote = await import('@electron/remote');
+	return remote.shell;
+}
+
 
 // Plugin entry point. Per the workspace code-structure rules this class is wiring
 // only: lifecycle, settings persistence, and constructing the services. The
@@ -317,6 +332,28 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			void this.handleOpenProtocol(params);
 		});
 
+		// Clicking an obsidian:// link inside a note does not reliably reach the
+		// protocol handler: Obsidian routes it out through the OS protocol
+		// registration, which on a machine with multiple installs (or none
+		// registered) dead-ends silently, so open/reveal/copy appear to do nothing.
+		// Intercept the managed-block links in rendered markdown and dispatch in-app
+		// through the same handler instead. The href stays an obsidian:// URI so the
+		// link still degrades to inert, readable text when the plugin is disabled.
+		this.registerMarkdownPostProcessor((element) => {
+			const links = element.querySelectorAll<HTMLAnchorElement>('a[href^="obsidian://linked-attachments"]');
+			links.forEach((link) => {
+				const href = link.getAttribute('href');
+				if (href === null) {
+					return;
+				}
+				link.addEventListener('click', (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					void this.handleOpenProtocol(parsePointerLink(href));
+				});
+			});
+		});
+
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (!(file instanceof TFile)) {
@@ -497,6 +534,8 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 
 	onunload(): void {
 		this.autoOffload?.dispose();
+		// Best-effort purge of the download-and-open temp cache (S3-only opens).
+		void this.attachments.cleanOpenTempCache();
 	}
 
 	// Check out a pointer to edit it in the OS default app. Guarded.
@@ -747,9 +786,13 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// The obsidian://linked-attachments?action=open&id=... handler for the managed
 	// block's Open link: find the pointer by id and open its local copy.
 	private async handleOpenProtocol(params: ObsidianProtocolData): Promise<void> {
+		// The verb rides on `op` so it never collides with Obsidian's reserved
+		// `action` (the registered route). Legacy links from earlier builds carried
+		// the verb as `action`, so fall back to it for backward compatibility.
+		const op = typeof params.op === 'string' ? params.op : params.action;
 		// Logged so a failing link can be traced: if this never fires, the protocol
 		// route is the problem; if it fires but nothing opens, the shell call is.
-		this.logger.info('Pointer link invoked.', { action: params.action ?? '(none)', hasId: typeof params.id === 'string' });
+		this.logger.info('Pointer link invoked.', { op: op ?? '(none)', hasId: typeof params.id === 'string' });
 		const id = params.id;
 		if (typeof id !== 'string' || id.length === 0) {
 			return;
@@ -759,15 +802,16 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			new Notice('Could not find that linked attachment in this vault.');
 			return;
 		}
-		switch (params.action) {
+		const backend: BackendType | undefined = params.backend === 's3' || params.backend === 'local' ? params.backend : undefined;
+		switch (op) {
 			case 'reveal':
-				this.revealRecord(record);
+				await this.revealRecord(record);
 				return;
 			case 'copy':
 				await this.copyRecordReference(record);
 				return;
 			default:
-				await this.openRecord(record);
+				await this.openRecord(record, backend);
 				return;
 		}
 	}
@@ -784,58 +828,87 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		new Notice('Storage reference copied.');
 	}
 
-	// Open the attachment in its default app. Prefer the local copy (it lives outside
-	// the vault, so this uses the OS shell, not Obsidian's in-vault openWithDefaultApp).
-	// With no local copy, download the S3 copy to a temp file and open that.
-	private async openRecord(record: PointerRecord): Promise<void> {
-		const localPath = this.attachments.localAbsolutePath(record);
-		if (localPath !== null) {
-			await this.openInShell(localPath);
-			return;
+	// Open the attachment in its default app, telling the user WHICH copy opened.
+	// `preferred` comes from the clicked backend link: 'local' opens the on-disk copy
+	// directly (fast path, no download); 's3' downloads the cloud copy to a temp file
+	// and opens that. With no preference (a legacy link) it prefers local. A local
+	// copy that is configured but missing on disk falls back to the S3 copy so a
+	// paired pointer still opens; the Notice always names the copy that opened.
+	private async openRecord(record: PointerRecord, preferred?: BackendType): Promise<void> {
+		const hasS3 = record.backends.some((backend) => backend.type === 's3');
+		if (preferred !== 's3') {
+			// localCopyOnDisk stat-checks; a bare path resolve would send a missing file
+			// to the shell and dead-end.
+			const localPath = await this.attachments.localCopyOnDisk(record);
+			if (localPath !== null) {
+				if (await this.openInShell(localPath)) {
+					new Notice('Opened the local copy.');
+				}
+				return;
+			}
+			// No usable local copy. Only mention S3 when the pointer actually has one.
+			if (!hasS3) {
+				const hasLocal = record.backends.some((backend) => backend.type === 'local');
+				new Notice(
+					hasLocal
+						? 'The local copy is not on disk, and this attachment has no S3 backup to open.'
+						: 'This attachment has no openable copy.',
+				);
+				return;
+			}
+			new Notice('The local copy is not on disk; opening the S3 copy instead...');
+		} else {
+			new Notice('Downloading the S3 copy to open...');
 		}
-		new Notice('Downloading to open...');
 		try {
-			const tempPath = await this.attachments.downloadForOpen(record);
+			const tempPath = await this.attachments.downloadForOpen(record, 's3');
 			if (tempPath === null) {
 				new Notice('This attachment has no openable copy.');
 				return;
 			}
-			await this.openInShell(tempPath);
+			if (await this.openInShell(tempPath)) {
+				new Notice('Opened the S3 copy (downloaded to a temp file).');
+			}
 		} catch (error) {
 			new Notice(`Could not download to open: ${describeError(error)}`);
 			this.logger.error('Open via download failed.', { id: record.id, error: describeError(error) });
 		}
 	}
 
-	private async openInShell(absolutePath: string): Promise<void> {
+	// Returns whether the file actually opened, so callers only report success when the
+	// OS shell accepted the path (openPath resolves to '' on success or an error string).
+	private async openInShell(absolutePath: string): Promise<boolean> {
 		this.logger.info('Opening in shell.', { path: absolutePath });
 		try {
-			const openError = await shell.openPath(absolutePath);
+			const openError = await (await resolveShell()).openPath(absolutePath);
 			if (openError.length > 0) {
 				new Notice(`Could not open the file: ${openError}`);
 				this.logger.warn('shell.openPath returned an error.', { path: absolutePath, error: openError });
+				return false;
 			}
+			return true;
 		} catch (error) {
 			new Notice(`Could not open the file: ${describeError(error)}`);
 			this.logger.error('shell.openPath threw.', { path: absolutePath, error: describeError(error) });
+			return false;
 		}
 	}
 
 	private async revealLocalCopy(file: TFile): Promise<void> {
 		const record = await this.readPointer(file);
 		if (record !== null) {
-			this.revealRecord(record);
+			await this.revealRecord(record);
 		}
 	}
 
-	private revealRecord(record: PointerRecord): void {
+	private async revealRecord(record: PointerRecord): Promise<void> {
 		const absolutePath = this.attachments.localAbsolutePath(record);
 		if (absolutePath === null) {
 			new Notice('This pointer has no local copy to reveal.');
 			return;
 		}
 		try {
-			shell.showItemInFolder(absolutePath);
+			(await resolveShell()).showItemInFolder(absolutePath);
 		} catch (error) {
 			new Notice(`Could not reveal the file: ${describeError(error)}`);
 		}

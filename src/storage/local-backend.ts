@@ -138,6 +138,12 @@ export class LocalBackend implements StorageBackend {
 		return pageObjects(objects, prefix, opts);
 	}
 
+	// Recursively remove the subtree at key. force:true so a missing tree is a no-op,
+	// matching delete's idempotency; used to purge the download-and-open temp cache.
+	async removeTree(key: string): Promise<void> {
+		await fs.rm(this.keyToPath(key), { recursive: true, force: true });
+	}
+
 	displayKey(key: string): string {
 		// The access-axis payoff: a local backend reaches an object by opening this
 		// filesystem path, not by downloading a presigned URL (spec section 3).

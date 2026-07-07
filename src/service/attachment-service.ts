@@ -64,6 +64,10 @@ export interface MirrorResult {
 	failed: number; // source unreadable/drifted, or the mirror write did not verify
 }
 
+// Temp-dir prefix for the download-and-open cache (S3-only pointers opened in a
+// default app). Purged on plugin unload.
+const OPEN_CACHE_PREFIX = 'linked-attachments-open';
+
 export class AttachmentService {
 	constructor(
 		private readonly app: App,
@@ -647,6 +651,29 @@ export class AttachmentService {
 		return new LocalBackend(root).displayKey(local.path);
 	}
 
+	// The absolute path of a pointer's local copy only if it actually exists on
+	// disk, else null. Unlike localAbsolutePath, this stat-checks the file so an
+	// opener can fall back to another backend when the local copy is missing,
+	// stale, or the root points at the wrong folder (a synced folder that has not
+	// pulled yet, a moved OneDrive root). Never throws.
+	async localCopyOnDisk(record: PointerRecord): Promise<string | null> {
+		const local = localBackend(record);
+		if (local === null) {
+			return null;
+		}
+		const root = resolveLocalRoot(this.getConfig().localRoot);
+		if (root.length === 0) {
+			return null;
+		}
+		const backend = new LocalBackend(root);
+		try {
+			await backend.head(local.path);
+		} catch {
+			return null;
+		}
+		return backend.displayKey(local.path);
+	}
+
 	// Regenerate the managed block of every pointer note (upgrading its open links to
 	// the current format), leaving frontmatter and the user body byte-identical.
 	// Returns how many notes changed.
@@ -672,16 +699,58 @@ export class AttachmentService {
 	// Download the object (verified against the recorded hash) to a temp file and
 	// return its absolute path, so an S3-only pointer with no local copy can still be
 	// opened in a default app. Namespaced by the pointer id so distinct objects do
-	// not collide in the temp dir.
-	async downloadForOpen(record: PointerRecord): Promise<string | null> {
-		const fetched = await this.fetchFromBackends(record, this.getConfig());
+	// not collide in the temp dir. Reuses an already-downloaded copy whose size
+	// matches: reopening then never re-downloads and never clobbers a file the
+	// external app may still hold open (a Windows write failure).
+	async downloadForOpen(record: PointerRecord, only?: BackendType): Promise<string | null> {
+		const tempBackend = new LocalBackend(osTempDir());
+		const cacheKey = `${OPEN_CACHE_PREFIX}/${record.id}/${record.originalName}`;
+		const cached = await this.reusableCachedOpen(tempBackend, cacheKey, record);
+		if (cached !== null) {
+			return cached;
+		}
+		const fetched = await this.fetchFromBackends(record, this.getConfig(), only);
 		if (!fetched.ok) {
 			throw new Error(fetched.error);
 		}
-		const tempBackend = new LocalBackend(osTempDir());
-		const cacheKey = `linked-attachments-open/${record.id}/${record.originalName}`;
 		await tempBackend.put(cacheKey, fetched.bytes, fetched.bytes.length);
 		return tempBackend.displayKey(cacheKey);
+	}
+
+	// Reuse an already-downloaded temp copy only when it is provably the right object:
+	// a content-hash match when the pointer has a hash, else a size match (an adopted
+	// object has no hash - the same fallback fetchFromBackends uses). This avoids both
+	// a needless re-download and clobbering a file the external app may still hold
+	// open, without ever serving bytes that were modified in place. Any mismatch or
+	// read error returns null so the caller re-downloads.
+	private async reusableCachedOpen(tempBackend: LocalBackend, cacheKey: string, record: PointerRecord): Promise<string | null> {
+		try {
+			if (record.hash !== null) {
+				const bytes = new Uint8Array(await (await tempBackend.get(cacheKey)).arrayBuffer());
+				if ((await sha256Hex(bytes)) === record.hash) {
+					return tempBackend.displayKey(cacheKey);
+				}
+			} else if (record.byteSize > 0) {
+				const head = await tempBackend.head(cacheKey);
+				if (head.size === record.byteSize) {
+					return tempBackend.displayKey(cacheKey);
+				}
+			}
+		} catch {
+			// No usable cached copy; the caller re-downloads.
+		}
+		return null;
+	}
+
+	// Purge the download-and-open temp cache (called on plugin unload). Best-effort:
+	// a file an external app still holds may resist deletion, which is fine - the
+	// next unload retries.
+	async cleanOpenTempCache(): Promise<void> {
+		try {
+			await new LocalBackend(osTempDir()).removeTree(OPEN_CACHE_PREFIX);
+		} catch {
+			// Best-effort cleanup; a locked temp file is left for the next unload.
+		}
 	}
 
 	// Find a pointer record by its id (the protocol handler only carries the id).
@@ -715,9 +784,14 @@ export class AttachmentService {
 	private async fetchFromBackends(
 		record: PointerRecord,
 		config: AttachmentServiceConfig,
+		only?: BackendType,
 	): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: string }> {
 		const reasons: string[] = [];
-		for (const ref of record.backends) {
+		const candidates = only === undefined ? record.backends : record.backends.filter((ref) => ref.type === only);
+		if (candidates.length === 0) {
+			return { ok: false, error: `this pointer has no ${only} backend` };
+		}
+		for (const ref of candidates) {
 			try {
 				const { backend, key } = this.backendForRef(ref, config);
 				const bytes = new Uint8Array(await (await backend.get(key)).arrayBuffer());

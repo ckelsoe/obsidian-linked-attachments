@@ -269,9 +269,9 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 			],
 		};
 		const text = encodePointer(record, USER_BODY);
-		expect(text).toContain(`action=open&backend=local&id=${record.id}`);
-		expect(text).toContain(`action=reveal&backend=local&id=${record.id}`);
-		expect(text).toContain(`action=copy&backend=s3&id=${record.id}`);
+		expect(text).toContain(`op=open&backend=local&id=${record.id}`);
+		expect(text).toContain(`op=reveal&backend=local&id=${record.id}`);
+		expect(text).toContain(`op=copy&backend=s3&id=${record.id}`);
 	});
 });
 
