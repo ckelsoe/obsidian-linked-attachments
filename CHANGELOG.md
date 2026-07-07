@@ -8,11 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- The local folder now resolves per machine, so one synced vault opens on a second Windows PC with a different drive letter, and on macOS, with no per-machine hand-editing. Pick your sync provider and set the folder for each operating system you open the vault on, plus an optional subfolder shared across them. A Windows OneDrive pick is stored in its %OneDriveCommercial% form so it resolves on any drive letter. The settings panel shows what the folder resolves to on the machine you are looking at.
+- The local folder is now set per machine, so a vault used on more than one computer opens correctly on each. In settings, click Add this machine and Browse to the offload folder on that machine. If you sync your settings across machines, every machine adds its own row and reads its own folder, so two machines with different drive letters both resolve correctly. A banner shows what the folder resolves to on the machine you are looking at.
 
 ### Changed
 - The message shown when a local-only file is not on disk now says the copy has not synced to this machine yet, or is online-only, instead of implying the file is lost.
-- An existing single local-folder setting is migrated automatically to the new per-machine form (as a custom folder for this machine); no pointer notes change and nothing is lost.
+- An existing single local-folder setting is migrated automatically to an entry for the current machine; no pointer notes change and nothing is lost.
 
 ## [3.0.0] - 2026-07-07
 

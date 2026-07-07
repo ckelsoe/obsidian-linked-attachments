@@ -1,165 +1,104 @@
 import { DEFAULT_SETTINGS, LinkedAttachmentsSettings } from '../../settings';
-import { activeOS, migratedLocalAttachment, normalizePickedPath, selectActiveRoot } from './local-root';
+import { activeMachine, hasMachineEntry, migratedLocalAttachment, selectActiveRoot } from './local-root';
 import { resolveLocalRoot } from './local-backend';
 
 function settingsWith(overrides: Partial<LinkedAttachmentsSettings>): LinkedAttachmentsSettings {
 	return { ...DEFAULT_SETTINGS, ...overrides };
 }
 
-describe('activeOS', () => {
-	it('maps process.platform to the OS key', () => {
-		expect(activeOS('win32')).toBe('win');
-		expect(activeOS('darwin')).toBe('mac');
-		expect(activeOS('linux')).toBe('linux');
-		// Any other Unix reports as linux (the POSIX-ish slot).
-		expect(activeOS('freebsd')).toBe('linux');
+describe('activeMachine', () => {
+	it('returns the trimmed hostname', () => {
+		expect(activeMachine('  DESK-01  ')).toBe('DESK-01');
 	});
 });
 
 describe('selectActiveRoot', () => {
-	it('returns the active OS slot joined with the portable subpath', () => {
+	it('returns the path of the entry matching this machine', () => {
 		const settings = settingsWith({
-			localAttachment: { provider: 'onedrive-business', subpath: 'vault-docs', roots: { win: '%OneDriveCommercial%', mac: '~/Library/CloudStorage/OneDrive-Acme' } },
+			localAttachment: { machines: [
+				{ machine: 'WIN-A', path: 'D:\\Sync\\attachments' },
+				{ machine: 'WIN-B', path: 'E:\\Cloud\\attachments' },
+			] },
 		});
-		expect(selectActiveRoot(settings, 'win')).toBe('%OneDriveCommercial%/vault-docs');
-		expect(selectActiveRoot(settings, 'mac')).toBe('~/Library/CloudStorage/OneDrive-Acme/vault-docs');
+		expect(selectActiveRoot(settings, 'WIN-A')).toBe('D:\\Sync\\attachments');
+		expect(selectActiveRoot(settings, 'WIN-B')).toBe('E:\\Cloud\\attachments');
 	});
 
-	it('returns the bare root when the subpath is empty', () => {
+	it("returns '' when this machine has no entry", () => {
 		const settings = settingsWith({
-			localAttachment: { provider: 'custom', subpath: '', roots: { win: 'D:\\Sync\\attachments' } },
+			localAttachment: { machines: [{ machine: 'WIN-A', path: 'D:\\Sync' }] },
 		});
-		expect(selectActiveRoot(settings, 'win')).toBe('D:\\Sync\\attachments');
-	});
-
-	it('trims a leading separator on the subpath so the join never doubles it', () => {
-		const settings = settingsWith({
-			localAttachment: { provider: 'custom', subpath: '/nested', roots: { linux: '/mnt/sync' } },
-		});
-		expect(selectActiveRoot(settings, 'linux')).toBe('/mnt/sync/nested');
-	});
-
-	it('sanitizes a traversal / absolute subpath so it cannot escape the root', () => {
-		const settings = settingsWith({
-			localAttachment: { provider: 'custom', subpath: '../../etc', roots: { linux: '/mnt/sync' } },
-		});
-		// The .. segments are dropped; the join stays under the root.
-		expect(selectActiveRoot(settings, 'linux')).toBe('/mnt/sync/etc');
-	});
-
-	it('normalizes a backslash subpath and drops a drive segment', () => {
-		const settings = settingsWith({
-			localAttachment: { provider: 'custom', subpath: 'C:\\a\\b', roots: { win: 'D:\\Sync' } },
-		});
-		expect(selectActiveRoot(settings, 'win')).toBe('D:\\Sync/a/b');
-	});
-
-	it('preserves a legal POSIX subpath segment that contains a non-drive colon', () => {
-		const settings = settingsWith({
-			localAttachment: { provider: 'custom', subpath: 'Project: Alpha', roots: { linux: '/mnt/sync' } },
-		});
-		expect(selectActiveRoot(settings, 'linux')).toBe('/mnt/sync/Project: Alpha');
-	});
-
-	it("returns '' when the active OS has no slot set (new shape present)", () => {
-		const settings = settingsWith({
-			localAttachment: { provider: 'onedrive-business', subpath: 'x', roots: { win: '%OneDriveCommercial%' } },
-		});
-		expect(selectActiveRoot(settings, 'mac')).toBe('');
+		expect(selectActiveRoot(settings, 'MAC-1')).toBe('');
 	});
 
 	it('falls back to the legacy localRoot only when the new shape is absent', () => {
-		const settings = settingsWith({ localRoot: '%OneDrive%\\legacy' });
-		// Force the new shape to be absent (an un-migrated settings object).
+		const settings = settingsWith({ localRoot: 'D:\\Legacy' });
 		delete (settings as Partial<LinkedAttachmentsSettings>).localAttachment;
-		expect(selectActiveRoot(settings, 'win')).toBe('%OneDrive%\\legacy');
+		expect(selectActiveRoot(settings, 'WIN-A')).toBe('D:\\Legacy');
 	});
 });
 
-describe('normalizePickedPath (Windows)', () => {
-	const env = {
-		OneDriveCommercial: 'C:\\Users\\Bob\\OneDrive - Acme',
-		OneDrive: 'C:\\Users\\Bob\\OneDrive - Acme',
-		USERPROFILE: 'C:\\Users\\Bob',
-	};
-
-	it('rewrites a OneDrive pick to the %OneDriveCommercial% form', () => {
-		expect(normalizePickedPath('C:\\Users\\Bob\\OneDrive - Acme\\vault', env, 'win32')).toBe('%OneDriveCommercial%\\vault');
-	});
-
-	it('prefers the longest (most specific) matching variable over USERPROFILE', () => {
-		// Both OneDriveCommercial and USERPROFILE are prefixes; the longer one wins.
-		const result = normalizePickedPath('C:\\Users\\Bob\\OneDrive - Acme\\vault', env, 'win32');
-		expect(result.startsWith('%OneDriveCommercial%')).toBe(true);
-	});
-
-	it('matches case-insensitively on Windows', () => {
-		expect(normalizePickedPath('c:\\users\\bob\\onedrive - acme\\vault', env, 'win32')).toBe('%OneDriveCommercial%\\vault');
-	});
-
-	it('does not match a partial path segment (Bob vs Bobby)', () => {
-		expect(normalizePickedPath('C:\\Users\\Bobby\\vault', { USERPROFILE: 'C:\\Users\\Bob' }, 'win32')).toBe('C:\\Users\\Bobby\\vault');
-	});
-
-	it('leaves a path with no matching variable literal (the custom / NAS case)', () => {
-		expect(normalizePickedPath('E:\\NAS\\vault', env, 'win32')).toBe('E:\\NAS\\vault');
-	});
-});
-
-describe('normalizePickedPath (POSIX)', () => {
-	it('collapses the home directory to a leading ~', () => {
-		expect(normalizePickedPath('/Users/bob/Library/CloudStorage/OneDrive-Acme/vault', { HOME: '/Users/bob' }, 'darwin')).toBe('~/Library/CloudStorage/OneDrive-Acme/vault');
-	});
-
-	it('leaves a non-home path literal', () => {
-		expect(normalizePickedPath('/mnt/data/vault', { HOME: '/Users/bob' }, 'linux')).toBe('/mnt/data/vault');
+describe('hasMachineEntry', () => {
+	it('reports whether a machine is already in the list', () => {
+		const machines = [{ machine: 'WIN-A', path: 'D:\\x' }];
+		expect(hasMachineEntry(machines, 'WIN-A')).toBe(true);
+		expect(hasMachineEntry(machines, 'WIN-B')).toBe(false);
 	});
 });
 
 describe('migratedLocalAttachment', () => {
-	it('maps a non-empty legacy localRoot to a custom root under this OS', () => {
-		expect(migratedLocalAttachment(undefined, 'D:\\Sync\\attachments', 'win')).toEqual({
-			provider: 'custom',
-			subpath: '',
-			roots: { win: 'D:\\Sync\\attachments' },
+	it('maps a non-empty legacy localRoot to an entry for this machine', () => {
+		expect(migratedLocalAttachment(undefined, 'D:\\Sync\\attachments', 'WIN-A')).toEqual({
+			machines: [{ machine: 'WIN-A', path: 'D:\\Sync\\attachments' }],
 		});
 	});
 
-	it('preserves the raw legacy value so it resolves exactly as before', () => {
-		const migrated = migratedLocalAttachment(undefined, '%OneDriveCommercial%\\docs', 'win');
-		expect(migrated?.roots.win).toBe('%OneDriveCommercial%\\docs');
+	it('carries the unreleased per-OS roots shape into an entry for this OS', () => {
+		const raw = { roots: { win: 'D:\\Sync', mac: '/Users/x/Sync' } };
+		expect(migratedLocalAttachment(raw, undefined, 'WIN-A', 'win32')).toEqual({
+			machines: [{ machine: 'WIN-A', path: 'D:\\Sync' }],
+		});
+		expect(migratedLocalAttachment(raw, undefined, 'MAC-1', 'darwin')).toEqual({
+			machines: [{ machine: 'MAC-1', path: '/Users/x/Sync' }],
+		});
 	});
 
-	it('does nothing when the new shape already exists', () => {
-		const existing = { provider: 'dropbox' as const, subpath: 'x', roots: { win: 'C:\\a' } };
-		expect(migratedLocalAttachment(existing, 'C:\\legacy', 'win')).toBeNull();
+	it('yields an empty list when the per-OS shape has no slot for this OS', () => {
+		const raw = { roots: { win: 'D:\\Sync' } };
+		expect(migratedLocalAttachment(raw, undefined, 'LNX-1', 'linux')).toEqual({ machines: [] });
+	});
+
+	it('does nothing when the machine-list shape already exists', () => {
+		const raw = { machines: [{ machine: 'WIN-A', path: 'D:\\x' }] };
+		expect(migratedLocalAttachment(raw, 'D:\\Legacy', 'WIN-A')).toBeNull();
+	});
+
+	it('returns null for a malformed localAttachment with neither machines nor roots', () => {
+		// loadSettings then falls to its cloning branch, which guards with ?? [].
+		expect(migratedLocalAttachment({}, undefined, 'WIN-A')).toBeNull();
 	});
 
 	it('leaves a blank legacy value blank', () => {
-		expect(migratedLocalAttachment(undefined, '', 'win')).toBeNull();
-		expect(migratedLocalAttachment(undefined, '   ', 'win')).toBeNull();
-		expect(migratedLocalAttachment(undefined, undefined, 'win')).toBeNull();
+		expect(migratedLocalAttachment(undefined, '', 'WIN-A')).toBeNull();
+		expect(migratedLocalAttachment(undefined, '   ', 'WIN-A')).toBeNull();
+		expect(migratedLocalAttachment(undefined, undefined, 'WIN-A')).toBeNull();
 	});
 });
 
-describe('resolveLocalRoot still expands the new stored forms', () => {
-	const KEY = 'LA_TEST_ONEDRIVE_ROOT';
-
-	afterEach(() => {
-		delete process.env[KEY];
+describe('resolveLocalRoot on a stored per-machine path', () => {
+	it('resolves an absolute stored path unchanged in shape', () => {
+		const settings = settingsWith({
+			localAttachment: { machines: [{ machine: 'WIN-A', path: '/tmp/synced-root' }] },
+		});
+		const resolved = resolveLocalRoot(selectActiveRoot(settings, 'WIN-A'));
+		expect(resolved.length).toBeGreaterThan(0);
+		expect(resolved).toContain('synced-root');
 	});
 
-	it('expands an env-var form selected for this OS', () => {
-		process.env[KEY] = '/tmp/synced-root';
+	it('fails closed to empty when this machine has no entry', () => {
 		const settings = settingsWith({
-			localAttachment: { provider: 'custom', subpath: 'sub', roots: { win: `%${KEY}%`, mac: `\${${KEY}}`, linux: `\${${KEY}}` } },
+			localAttachment: { machines: [{ machine: 'WIN-A', path: '/tmp/x' }] },
 		});
-		// selectActiveRoot produces the joined env-var form; resolveLocalRoot expands it.
-		const selectedWin = selectActiveRoot(settings, 'win');
-		expect(selectedWin).toBe(`%${KEY}%/sub`);
-		const resolvedWin = resolveLocalRoot(selectedWin);
-		expect(resolvedWin).not.toContain('%');
-		expect(resolvedWin).toContain('synced-root');
-		expect(resolvedWin).toContain('sub');
+		expect(resolveLocalRoot(selectActiveRoot(settings, 'MAC-1'))).toBe('');
 	});
 });

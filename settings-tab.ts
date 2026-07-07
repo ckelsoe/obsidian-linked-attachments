@@ -1,8 +1,8 @@
 import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SettingGroupItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
-import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID, OSKey, StorageProvider } from './settings';
-import { activeOS, normalizePickedPath, selectActiveRoot } from './src/storage/local-root';
+import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
+import { activeMachine, hasMachineEntry, selectActiveRoot } from './src/storage/local-root';
 import { resolveLocalRoot } from './src/storage/local-backend';
 import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
@@ -39,10 +39,10 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						},
 					},
 					{
-						name: 'Local folder',
-						desc: 'Where the local and paired modes write, resolved per machine. Pick your sync provider, set the folder for each operating system you open this vault on, and an optional subfolder shared across them. A Windows OneDrive pick is stored in its %OneDriveCommercial% form so the same setting resolves on any drive letter. The bytes only appear here after your sync client downloads them, and the pointer note must have synced too, so a just-added file can lag on a second machine.',
+						name: 'Local folders per machine',
+						desc: 'Where the local and paired modes write, resolved per machine. Click Add this machine, then Browse to the offload folder on this machine. If you sync settings across machines, each one adds its own row and reads its own folder, so two machines with different drive letters both work. The bytes only appear on a machine after its sync client (OneDrive, Dropbox, and so on) downloads them, and the pointer note must have synced too, so a just-added file can lag on a second machine.',
 						searchable: false,
-						render: (setting: Setting) => { this.renderLocalStorageRows(setting); },
+						render: (setting: Setting) => { this.renderLocalMachineRows(setting); },
 					},
 				],
 			},
@@ -334,132 +334,130 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		});
 	}
 
-	private static readonly PROVIDER_LABELS: Record<StorageProvider, string> = {
-		'onedrive-business': 'OneDrive (business)',
-		'onedrive-personal': 'OneDrive (personal)',
-		'dropbox': 'Dropbox',
-		'box': 'Box',
-		'icloud': 'iCloud Drive',
-		'google-drive': 'Google Drive',
-		'custom': 'Custom folder or NAS',
-	};
-
-	private static readonly OS_LABELS: Record<OSKey, string> = {
-		win: 'Windows',
-		mac: 'macOS',
-		linux: 'Linux',
-	};
-
-	private static readonly OS_PLACEHOLDERS: Record<OSKey, string> = {
-		win: '%OneDriveCommercial%\\vault-attachments',
-		mac: '~/Library/CloudStorage/OneDrive-Tenant/vault-attachments',
-		linux: '/mnt/sync/vault-attachments',
-	};
-
-	// The cross-machine local-root control (spec 2026-07-07). A composite,
-	// variable-length control, so it renders full-width below the title/description
-	// (the workspace stacked-row convention) and self-persists: a provider dropdown,
-	// a portable subfolder, one root row per OS with the active machine highlighted
-	// and a Browse button (which normalizes the pick to its env-var form), and a
-	// banner showing what this machine resolves to right now.
-	private renderLocalStorageRows(setting: Setting): void {
+	// The cross-machine local-root control (2026-07-07). A composite, variable-length
+	// control, so it renders full-width below the title/description (the workspace
+	// stacked-row convention) and self-persists. It shows one row per machine
+	// (hostname + that machine's offload folder), with this machine highlighted and
+	// given a Browse button, an Add this machine button that pre-fills the current
+	// hostname, and a banner showing what this machine resolves to right now. A
+	// data.json synced across machines accumulates one row per machine, and each
+	// machine reads its own by matching its hostname.
+	private renderLocalMachineRows(setting: Setting): void {
 		setting.settingEl.addClass('linked-attachments-local-setting');
-		const local = this.plugin.settings.localAttachment;
 		const wrap = setting.settingEl.createDiv({ cls: 'linked-attachments-local' });
-		const thisOS = activeOS();
+		const thisMachine = activeMachine();
+		const machines = (): typeof this.plugin.settings.localAttachment.machines => this.plugin.settings.localAttachment.machines;
 
 		const banner = wrap.createDiv({ cls: 'linked-attachments-local-banner' });
 		const refreshBanner = (): void => {
-			const osLabel = LinkedAttachmentsSettingTab.OS_LABELS[thisOS];
-			const stored = selectActiveRoot(this.plugin.settings);
-			const resolved = resolveLocalRoot(stored);
+			if (thisMachine.length === 0) {
+				// os.hostname() gave nothing, so this machine cannot be matched by name.
+				banner.setText('Could not read this machine\'s name, so it cannot be matched automatically. Add a row and set its folder path by hand.');
+				banner.toggleClass('linked-attachments-local-banner-unset', true);
+				return;
+			}
+			const matches = machines().filter((row) => row.machine === thisMachine).length;
+			const resolved = resolveLocalRoot(selectActiveRoot(this.plugin.settings));
 			let text: string;
 			let warn: boolean;
-			if (stored.length === 0) {
-				text = `On this machine (${osLabel}) no local folder is set yet.`;
+			if (matches === 0) {
+				text = `This machine (${thisMachine}) is not in the list. Click Add this machine, then Browse to its offload folder.`;
 				warn = true;
 			} else if (resolved.length === 0) {
-				// A stored env-var form that does not resolve on this machine (the
-				// variable is not set here), so the folder is effectively unconfigured.
-				text = `On this machine (${osLabel}) the folder could not be resolved; a variable like %OneDriveCommercial% is not set here. Set this machine's folder directly.`;
+				text = `This machine (${thisMachine}) has no valid folder set yet. Browse to an absolute folder on this machine.`;
 				warn = true;
 			} else {
-				text = `On this machine (${osLabel}) this resolves to: ${resolved}`;
+				text = `This machine (${thisMachine}) resolves to: ${resolved}`;
 				warn = false;
+			}
+			if (matches > 1) {
+				// Two machines sharing a hostname: resolution uses only the first, so the
+				// UI marks only the first row active. Tell the user to disambiguate.
+				text += ' Warning: more than one row uses this name; only the first is used. Rename one machine so each has a unique name.';
+				warn = true;
 			}
 			banner.setText(text);
 			banner.toggleClass('linked-attachments-local-banner-unset', warn);
 		};
 
-		const providerRow = wrap.createDiv({ cls: 'linked-attachments-local-row' });
-		providerRow.createEl('label', { text: 'Sync provider', cls: 'linked-attachments-local-label' });
-		const providerSelect = providerRow.createEl('select', { cls: 'dropdown' });
-		for (const [value, label] of Object.entries(LinkedAttachmentsSettingTab.PROVIDER_LABELS)) {
-			const option = providerSelect.createEl('option', { text: label, value });
-			if (value === local.provider) {
-				option.selected = true;
-			}
-		}
-		providerSelect.addEventListener('change', () => {
-			local.provider = providerSelect.value as StorageProvider;
-			void this.plugin.saveSettings();
-		});
+		const table = wrap.createDiv({ cls: 'linked-attachments-local-table' });
+		const add = wrap.createEl('button', { text: 'Add this machine', cls: 'linked-attachments-local-add' });
 
-		const subRow = wrap.createDiv({ cls: 'linked-attachments-local-row' });
-		subRow.createEl('label', { text: 'Subfolder shared across machines', cls: 'linked-attachments-local-label' });
-		const subInput = subRow.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
-		subInput.value = local.subpath;
-		subInput.placeholder = 'Optional shared subfolder';
-		subInput.addEventListener('change', () => {
-			local.subpath = subInput.value.trim();
+		const syncAddState = (): void => {
+			// One entry per machine, and only when this machine has a usable name.
+			add.disabled = thisMachine.length === 0 || hasMachineEntry(machines(), thisMachine);
+		};
+
+		const drawRows = (): void => {
+			table.empty();
+			const list = machines();
+			if (list.length === 0) {
+				table.createDiv({ cls: 'linked-attachments-local-empty', text: 'No machines configured yet.' });
+			}
+			// Only the FIRST row matching this machine is the active one, so the "this
+			// machine" marker and Browse button line up with what selectActiveRoot uses.
+			const activeIndex = thisMachine.length > 0 ? list.findIndex((row) => row.machine === thisMachine) : -1;
+			list.forEach((entry, index) => {
+				const isThis = index === activeIndex;
+				const row = table.createDiv({ cls: 'linked-attachments-local-row' });
+				row.toggleClass('linked-attachments-local-active', isThis);
+
+				const nameEl = row.createSpan({ cls: 'linked-attachments-local-name' });
+				const shownName = entry.machine.length > 0 ? entry.machine : '(unnamed)';
+				nameEl.setText(isThis ? `${shownName} (this machine)` : shownName);
+
+				const input = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
+				input.value = entry.path;
+				input.placeholder = 'Absolute offload folder on this machine';
+				input.addEventListener('change', () => {
+					entry.path = input.value.trim();
+					void this.plugin.saveSettings();
+					refreshBanner();
+				});
+
+				// Browse only on the machine you are physically at (the active one): a
+				// picker here cannot reach another machine's filesystem.
+				if (isThis) {
+					const browse = row.createEl('button', { text: 'Browse', cls: 'linked-attachments-local-browse' });
+					browse.addEventListener('click', () => {
+						void (async (): Promise<void> => {
+							const picked = await pickFolder(entry.path);
+							if (picked === null) {
+								return;
+							}
+							entry.path = picked;
+							input.value = picked;
+							await this.plugin.saveSettings();
+							refreshBanner();
+						})();
+					});
+				}
+
+				const remove = row.createEl('button', { text: 'Remove', cls: 'linked-attachments-local-remove' });
+				remove.setAttribute('aria-label', `Remove ${shownName}`);
+				remove.addEventListener('click', () => {
+					machines().splice(index, 1);
+					void this.plugin.saveSettings();
+					drawRows();
+					syncAddState();
+					refreshBanner();
+				});
+			});
+		};
+
+		add.addEventListener('click', () => {
+			if (thisMachine.length === 0 || hasMachineEntry(machines(), thisMachine)) {
+				return;
+			}
+			machines().push({ machine: thisMachine, path: '' });
 			void this.plugin.saveSettings();
+			drawRows();
+			syncAddState();
 			refreshBanner();
 		});
 
-		(['win', 'mac', 'linux'] as OSKey[]).forEach((key) => {
-			const row = wrap.createDiv({ cls: 'linked-attachments-local-row' });
-			row.toggleClass('linked-attachments-local-active', key === thisOS);
-			const label = row.createEl('label', { cls: 'linked-attachments-local-label' });
-			label.setText(
-				key === thisOS
-					? `${LinkedAttachmentsSettingTab.OS_LABELS[key]} (this machine)`
-					: LinkedAttachmentsSettingTab.OS_LABELS[key],
-			);
-			const input = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
-			input.value = local.roots[key] ?? '';
-			input.placeholder = LinkedAttachmentsSettingTab.OS_PLACEHOLDERS[key];
-			input.addEventListener('change', () => {
-				const value = input.value.trim();
-				if (value.length === 0) {
-					delete local.roots[key];
-				} else {
-					local.roots[key] = value;
-				}
-				void this.plugin.saveSettings();
-				refreshBanner();
-			});
-			// Browse only on the active OS: a folder picker on this machine cannot pick
-			// another OS's path, and a stray pick would store a non-portable literal.
-			if (key === thisOS) {
-				const browse = row.createEl('button', { text: 'Browse', cls: 'linked-attachments-local-browse' });
-				browse.addEventListener('click', () => {
-					void (async (): Promise<void> => {
-						// Seed the picker with the resolved absolute path, not the stored
-						// %VAR% / ~ form, which Electron's showOpenDialog cannot expand.
-						const picked = await pickFolder(resolveLocalRoot(local.roots[key] ?? ''));
-						if (picked === null) {
-							return;
-						}
-						const normalized = normalizePickedPath(picked);
-						local.roots[key] = normalized;
-						input.value = normalized;
-						await this.plugin.saveSettings();
-						refreshBanner();
-					})();
-				});
-			}
-		});
-
+		drawRows();
+		syncAddState();
 		refreshBanner();
 	}
 
