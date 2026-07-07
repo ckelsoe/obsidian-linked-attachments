@@ -9,7 +9,21 @@ import {
 	refreshManagedBlock,
 	requireS3Backend,
 } from './codec';
-import { MANAGED_END, MANAGED_START } from './managed-block';
+import { CALLOUT_HEADER, MANAGED_END, MANAGED_START } from './managed-block';
+
+// The frontmatter region (both fences) of an encoded pointer, with the block and
+// body sliced off. Used to assemble legacy comment-delimited notes for the
+// migration and fault tests, since encode now only emits the callout format.
+function frontmatterPrefix(): string {
+	const encoded = encodePointer(fullRecord(), '');
+	return encoded.slice(0, encoded.indexOf(CALLOUT_HEADER));
+}
+
+// A pointer note in the legacy HTML-comment-delimited format (single-newline body
+// separator), the shape pre-migration notes still carry on disk.
+function legacyNote(body: string): string {
+	return `${frontmatterPrefix()}${MANAGED_START}\n[Open x](obsidian://linked-attachments?op=open&id=la-x)\n${MANAGED_END}\n${body}`;
+}
 
 // Tier 0: pure string/record codec. No backend, no network, no shared fixtures.
 
@@ -90,19 +104,20 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 		expect(extractExtension('trailing.')).toBe('');
 	});
 
-	// AC3 :: the managed block regenerates between the markers; bytes outside the
-	// markers (frontmatter values and the user body) are untouched.
+	// AC3 :: the managed block regenerates in place; bytes outside it (frontmatter
+	// values and the user body) are untouched. The block carries no filename now, so
+	// what varies it is the backend set: refreshing with an added local backend adds
+	// the local row while leaving the body byte-identical.
 	it('test_managed_block_regen', () => {
-		const record = fullRecord();
+		const record = fullRecord(); // S3-only
 		const text = encodePointer(record, USER_BODY);
-		// A record whose id/name change the managed link, but identity is the same.
-		const renamed: PointerRecord = { ...record, originalName: 'Cranfield-renamed.pdf' };
-		const refreshed = refreshManagedBlock(text, renamed);
-		expect(refreshed).toContain('Cranfield-renamed.pdf');
-		// The body below the end marker is identical.
-		const bodyAfter = refreshed.slice(refreshed.indexOf(MANAGED_END) + MANAGED_END.length);
-		const bodyBefore = text.slice(text.indexOf(MANAGED_END) + MANAGED_END.length);
-		expect(bodyAfter).toBe(bodyBefore);
+		const paired: PointerRecord = {
+			...record,
+			backends: [...record.backends, { type: 'local', path: 'books/x.pdf' }],
+		};
+		const refreshed = refreshManagedBlock(text, paired);
+		expect(refreshed).toContain('> - Local: [open](');
+		expect(decodePointer(refreshed).body).toBe(USER_BODY);
 	});
 
 	// AC4 :: decode then re-encode leaves the user body below the end marker
@@ -310,20 +325,28 @@ describe('pointer codec property tests (la-p1-02)', () => {
 });
 
 describe('pointer codec failure injection (la-p1-02)', () => {
-	// A pointer whose managed block lost its end marker must raise, never silently
-	// treat the rest of the file as body (which would let a half-written file
-	// swallow the user's notes).
+	// A legacy pointer whose managed block lost its end marker must raise, never
+	// silently treat the rest of the file as body (which would let a half-written
+	// file swallow the user's notes).
 	it('fault_missing_end_marker_raises', () => {
-		const text = encodePointer(fullRecord(), USER_BODY).replace(MANAGED_END, '');
+		const text = legacyNote(USER_BODY).replace(MANAGED_END, '');
 		expect(() => decodePointer(text)).toThrow(PointerParseError);
 	});
 
-	// Two managed blocks (e.g. a botched merge) are ambiguous; raise rather than
-	// guess which one is authoritative.
-	it('fault_duplicate_managed_block_raises', () => {
-		const text = encodePointer(fullRecord(), USER_BODY);
-		const dupe = text + '\n' + MANAGED_START + '\nextra\n' + MANAGED_END + '\n';
-		expect(() => decodePointer(dupe)).toThrow(PointerParseError);
+	// The block is anchored to the start of the region, so comment markers that
+	// appear AGAIN lower in a legacy note's body are user content, not a second
+	// managed block: they must survive decode, not trigger a false ambiguity error.
+	it('preserves comment marker strings that reappear in a legacy body', () => {
+		const body = 'notes\n<!-- la:managed:start -->\ninside\n<!-- la:managed:end -->\nmore\n';
+		const decoded = decodePointer(legacyNote(body));
+		expect(decoded.body).toBe(body);
+	});
+
+	// Valid frontmatter but neither a callout nor comment markers: the managed block
+	// is missing, so decode raises rather than treating the trailing bytes as body.
+	it('fault_no_managed_block_raises', () => {
+		const text = frontmatterPrefix() + 'just a body, no managed block\n';
+		expect(() => decodePointer(text)).toThrow(PointerParseError);
 	});
 
 	// A file with no frontmatter is not a pointer; raise a typed error, never
@@ -342,5 +365,116 @@ describe('pointer codec failure injection (la-p1-02)', () => {
 	it('fault_invalid_verification_tier_raises', () => {
 		const text = encodePointer(fullRecord(), USER_BODY).replace(/^la_verification_tier:.*$/m, 'la_verification_tier: bogus');
 		expect(() => decodePointer(text)).toThrow(PointerParseError);
+	});
+});
+
+describe('pointer codec callout separator round-trip (la-p1-02)', () => {
+	// encode separates the callout from the body with a BLANK line so a callout,
+	// which ends at the first non-`>` line, cannot swallow a body that itself starts
+	// with `>`. Every body shape must survive encode -> decode byte-for-byte.
+	const cases = [
+		{ name: 'an empty body', body: '' },
+		{ name: 'a normal body', body: USER_BODY },
+		{ name: 'a body that starts with a blockquote line', body: '> quoted line\n> still quoted\n\nafter\n' },
+		{ name: 'a body with leading blank lines', body: '\n\nleading blanks then text\n' },
+	];
+	it.each(cases)('round-trips $name byte-exact', ({ body }) => {
+		const decoded = decodePointer(encodePointer(fullRecord(), body));
+		expect(decoded.body).toBe(body);
+		expect(decoded.record).toEqual(fullRecord());
+	});
+
+	// The blank-line separator specifically stops a blockquote body from merging into
+	// the managed callout: the body decodes intact and identity still reads clean.
+	it('does not merge a blockquote body into the managed callout', () => {
+		const body = '> quoted line\n';
+		const decoded = decodePointer(encodePointer(fullRecord(), body));
+		expect(decoded.body).toBe(body);
+		expect(decoded.record).toEqual(fullRecord());
+	});
+});
+
+describe('pointer codec legacy migration (la-p1-02)', () => {
+	// An old comment-delimited note refreshes into the callout format: the comment
+	// markers are gone, the block is now a callout, and the user body is preserved
+	// and separated from the callout by a blank line.
+	it('migrates a legacy comment block to a callout, preserving the body', () => {
+		const legacy = legacyNote('legacy body line\n');
+		const migrated = refreshManagedBlock(legacy, fullRecord());
+		expect(migrated).toContain(CALLOUT_HEADER);
+		expect(migrated).not.toContain('<!-- la:managed');
+		expect(migrated).toContain('\n\nlegacy body line\n');
+		expect(decodePointer(migrated).body).toBe('legacy body line\n');
+	});
+
+	// A legacy note with an empty body migrates to a callout; the empty body still
+	// decodes as empty (the `\n\n` join over an empty body is just a trailing blank
+	// line, not body content).
+	it('migrates a legacy note with an empty body', () => {
+		const legacy = legacyNote('');
+		const migrated = refreshManagedBlock(legacy, fullRecord());
+		expect(migrated).toContain(CALLOUT_HEADER);
+		expect(migrated).not.toContain('<!-- la:managed');
+		expect(decodePointer(migrated).body).toBe('');
+	});
+
+	// A legacy note still decodes (identity read from frontmatter), and its body is
+	// recovered across the single-newline legacy separator.
+	it('decodes a legacy comment-delimited note', () => {
+		const decoded = decodePointer(legacyNote('old body\n'));
+		expect(decoded.body).toBe('old body\n');
+		expect(decoded.record).toEqual(fullRecord());
+	});
+});
+
+describe('pointer codec position-anchored block location (data-integrity)', () => {
+	const BODY_WITH_MARKERS = 'before\n<!-- la:managed:start -->\nmiddle\n<!-- la:managed:end -->\nafter\n';
+	const BODY_WITH_USER_CALLOUT = 'my notes\n\n> [!linked-attachments]- Storage\n> - my own note, not plugin-owned\n\ntail\n';
+
+	// Finding 1: a valid callout note whose USER BODY contains the legacy comment
+	// marker strings must round-trip the FULL body. Block location is anchored to the
+	// start of the region, so body markers are never treated as the managed block.
+	it('round-trips a callout note whose body contains the comment marker strings', () => {
+		const decoded = decodePointer(encodePointer(fullRecord(), BODY_WITH_MARKERS));
+		expect(decoded.body).toBe(BODY_WITH_MARKERS);
+		expect(decoded.record).toEqual(fullRecord());
+	});
+
+	// Finding 1 (refresh side): refresh rewrites only the real block, never marker
+	// strings sitting in the body.
+	it('refresh leaves comment marker strings in the body untouched', () => {
+		const text = encodePointer(fullRecord(), BODY_WITH_MARKERS);
+		const refreshed = refreshManagedBlock(text, fullRecord());
+		expect(decodePointer(refreshed).body).toBe(BODY_WITH_MARKERS);
+	});
+
+	// Finding 2: a user-authored `> [!linked-attachments]` callout further down in the
+	// body is NOT the plugin block. Decode preserves it and refresh must not overwrite
+	// it (the anchored, non-multiline regex only matches the block at position 0).
+	it('does not treat a user-authored callout in the body as the managed block', () => {
+		const text = encodePointer(fullRecord(), BODY_WITH_USER_CALLOUT);
+		expect(decodePointer(text).body).toBe(BODY_WITH_USER_CALLOUT);
+		const refreshed = refreshManagedBlock(text, fullRecord());
+		expect(decodePointer(refreshed).body).toBe(BODY_WITH_USER_CALLOUT);
+		expect(refreshed).toContain('> - my own note, not plugin-owned');
+	});
+
+	// Finding 3: a lone `\n` after a callout block is a malformed separator. It must
+	// NOT be silently stripped (that would drop a byte and desync the round-trip); the
+	// newline is preserved as the leading character of the body instead.
+	it('does not silently strip a single-newline separator for the callout format', () => {
+		const proper = encodePointer(fullRecord(), 'user body\n'); // callout\n\nuser body\n
+		const malformed = proper.replace('\n\nuser body', '\nuser body');
+		expect(decodePointer(malformed).body).toBe('\nuser body\n');
+	});
+
+	// The block continuation only consumes `> - ` rows, so a body line that itself
+	// starts with `>` (a blockquote) is NOT swallowed into the callout even when a
+	// hand-edit has collapsed the blank-line separator to a single newline. Without
+	// this, the greedy `(?:\n>...)` form would eat the body's blockquote line.
+	it('does not swallow a blockquote body line when the separator is malformed', () => {
+		const proper = encodePointer(fullRecord(), '> body line\n'); // callout\n\n> body line\n
+		const malformed = proper.replace('\n\n> body line', '\n> body line');
+		expect(decodePointer(malformed).body).toBe('\n> body line\n');
 	});
 });

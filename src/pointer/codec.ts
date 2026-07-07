@@ -202,20 +202,17 @@ export function encodePointer(record: PointerRecord, body: string, extraFrontmat
 	// added implicitly for any value that would otherwise re-parse as a non-string
 	// (timestamps, "yes"/"no", numbers), keeping every string a string on decode.
 	const frontmatterText = dumpYaml(frontmatter, { lineWidth: -1 });
-	const block = renderManagedBlock({ id: record.id, originalName: record.originalName, backends: record.backends.map((backend) => backend.type) });
-	return `${FENCE}${frontmatterText}${FENCE}${block}\n${body}`;
+	const block = renderManagedBlock({ id: record.id, backends: record.backends.map((backend) => backend.type) });
+	// A BLANK line separates the callout from the user body. A callout ends at the
+	// first line that does not start with `>`, so without the blank line a body that
+	// itself starts with `>` (a blockquote) would be swallowed into the callout and
+	// mis-parsed. extractBody strips exactly this separator to round-trip byte-exact.
+	return `${FENCE}${frontmatterText}${FENCE}${block}\n\n${body}`;
 }
 
 export function decodePointer(text: string): DecodedPointer {
-	if (!text.startsWith(FENCE)) {
-		throw new PointerParseError('not a pointer: file does not begin with a frontmatter fence');
-	}
-	const closingNewline = text.indexOf(`\n${FENCE}`, FENCE.length - 1);
-	if (closingNewline < 0) {
-		throw new PointerParseError('not a pointer: the frontmatter fence is never closed');
-	}
-	const frontmatterText = text.slice(FENCE.length, closingNewline + 1);
-	const rest = text.slice(closingNewline + 1 + FENCE.length);
+	const { frontmatterText, restStart } = splitFrontmatter(text);
+	const rest = text.slice(restStart);
 
 	let parsed: unknown;
 	try {
@@ -237,38 +234,102 @@ export function decodePointer(text: string): DecodedPointer {
 // Used when a pointer's display fields change (e.g. an Obsidian rename) without
 // touching identity.
 export function refreshManagedBlock(text: string, record: PointerRecord): string {
-	const span = locateManagedBlock(text);
-	const block = renderManagedBlock({ id: record.id, originalName: record.originalName, backends: record.backends.map((backend) => backend.type) });
-	return text.slice(0, span.start) + block + text.slice(span.end);
+	// The managed block is always the first thing after the frontmatter fence, so
+	// locate it at the start of `rest` and map the replacement back to absolute
+	// indices. Searching the whole note would let marker/callout text in the USER
+	// BODY be mistaken for the block and overwritten.
+	const { restStart } = splitFrontmatter(text);
+	const rest = text.slice(restStart);
+	const span = locateManagedBlock(rest);
+	const block = renderManagedBlock({ id: record.id, backends: record.backends.map((backend) => backend.type) });
+	const body = stripBlockSeparator(rest.slice(span.end), span.format);
+	// The regenerated block is always a callout, joined to the body by a blank line
+	// (encode's convention): a callout ends at the first non-`>` line, so the blank
+	// line stops a body that starts with `>` from merging into it. Rebuilding with
+	// this same separator migrates a legacy comment block and leaves an
+	// already-callout note byte-stable.
+	return text.slice(0, restStart) + block + '\n\n' + body;
 }
 
 // --- internals --------------------------------------------------------------
 
-interface BlockSpan {
-	start: number; // index of MANAGED_START
-	end: number; // index just past MANAGED_END
+interface FrontmatterSplit {
+	frontmatterText: string;
+	restStart: number; // absolute index in `text` where the post-frontmatter region begins
 }
 
-function locateManagedBlock(text: string): BlockSpan {
-	const starts = countOccurrences(text, MANAGED_START);
-	const ends = countOccurrences(text, MANAGED_END);
-	if (starts !== 1 || ends !== 1) {
-		throw new PointerParseError(`expected exactly one managed block, found ${starts} start / ${ends} end markers`);
+// Locate the frontmatter's closing fence and report where the post-frontmatter
+// region (`rest`) begins. The managed block is ALWAYS the first thing in `rest`,
+// because encodePointer writes `${FENCE}${frontmatter}${FENCE}${block}...`.
+// decodePointer and refreshManagedBlock both anchor block location to this point,
+// so marker/callout text in the USER BODY can never be mistaken for the block.
+function splitFrontmatter(text: string): FrontmatterSplit {
+	if (!text.startsWith(FENCE)) {
+		throw new PointerParseError('not a pointer: file does not begin with a frontmatter fence');
 	}
-	const start = text.indexOf(MANAGED_START);
-	const endMarker = text.indexOf(MANAGED_END);
-	if (start > endMarker) {
-		throw new PointerParseError('managed block end marker precedes its start marker');
+	const closingNewline = text.indexOf(`\n${FENCE}`, FENCE.length - 1);
+	if (closingNewline < 0) {
+		throw new PointerParseError('not a pointer: the frontmatter fence is never closed');
 	}
-	return { start, end: endMarker + MANAGED_END.length };
+	return { frontmatterText: text.slice(FENCE.length, closingNewline + 1), restStart: closingNewline + 1 + FENCE.length };
+}
+
+// The block is stored in one of two formats: the current `callout` (an Obsidian
+// callout with no explicit end marker) or the `legacy` HTML-comment-delimited
+// span still present in pre-migration notes. locate reports which it found so
+// the caller strips the matching body separator.
+type BlockFormat = 'callout' | 'legacy';
+
+interface BlockSpan {
+	end: number; // index just past the last block byte, relative to `rest`
+	format: BlockFormat;
+}
+
+// A callout runs from its `> [!linked-attachments]...` header through the
+// generated `> - ...` action rows (Local / S3 / the empty-backends fallback all
+// start with `> - `). Continuation is restricted to `> - ` rows, NOT any `>`
+// line: a body line like `> quote` (when a hand-edit has removed the blank-line
+// separator encode writes) then terminates the block instead of being swallowed
+// into it, so the user's body is preserved. Anchored to string start (no `m`
+// flag) so it only matches at the block position, never a user-authored callout
+// deeper in the body. Case-insensitive because Obsidian matches callout types
+// case-insensitively.
+const CALLOUT_BLOCK_RE = /^> \[!linked-attachments\][^\n]*(?:\n> - [^\n]*)*/i;
+
+// Locate the managed block at the START of the post-frontmatter region. The block
+// is always at position 0; text further down is user body, never the block.
+function locateManagedBlock(rest: string): BlockSpan {
+	// Legacy notes open with the HTML-comment start marker; the block runs to its
+	// matching end marker. A start marker with no end is malformed.
+	if (rest.startsWith(MANAGED_START)) {
+		const endMarker = rest.indexOf(MANAGED_END);
+		if (endMarker < 0) {
+			throw new PointerParseError('managed block start marker has no matching end marker');
+		}
+		return { end: endMarker + MANAGED_END.length, format: 'legacy' };
+	}
+	// Otherwise the block must be a callout anchored at position 0.
+	const match = CALLOUT_BLOCK_RE.exec(rest);
+	if (match === null) {
+		throw new PointerParseError('expected a managed block (callout or comment markers) at the start of the note body');
+	}
+	return { end: match[0].length, format: 'callout' };
+}
+
+// Strip the separator encode wrote between the block and the body. The callout
+// format uses a blank line (two newlines); strip ONLY that. A lone `\n` is a
+// malformed boundary, so leave it in place (it becomes body) rather than silently
+// swallowing a byte. The legacy comment format used a single newline.
+function stripBlockSeparator(after: string, format: BlockFormat): string {
+	if (format === 'callout') {
+		return after.startsWith('\n\n') ? after.slice(2) : after;
+	}
+	return after.startsWith('\n') ? after.slice(1) : after;
 }
 
 function extractBody(rest: string): string {
 	const span = locateManagedBlock(rest);
-	const after = rest.slice(span.end);
-	// encode joins the block to the body with a single newline; strip exactly that
-	// separator so the body round-trips byte-for-byte.
-	return after.startsWith('\n') ? after.slice(1) : after;
+	return stripBlockSeparator(rest.slice(span.end), span.format);
 }
 
 function buildRecord(fm: Record<string, unknown>): PointerRecord {
@@ -419,10 +480,6 @@ function requireEnum<T extends string>(fm: Record<string, unknown>, key: string,
 		throw new PointerParseError(`field ${key} must be one of ${allowed.join(', ')}, got ${value}`);
 	}
 	return value as T;
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-	return haystack.split(needle).length - 1;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
