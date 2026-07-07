@@ -444,7 +444,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				const browse = row.createEl('button', { text: 'Browse', cls: 'linked-attachments-local-browse' });
 				browse.addEventListener('click', () => {
 					void (async (): Promise<void> => {
-						const picked = await pickFolder(local.roots[key] ?? '');
+						// Seed the picker with the resolved absolute path, not the stored
+						// %VAR% / ~ form, which Electron's showOpenDialog cannot expand.
+						const picked = await pickFolder(resolveLocalRoot(local.roots[key] ?? ''));
 						if (picked === null) {
 							return;
 						}
