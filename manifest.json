@@ -1,7 +1,7 @@
 {
 	"id": "linked-attachments",
 	"name": "Linked Attachments",
-	"version": "2.2.1",
+	"version": "3.0.0",
 	"minAppVersion": "1.13.0",
 	"description": "Offload large, cold files to your own S3-compatible bucket or a local folder, keeping a resolvable pointer note in your vault.",
 	"author": "Charles Kelsoe (ckelsoe)",

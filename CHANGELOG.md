@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-07-07
+
 ### Added
 - Store offloaded files in a local folder, not just S3. A new Storage mode setting offers "S3 only" (unchanged), "Local only" (move files to a folder outside the vault, such as a synced OneDrive, Dropbox, or NAS path), and "Local and S3" (write both, read from the fast local copy, and keep S3 as an off-machine backup). Set the local folder in settings; environment variables like %OneDriveCommercial% and $HOME are expanded so one setting resolves the right folder on each machine. Offloaded files mirror their vault path under the folder.
 - Paired offload is atomic: in "Local and S3" mode both copies are written and verified before the local original is trashed, and if either copy fails the other is rolled back and your original is kept. You are never left with a pointer whose storage does not actually hold the file.
