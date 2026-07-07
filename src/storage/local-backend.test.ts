@@ -223,6 +223,19 @@ describe('resolveLocalRoot', () => {
 		expect(resolveLocalRoot('')).toBe('');
 		expect(resolveLocalRoot('   ')).toBe('');
 	});
+
+	// A delimited env var that does not resolve on this machine must fail closed to
+	// '' (read as "not configured here"), never a cwd-relative path that a later
+	// offload would write verified bytes into.
+	it('test_unresolved_env_var_fails_closed', () => {
+		const missing = 'LA_DEFINITELY_UNSET_VAR_9137';
+		delete process.env[missing];
+		expect(resolveLocalRoot(`%${missing}%\\sub`)).toBe('');
+		expect(resolveLocalRoot(`\${${missing}}/sub`)).toBe('');
+		// Bare $VAR form too: expandEnv leaves it in place, so it must fail closed
+		// rather than become a cwd-relative path.
+		expect(resolveLocalRoot(`$${missing}/sub`)).toBe('');
+	});
 });
 
 describe('LocalBackend safety', () => {

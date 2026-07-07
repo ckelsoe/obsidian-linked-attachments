@@ -341,7 +341,26 @@ export function resolveLocalRoot(raw: string): string {
 	if (trimmed.length === 0) {
 		return '';
 	}
-	return nodePath.resolve(expandEnv(trimmed));
+	const expanded = expandEnv(trimmed);
+	// Fail closed when an env var reference did not resolve on this machine.
+	// expandEnv leaves an unknown %VAR% / ${VAR} / $VAR reference in place; without
+	// this guard path.resolve would then turn "%OneDriveCommercial%/sub" into a real
+	// folder under the process cwd, and a caller that only checks "root is non-empty"
+	// would offload verified bytes into that wrong, non-synced directory. Returning
+	// '' instead makes every existing guard (the localBackend factory throw, the
+	// open/reveal null checks, the readiness gate) read the root as "not configured
+	// here". The three patterns match exactly the syntax expandEnv treats as a
+	// reference, so a leftover marker always means an unresolved variable, never a
+	// literal path segment (expandEnv already owns %, ${}, and $ syntax, so such a
+	// literal folder never resolved through this function anyway).
+	if (hasUnresolvedEnvVar(expanded)) {
+		return '';
+	}
+	return nodePath.resolve(expanded);
+}
+
+function hasUnresolvedEnvVar(value: string): boolean {
+	return /%[^%]+%/.test(value) || /\$\{[^}]+\}/.test(value) || /\$[A-Za-z_][A-Za-z0-9_]*/.test(value);
 }
 
 function stripSurroundingQuotes(value: string): string {
