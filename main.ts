@@ -21,7 +21,7 @@ import { AdoptModal } from './src/ui/adopt-modal';
 import { ReconcileModal } from './src/ui/reconcile-modal';
 import { offloadOutcomeLine, pointerTrustLine } from './src/ui/trust-summary';
 import { classifyError } from './src/storage/error-state';
-import { activeOS, migratedLocalAttachment, selectActiveRoot } from './src/storage/local-root';
+import { activeMachine, migratedLocalAttachment, selectActiveRoot } from './src/storage/local-root';
 import { resolveLocalRoot } from './src/storage/local-backend';
 import { formatPointerReference } from './src/ui/pointer-reference';
 import { BackendType, decodePointer, PointerRecord } from './src/pointer/codec';
@@ -1074,27 +1074,24 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			| null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, raw);
 
-		// Object.assign shallow-copies, so a fresh install shares the module-level
-		// DEFAULT_SETTINGS.localAttachment (and its roots) by reference; the settings
-		// UI mutates roots in place, which would pollute the default for every other
-		// vault in this app session. Clone it so each vault owns its own object.
-		this.settings.localAttachment = {
-			...this.settings.localAttachment,
-			roots: { ...this.settings.localAttachment.roots },
-		};
-
-		// Migrate the legacy single `localRoot` to the per-OS cross-machine shape,
-		// once. An older data.json has no `localAttachment`, so Object.assign left the
-		// DEFAULT_SETTINGS empty shape in place; a non-empty legacy value becomes this
-		// machine's slot under provider 'custom'. A data.json already in the new shape,
-		// or a blank legacy value, is left untouched. It is persisted at the end of
-		// this method (after every other normalization) so the next load reads the new
-		// shape and never re-runs the migration, which would otherwise map the old
-		// single-machine path into a second OS's slot on a synced machine.
-		const migrated = migratedLocalAttachment(raw?.localAttachment, raw?.localRoot, activeOS());
+		// Migrate to the per-machine list once, BEFORE any clone. An older data.json
+		// has the legacy single `localRoot` (mapped to an entry for this machine) or
+		// the unreleased per-OS `roots` shape (this OS's slot carried into an entry).
+		// Doing this first matters: the interim `roots` shape has no `machines` array,
+		// so cloning `.machines` before migrating would throw on load. When migration
+		// returns a value it is fresh objects (no clone needed); otherwise the shape is
+		// already the machine list (or the default), which is cloned below so the
+		// settings UI's in-place path edits never mutate the module-level default.
+		// Persisted at the end of this method (after every other normalization) so the
+		// next load reads the new shape and never re-migrates.
+		const migrated = migratedLocalAttachment(raw?.localAttachment, raw?.localRoot, activeMachine());
 		const didMigrateLocalRoot = migrated !== null;
 		if (migrated !== null) {
 			this.settings.localAttachment = migrated;
+		} else {
+			this.settings.localAttachment = {
+				machines: (this.settings.localAttachment.machines ?? []).map((entry) => ({ ...entry })),
+			};
 		}
 
 		// Map a saved old-default secret name to its current short name.

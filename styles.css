@@ -218,13 +218,18 @@
 }
 
 /* Cross-machine local-root control (settings). Stacked full-width below the
-   title/description (the workspace stacked-row convention for long controls). */
+   title/description (the workspace stacked-row convention for long controls). One
+   row per machine (hostname + its offload folder), with this machine highlighted. */
 .linked-attachments-local-setting {
 	display: block;
 }
 
 .linked-attachments-local {
 	margin-top: var(--size-4-2);
+}
+
+.linked-attachments-local-table {
+	margin-bottom: var(--size-4-2);
 }
 
 .linked-attachments-local-row {
@@ -235,16 +240,17 @@
 }
 
 /* The row for the machine this settings tab is open on, so it is obvious which
-   slot the Browse button and resolved banner refer to. */
+   row the Browse button and resolved banner refer to. */
 .linked-attachments-local-row.linked-attachments-local-active {
 	border-left: var(--size-2-1) solid var(--interactive-accent);
 	padding-left: var(--size-4-2);
 }
 
-.linked-attachments-local-label {
-	flex: 0 0 14em;
+.linked-attachments-local-name {
+	flex: 0 0 12em;
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
 }
 
 .linked-attachments-local-input {
@@ -252,8 +258,19 @@
 	font-family: var(--font-monospace);
 }
 
-.linked-attachments-local-browse {
+.linked-attachments-local-browse,
+.linked-attachments-local-remove {
 	flex: 0 0 auto;
+}
+
+.linked-attachments-local-empty {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	padding: var(--size-2-1) 0;
+}
+
+.linked-attachments-local-add {
+	margin-top: var(--size-2-2);
 }
 
 .linked-attachments-local-banner {

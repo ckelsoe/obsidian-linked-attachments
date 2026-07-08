@@ -18,11 +18,11 @@ In every mode the original is only removed after the copy is verified byte-for-b
 
 ## Local folders across machines
 
-A synced vault opens on more than one machine, and the same synced folder is rarely at the same absolute path everywhere: a different drive letter on another Windows PC, a completely different location on macOS. Linked Attachments resolves the local folder per machine so one synced vault just works:
+A vault used on more than one computer rarely has its synced folder at the same absolute path everywhere: a different drive letter on another Windows PC, a completely different location on macOS. Linked Attachments sets the local folder per machine so the vault opens correctly on each:
 
 - The pointer note stores a portable, folder-relative key, never a machine-specific absolute path.
-- Settings hold a root per operating system. Set the folder once on each OS you open the vault on. Within one OS the setting is portable across machines: a Windows OneDrive folder is stored in its `%OneDriveCommercial%` form, so it resolves correctly on any drive letter with no re-editing.
-- The settings panel shows what the folder resolves to on the machine you are looking at, so you can confirm it before you trust a file.
+- Settings hold a list of machines, one row per computer (its name and its offload folder). On each machine, click **Add this machine** and **Browse** to the folder. If you sync your settings across machines, every machine adds its own row and reads its own folder, so even two Windows machines with different drive letters both resolve correctly.
+- A banner shows what the folder resolves to on the machine you are looking at, so you can confirm it before you trust a file.
 
 Two things to know:
 
