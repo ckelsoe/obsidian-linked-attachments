@@ -900,7 +900,11 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			}
 			if (await this.openInShell(tempPath)) {
 				new Notice('Opened the S3 copy (downloaded to a temp file).');
+				return;
 			}
+			// S3 downloaded but the shell could not open the temp file; still try the
+			// local placeholder we skipped, rather than leaving nothing opened.
+			await openDatalessFallback();
 		} catch (error) {
 			if (await openDatalessFallback()) {
 				return;
