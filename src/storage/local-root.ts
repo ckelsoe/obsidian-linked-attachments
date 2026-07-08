@@ -23,7 +23,14 @@ export function selectActiveRoot(settings: LinkedAttachmentsSettings, machine: s
 	if (local === undefined || !Array.isArray(local.machines)) {
 		return settings.localRoot ?? '';
 	}
-	const entry = local.machines.find((row) => row.machine === machine);
+	const key = machine.trim();
+	if (key.length === 0) {
+		// No usable hostname to match on; treat as unconfigured rather than matching a
+		// stray empty-named row (keeps this aligned with the settings UI, which refuses
+		// to add or activate a row for an empty machine name).
+		return '';
+	}
+	const entry = local.machines.find((row) => row.machine.trim() === key);
 	return entry?.path ?? '';
 }
 
@@ -54,9 +61,14 @@ export function migratedLocalAttachment(
 	if (existingRaw !== undefined && existingRaw.roots !== undefined) {
 		const osKey = platform === 'win32' ? 'win' : platform === 'darwin' ? 'mac' : 'linux';
 		const path = existingRaw.roots[osKey];
+		// Only migrate when this OS actually has a slot. Returning an empty list here
+		// would be persisted and wipe the other OSes' roots from a synced data.json
+		// before those machines migrate; returning null leaves the interim shape in
+		// place on disk so nothing is lost (this machine stays unconfigured until the
+		// user adds it, which is correct since this OS had no folder anyway).
 		return path !== undefined && path.trim().length > 0
 			? { machines: [{ machine, path }] }
-			: { machines: [] };
+			: null;
 	}
 	if (legacyLocalRoot !== undefined && legacyLocalRoot.trim().length > 0) {
 		return { machines: [{ machine, path: legacyLocalRoot }] };
@@ -67,5 +79,6 @@ export function migratedLocalAttachment(
 // Whether a machine entry for this machine already exists in the list (so the
 // settings UI can avoid adding a duplicate when the user clicks Add this machine).
 export function hasMachineEntry(machines: LocalMachineRoot[], machine: string): boolean {
-	return machines.some((row) => row.machine === machine);
+	const key = machine.trim();
+	return machines.some((row) => row.machine.trim() === key);
 }

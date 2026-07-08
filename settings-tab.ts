@@ -421,7 +421,10 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					const browse = row.createEl('button', { text: 'Browse', cls: 'linked-attachments-local-browse' });
 					browse.addEventListener('click', () => {
 						void (async (): Promise<void> => {
-							const picked = await pickFolder(entry.path);
+							// Seed with the resolved absolute path: a migrated/hand-entered
+							// value may carry ~ or an env-var marker that Electron's
+							// defaultPath cannot expand.
+							const picked = await pickFolder(resolveLocalRoot(entry.path));
 							if (picked === null) {
 								return;
 							}

@@ -31,6 +31,20 @@ describe('selectActiveRoot', () => {
 		expect(selectActiveRoot(settings, 'MAC-1')).toBe('');
 	});
 
+	it("returns '' for an empty hostname rather than matching an empty-named row", () => {
+		const settings = settingsWith({
+			localAttachment: { machines: [{ machine: '', path: 'D:\\Stray' }] },
+		});
+		expect(selectActiveRoot(settings, '')).toBe('');
+	});
+
+	it('matches despite surrounding whitespace on either side', () => {
+		const settings = settingsWith({
+			localAttachment: { machines: [{ machine: ' WIN-A ', path: 'D:\\Sync' }] },
+		});
+		expect(selectActiveRoot(settings, 'WIN-A')).toBe('D:\\Sync');
+	});
+
 	it('falls back to the legacy localRoot only when the new shape is absent', () => {
 		const settings = settingsWith({ localRoot: 'D:\\Legacy' });
 		delete (settings as Partial<LinkedAttachmentsSettings>).localAttachment;
@@ -63,9 +77,11 @@ describe('migratedLocalAttachment', () => {
 		});
 	});
 
-	it('yields an empty list when the per-OS shape has no slot for this OS', () => {
+	it('returns null (no wipe) when the per-OS shape has no slot for this OS', () => {
+		// Returning an empty list would be persisted and erase the other OSes' roots
+		// from a synced data.json before those machines migrate.
 		const raw = { roots: { win: 'D:\\Sync' } };
-		expect(migratedLocalAttachment(raw, undefined, 'LNX-1', 'linux')).toEqual({ machines: [] });
+		expect(migratedLocalAttachment(raw, undefined, 'LNX-1', 'linux')).toBeNull();
 	});
 
 	it('does nothing when the machine-list shape already exists', () => {
