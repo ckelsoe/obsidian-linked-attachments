@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- You can now rename a machine's row in the per-machine local folder list, so a computer that was renamed or re-imaged keeps its folder instead of needing a fresh entry.
+
+### Changed
+- When a local copy is an online-only cloud placeholder (OneDrive Files On-Demand and similar) and an S3 copy exists, opening now uses the S3 copy instead of waiting on the sync client to download the placeholder on access.
+- Auto-offload now tells you at startup if it is turned on while this machine has no local folder set, so you are not left wondering why new files are not being offloaded.
+
 ## [3.1.0] - 2026-07-08
 
 ### Added

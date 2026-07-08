@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as nodePath from 'path';
-import { LocalBackend, resolveLocalRoot } from './local-backend';
+import { isDatalessStat, LocalBackend, resolveLocalRoot } from './local-backend';
 import { BackendError, ObjectNotFoundError } from './backend';
 import { sha256Base64, sha256Hex } from '../hash/sha256';
 import { verifyByLadder } from '../offload/verify';
@@ -247,6 +247,20 @@ describe('resolveLocalRoot', () => {
 		// Bare $VAR form too: expandEnv leaves it in place, so it must fail closed
 		// rather than become a cwd-relative path.
 		expect(resolveLocalRoot(`$${missing}/sub`)).toBe('');
+	});
+});
+
+describe('isDatalessStat', () => {
+	it('flags a file with real size but no allocated blocks (online-only placeholder)', () => {
+		expect(isDatalessStat({ size: 1_000_000, blocks: 0 })).toBe(true);
+	});
+
+	it('does not flag a fully present file', () => {
+		expect(isDatalessStat({ size: 1_000_000, blocks: 1960 })).toBe(false);
+	});
+
+	it('does not flag a genuinely empty file', () => {
+		expect(isDatalessStat({ size: 0, blocks: 0 })).toBe(false);
 	});
 });
 

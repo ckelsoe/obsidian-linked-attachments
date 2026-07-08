@@ -515,6 +515,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 				});
 				void this.updateDirtyStatus();
 			}
+			this.warnIfAutoOffloadUnconfigured();
 		});
 
 		// The checkout dirty-state indicator (orange/red/green) for the active pointer.
@@ -838,40 +839,76 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// paired pointer still opens; the Notice always names the copy that opened.
 	private async openRecord(record: PointerRecord, preferred?: BackendType): Promise<void> {
 		const hasS3 = record.backends.some((backend) => backend.type === 's3');
+		// A dataless local copy we deliberately skipped in favour of S3; kept so that if
+		// the S3 open then fails (offline, bad credentials) we can still fall back to
+		// hydrating the local placeholder rather than refusing to open at all.
+		let datalessLocalFallback: string | null = null;
 		if (preferred !== 's3') {
 			// localCopyOnDisk stat-checks; a bare path resolve would send a missing file
 			// to the shell and dead-end.
 			const localPath = await this.attachments.localCopyOnDisk(record);
+			let s3Announced = false;
 			if (localPath !== null) {
-				if (await this.openInShell(localPath)) {
-					new Notice('Opened the local copy.');
+				// If the local copy is an online-only placeholder (not hydrated yet) and an
+				// S3 copy exists, open S3 instead of blocking on the sync client's on-access
+				// download. With no S3 copy, fall through to opening the local path so the
+				// OS can hydrate it; a false positive here only prefers S3, never refuses.
+				if (hasS3 && (await this.attachments.localCopyIsDataless(record))) {
+					new Notice('The local copy is online-only (not downloaded yet); opening the S3 copy instead...');
+					s3Announced = true;
+					datalessLocalFallback = localPath;
+				} else {
+					if (await this.openInShell(localPath)) {
+						new Notice('Opened the local copy.');
+					}
+					return;
 				}
-				return;
 			}
-			// No usable local copy. Only mention S3 when the pointer actually has one.
-			if (!hasS3) {
-				const hasLocal = record.backends.some((backend) => backend.type === 'local');
-				new Notice(
-					hasLocal
-						? 'The local copy has not synced to this machine yet, or it is online-only, and this attachment has no S3 backup to open.'
-						: 'This attachment has no openable copy.',
-				);
-				return;
+			if (!s3Announced) {
+				// No usable local copy. Only mention S3 when the pointer actually has one.
+				if (!hasS3) {
+					const hasLocal = record.backends.some((backend) => backend.type === 'local');
+					new Notice(
+						hasLocal
+							? 'The local copy has not synced to this machine yet, or it is online-only, and this attachment has no S3 backup to open.'
+							: 'This attachment has no openable copy.',
+					);
+					return;
+				}
+				new Notice('The local copy is not on disk; opening the S3 copy instead...');
 			}
-			new Notice('The local copy is not on disk; opening the S3 copy instead...');
 		} else {
 			new Notice('Downloading the S3 copy to open...');
 		}
+		// Last resort when the S3 open cannot proceed: hydrate the local placeholder we
+		// skipped earlier, so a dataless local copy still opens when S3 is unreachable.
+		const openDatalessFallback = async (): Promise<boolean> => {
+			if (datalessLocalFallback === null) {
+				return false;
+			}
+			new Notice('Could not open the S3 copy; opening the local copy instead...');
+			return this.openInShell(datalessLocalFallback);
+		};
 		try {
 			const tempPath = await this.attachments.downloadForOpen(record, 's3');
 			if (tempPath === null) {
+				if (await openDatalessFallback()) {
+					return;
+				}
 				new Notice('This attachment has no openable copy.');
 				return;
 			}
 			if (await this.openInShell(tempPath)) {
 				new Notice('Opened the S3 copy (downloaded to a temp file).');
+				return;
 			}
+			// S3 downloaded but the shell could not open the temp file; still try the
+			// local placeholder we skipped, rather than leaving nothing opened.
+			await openDatalessFallback();
 		} catch (error) {
+			if (await openDatalessFallback()) {
+				return;
+			}
 			new Notice(`Could not download to open: ${describeError(error)}`);
 			this.logger.error('Open via download failed.', { id: record.id, error: describeError(error) });
 		}
@@ -964,6 +1001,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 	// wrong cwd-relative path.
 	private resolvedLocalRoot(): string {
 		return resolveLocalRoot(selectActiveRoot(this.settings));
+	}
+
+	// A one-time nudge at load: if auto-offload is on and a local mode is selected but
+	// this machine has no resolved local folder, new files would be silently skipped
+	// (the readiness gate turns auto-offload off). Say so once so the user knows to add
+	// this machine's folder in settings, rather than wondering why nothing offloads.
+	private warnIfAutoOffloadUnconfigured(): void {
+		if (!this.settings.autoOffloadEnabled) {
+			return;
+		}
+		const usesLocal = this.settings.storageMode === 'local-only' || this.settings.storageMode === 'local-s3';
+		if (usesLocal && this.resolvedLocalRoot().length === 0) {
+			new Notice('Auto-offload is on, but this machine has no local folder set. New files will not be offloaded until you set it in settings.');
+		}
 	}
 
 	// Whether the active storage mode is fully configured: S3 modes need endpoint +

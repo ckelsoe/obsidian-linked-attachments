@@ -82,3 +82,56 @@ export function hasMachineEntry(machines: LocalMachineRoot[], machine: string): 
 	const key = machine.trim();
 	return machines.some((row) => row.machine.trim() === key);
 }
+
+// The settings UI's rendering decisions, as one pure function so they are unit
+// tested rather than eyeballed: which row is the active machine, whether Add this
+// machine is disabled, and the banner text + warn flag. Kept in step with
+// selectActiveRoot (first hostname match wins, trimmed comparison, empty hostname
+// is unmatchable). `resolvedRoot` is what resolveLocalRoot returned for this
+// machine, so the banner reports the real absolute path.
+export interface MachineListView {
+	activeIndex: number;
+	addDisabled: boolean;
+	duplicateActive: boolean;
+	banner: { text: string; warn: boolean };
+}
+
+export function localMachineView(machines: LocalMachineRoot[], thisMachine: string, resolvedRoot: string): MachineListView {
+	const key = thisMachine.trim();
+	if (key.length === 0) {
+		return {
+			activeIndex: -1,
+			addDisabled: true,
+			duplicateActive: false,
+			banner: {
+				text: 'Could not read this machine\'s name, so it cannot be matched automatically. Add a row and set its folder path by hand.',
+				warn: true,
+			},
+		};
+	}
+	const matchIndexes: number[] = [];
+	machines.forEach((row, index) => {
+		if (row.machine.trim() === key) {
+			matchIndexes.push(index);
+		}
+	});
+	const matches = matchIndexes.length;
+	const activeIndex = matches > 0 ? matchIndexes[0]! : -1;
+	let text: string;
+	let warn: boolean;
+	if (matches === 0) {
+		text = `This machine (${key}) is not in the list. Click Add this machine, then Browse to its offload folder.`;
+		warn = true;
+	} else if (resolvedRoot.length === 0) {
+		text = `This machine (${key}) has no valid folder set yet. Browse to an absolute folder on this machine.`;
+		warn = true;
+	} else {
+		text = `This machine (${key}) resolves to: ${resolvedRoot}`;
+		warn = false;
+	}
+	if (matches > 1) {
+		text += ' Warning: more than one row uses this name; only the first is used. Rename one machine so each has a unique name.';
+		warn = true;
+	}
+	return { activeIndex, addDisabled: matches > 0, duplicateActive: matches > 1, banner: { text, warn } };
+}

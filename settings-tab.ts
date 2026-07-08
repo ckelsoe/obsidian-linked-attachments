@@ -2,7 +2,7 @@ import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinit
 import type LinkedAttachmentsPlugin from './main';
 import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
-import { activeMachine, hasMachineEntry, selectActiveRoot } from './src/storage/local-root';
+import { activeMachine, localMachineView, MachineListView, selectActiveRoot } from './src/storage/local-root';
 import { resolveLocalRoot } from './src/storage/local-backend';
 import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
@@ -349,70 +349,57 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		const machines = (): typeof this.plugin.settings.localAttachment.machines => this.plugin.settings.localAttachment.machines;
 
 		const banner = wrap.createDiv({ cls: 'linked-attachments-local-banner' });
-		const refreshBanner = (): void => {
-			if (thisMachine.length === 0) {
-				// os.hostname() gave nothing, so this machine cannot be matched by name.
-				banner.setText('Could not read this machine\'s name, so it cannot be matched automatically. Add a row and set its folder path by hand.');
-				banner.toggleClass('linked-attachments-local-banner-unset', true);
-				return;
-			}
-			const matches = machines().filter((row) => row.machine === thisMachine).length;
-			const resolved = resolveLocalRoot(selectActiveRoot(this.plugin.settings));
-			let text: string;
-			let warn: boolean;
-			if (matches === 0) {
-				text = `This machine (${thisMachine}) is not in the list. Click Add this machine, then Browse to its offload folder.`;
-				warn = true;
-			} else if (resolved.length === 0) {
-				text = `This machine (${thisMachine}) has no valid folder set yet. Browse to an absolute folder on this machine.`;
-				warn = true;
-			} else {
-				text = `This machine (${thisMachine}) resolves to: ${resolved}`;
-				warn = false;
-			}
-			if (matches > 1) {
-				// Two machines sharing a hostname: resolution uses only the first, so the
-				// UI marks only the first row active. Tell the user to disambiguate.
-				text += ' Warning: more than one row uses this name; only the first is used. Rename one machine so each has a unique name.';
-				warn = true;
-			}
-			banner.setText(text);
-			banner.toggleClass('linked-attachments-local-banner-unset', warn);
-		};
-
 		const table = wrap.createDiv({ cls: 'linked-attachments-local-table' });
 		const add = wrap.createEl('button', { text: 'Add this machine', cls: 'linked-attachments-local-add' });
 
-		const syncAddState = (): void => {
-			// One entry per machine, and only when this machine has a usable name.
-			add.disabled = thisMachine.length === 0 || hasMachineEntry(machines(), thisMachine);
+		// One pure view model drives banner text, the active row, and the Add state, so
+		// the rules live in one tested place (localMachineView) rather than inline.
+		const currentView = (): MachineListView =>
+			localMachineView(machines(), thisMachine, resolveLocalRoot(selectActiveRoot(this.plugin.settings)));
+
+		const refresh = (): void => {
+			const view = currentView();
+			banner.setText(view.banner.text);
+			banner.toggleClass('linked-attachments-local-banner-unset', view.banner.warn);
+			add.disabled = view.addDisabled;
+			drawRows(view.activeIndex);
 		};
 
-		const drawRows = (): void => {
+		const drawRows = (activeIndex: number): void => {
 			table.empty();
 			const list = machines();
 			if (list.length === 0) {
 				table.createDiv({ cls: 'linked-attachments-local-empty', text: 'No machines configured yet.' });
 			}
-			// Only the FIRST row matching this machine is the active one, so the "this
-			// machine" marker and Browse button line up with what selectActiveRoot uses.
-			const activeIndex = thisMachine.length > 0 ? list.findIndex((row) => row.machine === thisMachine) : -1;
 			list.forEach((entry, index) => {
 				const isThis = index === activeIndex;
 				const row = table.createDiv({ cls: 'linked-attachments-local-row' });
 				row.toggleClass('linked-attachments-local-active', isThis);
 
-				const nameEl = row.createSpan({ cls: 'linked-attachments-local-name' });
-				const shownName = entry.machine.length > 0 ? entry.machine : '(unnamed)';
-				nameEl.setText(isThis ? `${shownName} (this machine)` : shownName);
+				if (isThis) {
+					row.createSpan({ cls: 'linked-attachments-local-thismarker', text: 'this machine' });
+				}
 
-				const input = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
-				input.value = entry.path;
-				input.placeholder = 'Absolute offload folder on this machine';
-				input.addEventListener('change', () => {
-					entry.path = input.value.trim();
+				// The machine name is editable so a row can be renamed to a machine's new
+				// hostname (after a rename or re-image) without losing its folder, and to
+				// disambiguate a name collision. A rename can change which row is active,
+				// so a committed edit re-renders through refresh().
+				const nameInput = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-name-input' });
+				nameInput.value = entry.machine;
+				nameInput.placeholder = 'Machine name';
+				nameInput.addEventListener('change', () => {
+					entry.machine = nameInput.value.trim();
 					void this.plugin.saveSettings();
-					refreshBanner();
+					refresh();
+				});
+
+				const pathInput = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
+				pathInput.value = entry.path;
+				pathInput.placeholder = 'Absolute offload folder on this machine';
+				pathInput.addEventListener('change', () => {
+					entry.path = pathInput.value.trim();
+					void this.plugin.saveSettings();
+					refresh();
 				});
 
 				// Browse only on the machine you are physically at (the active one): a
@@ -429,39 +416,33 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 								return;
 							}
 							entry.path = picked;
-							input.value = picked;
+							pathInput.value = picked;
 							await this.plugin.saveSettings();
-							refreshBanner();
+							refresh();
 						})();
 					});
 				}
 
 				const remove = row.createEl('button', { text: 'Remove', cls: 'linked-attachments-local-remove' });
-				remove.setAttribute('aria-label', `Remove ${shownName}`);
+				remove.setAttribute('aria-label', `Remove ${entry.machine.length > 0 ? entry.machine : 'this'} machine`);
 				remove.addEventListener('click', () => {
 					machines().splice(index, 1);
 					void this.plugin.saveSettings();
-					drawRows();
-					syncAddState();
-					refreshBanner();
+					refresh();
 				});
 			});
 		};
 
 		add.addEventListener('click', () => {
-			if (thisMachine.length === 0 || hasMachineEntry(machines(), thisMachine)) {
+			if (currentView().addDisabled) {
 				return;
 			}
 			machines().push({ machine: thisMachine, path: '' });
 			void this.plugin.saveSettings();
-			drawRows();
-			syncAddState();
-			refreshBanner();
+			refresh();
 		});
 
-		drawRows();
-		syncAddState();
-		refreshBanner();
+		refresh();
 	}
 
 	// One backfill button per backend the current storage mode writes. A pointer

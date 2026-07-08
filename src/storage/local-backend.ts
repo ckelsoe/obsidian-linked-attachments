@@ -150,6 +150,22 @@ export class LocalBackend implements StorageBackend {
 		return this.keyToPath(key);
 	}
 
+	// Whether the local file for a key is present as an online-only cloud placeholder
+	// (its directory entry exists but the bytes are not on this disk yet: OneDrive
+	// Files On-Demand, iCloud/Dropbox optimize-storage). Lets an opener prefer an S3
+	// copy over blocking on an on-access hydrate. Returns false when the file is
+	// absent, fully present, or the platform does not report block allocation, so a
+	// false negative only means "no special handling", never a refusal to open.
+	async isDataless(key: string): Promise<boolean> {
+		const filePath = this.keyToPath(key);
+		try {
+			const stat = await fs.stat(filePath);
+			return stat.isFile() && isDatalessStat({ size: stat.size, blocks: stat.blocks });
+		} catch {
+			return false;
+		}
+	}
+
 	// --- internals --------------------------------------------------------------
 
 	// Map a forward-slash key to an absolute filesystem path under the root, using
@@ -407,6 +423,18 @@ async function isDirectory(path: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+// A file whose directory entry reports real bytes (size > 0) but which has no
+// blocks allocated on disk is an online-only placeholder: the bytes live in the
+// cloud and have not been hydrated locally. `blocks` is in 512-byte units. When the
+// platform does not report blocks (undefined), this returns false so the file is
+// treated as present, never wrongly hidden. The heuristic is portable across
+// OneDrive Files On-Demand, iCloud, and Dropbox smart-sync placeholders.
+export function isDatalessStat(stat: { size: number; blocks?: number }): boolean {
+	// blocks is optional: a platform that does not report block allocation leaves it
+	// undefined, and `undefined === 0` is false, so the file is treated as present.
+	return stat.size > 0 && stat.blocks === 0;
 }
 
 function statEtag(size: number, mtimeMs: number): string {
