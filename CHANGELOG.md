@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-07-08
+
 ### Added
+- Pointer notes now show their storage links as a collapsible "Storage Links" callout, so the managed block reads as a tidy, foldable section instead of a raw list.
+- Settings has a new "Backfill existing pointers" section with a button for each backend your storage mode uses, so you can copy missing files into existing pointers (for example after switching to paired mode) without running a command. Each button is safe to re-run and reports how many copies were added, skipped, or failed.
 - The local folder is now set per machine, so a vault used on more than one computer opens correctly on each. In settings, click Add this machine and Browse to the offload folder on that machine. If you sync your settings across machines, every machine adds its own row and reads its own folder, so two machines with different drive letters both resolve correctly. A banner shows what the folder resolves to on the machine you are looking at.
 
 ### Changed
