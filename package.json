@@ -1,6 +1,6 @@
 {
 	"name": "linked-attachments",
-	"version": "3.2.2",
+	"version": "3.2.3",
 	"description": "Offload large, cold files to your own S3-compatible bucket and keep a resolvable pointer note in your vault.",
 	"main": "main.js",
 	"type": "module",
@@ -18,7 +18,6 @@
 	"devDependencies": {
 		"@eslint/js": "^9.39.2",
 		"@types/jest": "^30.0.0",
-		"@types/js-yaml": "^4.0.9",
 		"esbuild": "^0.28.1",
 		"eslint": "^9.39.2",
 		"eslint-plugin-obsidianmd": "^0.4.1",
@@ -26,12 +25,12 @@
 		"globals": "^17.1.0",
 		"jest": "^30.2.0",
 		"jiti": "^2.6.1",
-		"js-yaml": "^4.2.0",
 		"obsidian": "^1.13.0",
 		"ts-jest": "^29.4.6",
 		"tslib": "^2.8.1",
 		"typescript": "^5.8.3",
-		"typescript-eslint": "^8.35.1"
+		"typescript-eslint": "^8.35.1",
+		"yaml": "^2.9.0"
 	},
 	"overrides": {
 		"handlebars": "^4.7.9",

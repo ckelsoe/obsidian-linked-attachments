@@ -249,7 +249,9 @@ export class LocalBackend implements StorageBackend {
 		const requested = endInclusive >= start ? endInclusive - start + 1 : 0;
 		let bytes = new Uint8Array(0);
 		if (requested > 0) {
-			const buffer = Buffer.alloc(requested);
+			// A plain Uint8Array (not Buffer) so this module needs no Node `Buffer`
+			// global; fs read accepts any TypedArray and reports bytesRead.
+			const buffer = new Uint8Array(requested);
 			const handle = await fs.open(filePath, 'r');
 			try {
 				// Honour the actual bytesRead: if the file was truncated after the

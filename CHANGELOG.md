@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.3] - 2026-07-08
+
+### Changed
+- Internal only: cleared the remaining Obsidian marketplace source-scan warnings by typing the local-storage code's Node API usage and dropping the bundled YAML dependency in favor of Obsidian's built-in YAML handling. No behavior change; existing pointer notes and local folders are unaffected.
+
 ## [3.2.2] - 2026-07-08
 
 ### Added

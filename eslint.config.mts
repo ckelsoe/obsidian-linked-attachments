@@ -39,6 +39,15 @@ export default defineConfig(
 			"no-restricted-globals": "off",
 		},
 	},
+	{
+		// Ambient declaration files legitimately use `declare var` for global
+		// augmentation (the same idiom @types/node itself uses); `let`/`const`
+		// change the merge semantics, so no-var does not apply here.
+		files: ["**/*.d.ts"],
+		rules: {
+			"no-var": "off",
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",
