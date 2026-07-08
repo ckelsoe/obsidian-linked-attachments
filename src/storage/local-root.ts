@@ -1,6 +1,10 @@
 import * as os from 'os';
 import type { LinkedAttachmentsSettings, LocalAttachmentSettings, LocalMachineRoot } from '../../settings';
 
+// The Node platform union, defined locally rather than via the `NodeJS.Platform`
+// global so the plugin does not depend on that ambient type being present.
+type NodePlatform = 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
+
 // Cross-machine resolution of the local attachment root (2026-07-07). The pointer
 // keeps a portable key; this module picks the right absolute folder for the machine
 // it runs on by matching the machine's hostname against a stored per-machine list.
@@ -53,7 +57,7 @@ export function migratedLocalAttachment(
 	existingRaw: RawLocalAttachment | undefined,
 	legacyLocalRoot: string | undefined,
 	machine: string = activeMachine(),
-	platform: NodeJS.Platform = process.platform,
+	platform: NodePlatform = process.platform,
 ): LocalAttachmentSettings | null {
 	if (existingRaw !== undefined && Array.isArray(existingRaw.machines)) {
 		return null;

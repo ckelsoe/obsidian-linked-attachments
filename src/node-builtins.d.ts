@@ -1,0 +1,72 @@
+// Ambient declarations for the Node built-ins this desktop-only plugin uses.
+// The Obsidian marketplace source-scan installs no dependencies (not even
+// @types/node) and honors this tsconfig, so without these it sees
+// fs/os/path/process as `any` and fires @typescript-eslint/no-unsafe-*. These
+// cover the full surface used by both src and tests, so they stand in cleanly
+// under the scan and coexist with @types/node locally. Kept minimal on purpose;
+// add a member here when the plugin starts using a new Node API.
+// Only the `process` members this plugin reads. `interface Process` and the
+// `process` var merge with @types/node locally (readonly + identical types) and
+// stand alone under the scan. `Platform` is NOT redeclared here (that would
+// duplicate @types/node's alias); callers use their own platform union.
+declare namespace NodeJS {
+  interface ProcessEnv { [key: string]: string | undefined; }
+  interface Process {
+    readonly platform: 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
+    env: ProcessEnv;
+  }
+}
+declare var process: NodeJS.Process;
+
+declare module 'os' {
+  export function hostname(): string;
+  export function homedir(): string;
+  export function tmpdir(): string;
+}
+
+declare module 'path' {
+  export function resolve(...parts: string[]): string;
+  export function join(...parts: string[]): string;
+  export function dirname(p: string): string;
+  export function relative(from: string, to: string): string;
+  export function isAbsolute(p: string): boolean;
+  export const sep: string;
+}
+
+declare module 'fs' {
+  export interface Stats {
+    size: number;
+    mtimeMs: number;
+    blocks: number;
+    isFile(): boolean;
+    isDirectory(): boolean;
+  }
+  export interface Dirent {
+    name: string;
+    isFile(): boolean;
+    isDirectory(): boolean;
+  }
+  export interface FileHandle {
+    writeFile(data: string | Uint8Array): Promise<void>;
+    write(data: Uint8Array): Promise<{ bytesWritten: number }>;
+    read(buffer: Uint8Array, offset: number, length: number, position: number): Promise<{ bytesRead: number }>;
+    sync(): Promise<void>;
+    close(): Promise<void>;
+  }
+  export namespace promises {
+    function mkdir(path: string, opts?: { recursive?: boolean }): Promise<string | undefined>;
+    function mkdtemp(prefix: string): Promise<string>;
+    function stat(path: string): Promise<Stats>;
+    function lstat(path: string): Promise<Stats>;
+    function access(path: string): Promise<void>;
+    function unlink(path: string): Promise<void>;
+    function rm(path: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>;
+    function rmdir(path: string): Promise<void>;
+    function rename(from: string, to: string): Promise<void>;
+    function readFile(path: string): Promise<Uint8Array>;
+    function writeFile(path: string, data: string | Uint8Array): Promise<void>;
+    function readdir(path: string): Promise<string[]>;
+    function readdir(path: string, opts: { withFileTypes: true }): Promise<Dirent[]>;
+    function open(path: string, flags?: string): Promise<FileHandle>;
+  }
+}
