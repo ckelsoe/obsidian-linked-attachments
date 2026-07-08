@@ -431,7 +431,9 @@ async function isDirectory(path: string): Promise<boolean> {
 // platform does not report blocks (undefined), this returns false so the file is
 // treated as present, never wrongly hidden. The heuristic is portable across
 // OneDrive Files On-Demand, iCloud, and Dropbox smart-sync placeholders.
-export function isDatalessStat(stat: { size: number; blocks: number }): boolean {
+export function isDatalessStat(stat: { size: number; blocks?: number }): boolean {
+	// blocks is optional: a platform that does not report block allocation leaves it
+	// undefined, and `undefined === 0` is false, so the file is treated as present.
 	return stat.size > 0 && stat.blocks === 0;
 }
 
