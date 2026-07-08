@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, LinkedAttachmentsSettings } from '../../settings';
-import { activeMachine, hasMachineEntry, migratedLocalAttachment, selectActiveRoot } from './local-root';
+import { activeMachine, hasMachineEntry, localMachineView, migratedLocalAttachment, selectActiveRoot } from './local-root';
 import { resolveLocalRoot } from './local-backend';
 
 function settingsWith(overrides: Partial<LinkedAttachmentsSettings>): LinkedAttachmentsSettings {
@@ -98,6 +98,58 @@ describe('migratedLocalAttachment', () => {
 		expect(migratedLocalAttachment(undefined, '', 'WIN-A')).toBeNull();
 		expect(migratedLocalAttachment(undefined, '   ', 'WIN-A')).toBeNull();
 		expect(migratedLocalAttachment(undefined, undefined, 'WIN-A')).toBeNull();
+	});
+});
+
+describe('localMachineView', () => {
+	it('reports the empty-hostname case as unmatchable with Add disabled', () => {
+		const view = localMachineView([{ machine: 'WIN-A', path: 'D:\\x' }], '', '');
+		expect(view.activeIndex).toBe(-1);
+		expect(view.addDisabled).toBe(true);
+		expect(view.banner.warn).toBe(true);
+		expect(view.banner.text).toContain('Could not read');
+	});
+
+	it('reports no match: Add enabled, warned, this machine not in the list', () => {
+		const view = localMachineView([{ machine: 'WIN-A', path: 'D:\\x' }], 'MAC-1', '');
+		expect(view.activeIndex).toBe(-1);
+		expect(view.addDisabled).toBe(false);
+		expect(view.banner.warn).toBe(true);
+		expect(view.banner.text).toContain('not in the list');
+	});
+
+	it('reports a match with no resolved folder as warned', () => {
+		const machines = [{ machine: 'WIN-A', path: '' }];
+		const view = localMachineView(machines, 'WIN-A', '');
+		expect(view.activeIndex).toBe(0);
+		expect(view.addDisabled).toBe(true);
+		expect(view.banner.warn).toBe(true);
+		expect(view.banner.text).toContain('no valid folder');
+	});
+
+	it('reports a resolved match as the healthy case', () => {
+		const machines = [{ machine: 'WIN-A', path: 'D:\\Sync' }];
+		const view = localMachineView(machines, 'WIN-A', 'D:\\Sync');
+		expect(view.activeIndex).toBe(0);
+		expect(view.banner.warn).toBe(false);
+		expect(view.banner.text).toContain('resolves to: D:\\Sync');
+	});
+
+	it('flags a duplicate hostname and keeps only the first row active', () => {
+		const machines = [
+			{ machine: 'DUP', path: 'D:\\a' },
+			{ machine: 'DUP', path: 'E:\\b' },
+		];
+		const view = localMachineView(machines, 'DUP', 'D:\\a');
+		expect(view.activeIndex).toBe(0);
+		expect(view.duplicateActive).toBe(true);
+		expect(view.banner.warn).toBe(true);
+		expect(view.banner.text).toContain('more than one row');
+	});
+
+	it('matches despite whitespace on the stored name', () => {
+		const view = localMachineView([{ machine: ' WIN-A ', path: 'D:\\Sync' }], 'WIN-A', 'D:\\Sync');
+		expect(view.activeIndex).toBe(0);
 	});
 });
 

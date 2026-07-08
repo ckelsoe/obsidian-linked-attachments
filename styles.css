@@ -246,11 +246,17 @@
 	padding-left: var(--size-4-2);
 }
 
-.linked-attachments-local-name {
+.linked-attachments-local-name-input {
 	flex: 0 0 12em;
-	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
-	overflow-wrap: anywhere;
+}
+
+/* Small accent badge on the row for the machine this settings tab is open on. */
+.linked-attachments-local-thismarker {
+	flex: 0 0 auto;
+	color: var(--interactive-accent);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
 }
 
 .linked-attachments-local-input {

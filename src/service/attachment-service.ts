@@ -674,6 +674,26 @@ export class AttachmentService {
 		return backend.displayKey(local.path);
 	}
 
+	// Whether the pointer's local copy exists but only as an online-only cloud
+	// placeholder (present in the directory, bytes not hydrated). An opener uses this
+	// to prefer an already-downloadable S3 copy over blocking on an on-access
+	// hydrate. Never throws; a false result means "no special handling".
+	async localCopyIsDataless(record: PointerRecord): Promise<boolean> {
+		const local = localBackend(record);
+		if (local === null) {
+			return false;
+		}
+		const root = resolveLocalRoot(this.getConfig().localRoot);
+		if (root.length === 0) {
+			return false;
+		}
+		try {
+			return await new LocalBackend(root).isDataless(local.path);
+		} catch {
+			return false;
+		}
+	}
+
 	// Regenerate the managed block of every pointer note (upgrading its open links to
 	// the current format), leaving frontmatter and the user body byte-identical.
 	// Returns how many notes changed.
