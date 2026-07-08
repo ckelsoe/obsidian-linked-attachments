@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-07-08
+
+### Added
+- The settings tab now has a footer showing the installed version with links to the GitHub repository and the issue tracker.
+
 ## [3.2.1] - 2026-07-08
 
 ### Changed
