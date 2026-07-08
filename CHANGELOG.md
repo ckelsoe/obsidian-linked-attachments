@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-07-08
+
+### Changed
+- Pointer-note frontmatter is now read and written with Obsidian's built-in YAML handling instead of a copy bundled into the plugin, which makes the download smaller. Existing pointer notes are unchanged and keep working.
+
 ## [3.2.0] - 2026-07-08
 
 ### Added

@@ -1,4 +1,4 @@
-import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
+import { parseYaml, stringifyYaml } from 'obsidian';
 import { MANAGED_END, MANAGED_START, renderManagedBlock } from './managed-block';
 
 // The pointer-md codec (spec section 5). A pointer note has three regions:
@@ -11,8 +11,9 @@ import { MANAGED_END, MANAGED_START, renderManagedBlock } from './managed-block'
 //
 // Identity is read from frontmatter only (the R14 scanner and restore depend on
 // this), so the body is always safe to edit and the managed link is never
-// authoritative. The codec is pure: js-yaml for frontmatter, plain string
-// surgery for the block and body, no `obsidian` import, no network.
+// authoritative. Frontmatter YAML goes through Obsidian's own parseYaml /
+// stringifyYaml (js-yaml under the hood, so it ships nothing extra in the
+// bundle); the block and body are plain string surgery. No network.
 
 export type KeyKind = 'hash' | 'external';
 export type VerificationTier = 'content' | 'md5' | 'existence' | 'asserted';
@@ -198,10 +199,12 @@ export function encodePointer(record: PointerRecord, body: string, extraFrontmat
 		[FRONTMATTER_KEYS.supersedes]: record.supersedes,
 		...(extraFrontmatter ?? {}),
 	};
-	// lineWidth -1 disables line folding so long paths stay on one line; quotes are
-	// added implicitly for any value that would otherwise re-parse as a non-string
-	// (timestamps, "yes"/"no", numbers), keeping every string a string on decode.
-	const frontmatterText = dumpYaml(frontmatter, { lineWidth: -1 });
+	// stringifyYaml is Obsidian's serializer (js-yaml under the hood): it quotes any
+	// value that would otherwise re-parse as a non-string (timestamps, "yes"/"no",
+	// numbers), keeping every string a string on decode. Formatting (line folding of
+	// long paths, quote style) is Obsidian's to decide; decode below is written to
+	// tolerate whatever it emits, so a folded or requoted value still round-trips.
+	const frontmatterText = stringifyYaml(frontmatter);
 	const block = renderManagedBlock({ id: record.id, backends: record.backends.map((backend) => backend.type) });
 	// A BLANK line separates the callout from the user body. A callout ends at the
 	// first line that does not start with `>`, so without the blank line a body that
@@ -216,7 +219,10 @@ export function decodePointer(text: string): DecodedPointer {
 
 	let parsed: unknown;
 	try {
-		parsed = loadYaml(frontmatterText);
+		// parseYaml is typed `any`; pin it to `unknown` so the codec keeps narrowing
+		// every field explicitly (isPlainObject + the require*/nullable* guards below)
+		// instead of trusting an `any` off the parser.
+		parsed = parseYaml(frontmatterText) as unknown;
 	} catch (error) {
 		throw new PointerParseError(`frontmatter is not valid YAML: ${describe(error)}`);
 	}
@@ -429,8 +435,8 @@ function extractExtras(fm: Record<string, unknown>): Record<string, unknown> {
 
 function requireString(fm: Record<string, unknown>, key: string): string {
 	const value = fm[key];
-	// Obsidian's Properties UI unquotes a timestamp, which js-yaml's default schema
-	// then parses as a Date. Coerce it back to the ISO string we wrote (tolerate the
+	// Obsidian's Properties UI unquotes a timestamp, which the YAML schema then
+	// parses as a Date. Coerce it back to the ISO string we wrote (tolerate the
 	// reformatting rather than reject an equivalent value).
 	if (value instanceof Date) {
 		return value.toISOString();
