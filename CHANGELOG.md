@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-07-08
+
 ### Added
 - You can now rename a machine's row in the per-machine local folder list, so a computer that was renamed or re-imaged keeps its folder instead of needing a fresh entry.
 
