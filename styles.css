@@ -300,3 +300,8 @@
 	font-size: var(--font-ui-smaller);
 	white-space: pre;
 }
+
+.linked-attachments-footer {
+	text-align: center;
+	opacity: 0.8;
+}

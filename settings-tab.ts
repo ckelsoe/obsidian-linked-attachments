@@ -228,7 +228,34 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 				],
 			},
+			{
+				name: 'About',
+				searchable: false,
+				render: (setting: Setting) => { this.renderFooter(setting); },
+			},
 		];
+	}
+
+	// Renders the version + support links footer into a trailing settings row
+	// (matches the obsidian-shell-path-copy reference plugin's settings tab).
+	private renderFooter(setting: Setting): void {
+		const el = setting.settingEl;
+		el.empty();
+		el.addClass('linked-attachments-footer');
+
+		const manifestVersion = this.plugin.manifest.version || '0.0.0';
+		el.createSpan({ text: `Version ${manifestVersion} | ` });
+
+		const createExternalLink = (text: string, url: string): HTMLAnchorElement =>
+			el.createEl('a', {
+				text,
+				href: url,
+				attr: { target: '_blank', rel: 'noopener' },
+			});
+
+		createExternalLink('GitHub', 'https://github.com/ckelsoe/obsidian-linked-attachments');
+		el.createSpan({ text: ' | ' });
+		createExternalLink('Report Issues', 'https://github.com/ckelsoe/obsidian-linked-attachments/issues');
 	}
 
 	// Routes declarative control reads/writes to the plugin's own settings store so
