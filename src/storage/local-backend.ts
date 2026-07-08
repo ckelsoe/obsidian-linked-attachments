@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import * as nodePath from 'path';
 import * as os from 'os';
+import { platform, env } from 'node:process';
 import {
 	BackendError,
 	Capabilities,
@@ -195,7 +196,7 @@ export class LocalBackend implements StorageBackend {
 		// cryptic ENOENT/ENAMETOOLONG mid-offload; the offload then rolls back and the
 		// vault original is kept (no data loss). A shorter local root or vault path, or
 		// enabling long-path support, resolves it.
-		if (process.platform === 'win32' && resolved.length >= WINDOWS_MAX_PATH) {
+		if (platform === 'win32' && resolved.length >= WINDOWS_MAX_PATH) {
 			throw new BackendError('network', `local path exceeds the Windows ${WINDOWS_MAX_PATH}-character limit (${resolved.length} chars); shorten the local root or the vault path: ${resolved}`);
 		}
 		return resolved;
@@ -390,9 +391,9 @@ export function osTempDir(): string {
 }
 
 function expandEnv(input: string): string {
-	let out = input.replace(/%([^%]+)%/g, (whole: string, name: string) => process.env[name] ?? whole);
-	out = out.replace(/\$\{([^}]+)\}/g, (whole: string, name: string) => process.env[name] ?? whole);
-	out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole: string, name: string) => process.env[name] ?? whole);
+	let out = input.replace(/%([^%]+)%/g, (whole: string, name: string) => env[name] ?? whole);
+	out = out.replace(/\$\{([^}]+)\}/g, (whole: string, name: string) => env[name] ?? whole);
+	out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole: string, name: string) => env[name] ?? whole);
 	if (out === '~' || out.startsWith('~/') || out.startsWith('~\\')) {
 		out = os.homedir() + out.slice(1);
 	}

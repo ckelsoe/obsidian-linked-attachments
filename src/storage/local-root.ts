@@ -1,4 +1,5 @@
 import * as os from 'os';
+import { platform as currentPlatform } from 'node:process';
 import type { LinkedAttachmentsSettings, LocalAttachmentSettings, LocalMachineRoot } from '../../settings';
 
 // The Node platform union, defined locally rather than via the `NodeJS.Platform`
@@ -57,7 +58,7 @@ export function migratedLocalAttachment(
 	existingRaw: RawLocalAttachment | undefined,
 	legacyLocalRoot: string | undefined,
 	machine: string = activeMachine(),
-	platform: NodePlatform = process.platform,
+	platform: NodePlatform = currentPlatform,
 ): LocalAttachmentSettings | null {
 	if (existingRaw !== undefined && Array.isArray(existingRaw.machines)) {
 		return null;

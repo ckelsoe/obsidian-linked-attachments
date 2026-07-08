@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.4] - 2026-07-08
+
+### Changed
+- Internal only: read the platform and environment through a `node:process` import instead of the global, clearing the last marketplace source-scan style warning. No behavior change.
+
 ## [3.2.3] - 2026-07-08
 
 ### Changed

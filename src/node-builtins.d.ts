@@ -5,18 +5,14 @@
 // cover the full surface used by both src and tests, so they stand in cleanly
 // under the scan and coexist with @types/node locally. Kept minimal on purpose;
 // add a member here when the plugin starts using a new Node API.
-// Only the `process` members this plugin reads. `interface Process` and the
-// `process` var merge with @types/node locally (readonly + identical types) and
-// stand alone under the scan. `Platform` is NOT redeclared here (that would
-// duplicate @types/node's alias); callers use their own platform union.
-declare namespace NodeJS {
-  interface ProcessEnv { [key: string]: string | undefined; }
-  interface Process {
-    readonly platform: 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
-    env: ProcessEnv;
-  }
+// Only the `process` members this plugin reads, exposed as a module so callers
+// import { platform, env } from 'node:process' rather than touching a global
+// (a global declaration would need the no-var eslint idiom). Merges with
+// @types/node locally and stands alone under the scan.
+declare module 'node:process' {
+  export const platform: 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
+  export const env: { [key: string]: string | undefined };
 }
-declare var process: NodeJS.Process;
 
 declare module 'os' {
   export function hostname(): string;
