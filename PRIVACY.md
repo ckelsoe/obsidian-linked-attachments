@@ -1,16 +1,16 @@
 # Privacy Policy
 
-_Last updated: 2026-06-16_
+_Last updated: 2026-07-08_
 
 This policy explains what the **Linked Attachments** Obsidian plugin ("the plugin") does and does not do with your data. It applies to the plugin as distributed through the Obsidian Community Plugins marketplace, GitHub releases, and BRAT.
 
 ## Summary
 
-The plugin collects no analytics and sends nothing to the maintainer or any third party. It talks only to the S3-compatible storage bucket you configure, using credentials you supply. Those credentials are held in your device's secret storage, never in plain text.
+The plugin collects no analytics and sends nothing to the maintainer or any third party. Depending on the storage mode you choose, it writes to a local folder you pick, to an S3-compatible bucket you configure with credentials you supply, or to both. Those credentials are held in your device's secret storage, never in plain text. In local-only mode the plugin makes no network requests at all.
 
 ## What the plugin does
 
-The plugin moves large files out of your vault into an S3-compatible storage bucket that you own and configure, leaving a small pointer note in the vault. It reads files you select for offload, uploads their bytes to your bucket, and can retrieve them again on demand. All of this happens only when you explicitly invoke an action. The plugin never contacts a server other than the storage endpoint you enter.
+The plugin moves large files out of your vault into storage you own and configure, leaving a small pointer note in the vault. That storage is a local folder you pick (such as a synced OneDrive, Dropbox, or NAS path), an S3-compatible bucket you configure, or both. It reads files you select for offload, writes their bytes to that storage, and can retrieve them again on demand. All of this happens only when you explicitly invoke an action. When an S3 mode is used the plugin never contacts a server other than the storage endpoint you enter; in local-only mode it makes no network requests.
 
 ## Data collection
 
@@ -22,15 +22,15 @@ The plugin moves large files out of your vault into an S3-compatible storage buc
 
 - **Credentials.** Your S3 access key and secret key are stored only in Obsidian's per-vault secret storage on your own device. They are never written to `data.json` and never travel through Obsidian Sync.
 - **Settings.** Non-secret configuration (endpoint, region, bucket name, addressing style, and the names that reference your stored secrets) is saved by Obsidian in your vault's local `data.json` file, on your own device.
-- **Your files.** File contents you choose to offload are uploaded to the storage bucket you configure. That bucket is under your control, not the maintainer's. The plugin keeps a pointer note in your vault describing each offloaded file.
+- **Your files.** File contents you choose to offload are written to the local folder you pick, uploaded to the S3-compatible bucket you configure, or both, depending on the storage mode. That folder and bucket are under your control, not the maintainer's. The plugin keeps a pointer note in your vault describing each offloaded file.
 
 ## Network use
 
-The plugin makes network requests **only to the S3-compatible endpoint you configure**, to upload, retrieve, list, verify, or delete your own objects. It contacts no other server: not the maintainer's, not Obsidian's, not any analytics or third-party service.
+When an S3 storage mode is used, the plugin makes network requests **only to the S3-compatible endpoint you configure**, to upload, retrieve, list, verify, or delete your own objects. It contacts no other server: not the maintainer's, not Obsidian's, not any analytics or third-party service. In local-only mode the plugin makes no network requests; it only reads and writes the local folder you choose.
 
 ## Third parties
 
-The plugin shares no data with the maintainer or any analytics provider. Your files and credentials go only to the storage provider you choose to configure, governed by that provider's own terms and privacy policy.
+The plugin shares no data with the maintainer or any analytics provider. Your files stay in the local folder you pick or go only to the storage provider you choose to configure, and any credentials go only to that provider, governed by its own terms and privacy policy. A local folder that you sync with a service such as OneDrive or Dropbox is then also governed by that service's terms.
 
 ## Disclaimer of liability
 
