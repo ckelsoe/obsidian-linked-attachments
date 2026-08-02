@@ -100,7 +100,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, quality gates, and conventio
 
 ## Community
 
-Questions, ideas, and general discussion happen on [Discord](https://discord.gg/gd6tKJDPj4). For anything that needs tracking, a GitHub issue is still the better home.
+Questions, ideas, and general discussion happen on [Discord](https://discord.gg/gd6tKJDPj4). For anything that needs tracking, a [GitHub issue](https://github.com/ckelsoe/obsidian-linked-attachments/issues) is still the better home.
 
 ## Support
 
