@@ -98,6 +98,10 @@ The plugin collects no analytics and phones home to no one. It talks only to the
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for setup, quality gates, and conventions.
 
+## Community
+
+Questions, ideas, and general discussion happen on [Discord](https://discord.gg/gd6tKJDPj4). For anything that needs tracking, a GitHub issue is still the better home.
+
 ## Support
 
 Questions and bug reports: open an issue at [github.com/ckelsoe/obsidian-linked-attachments/issues](https://github.com/ckelsoe/obsidian-linked-attachments/issues). For security vulnerabilities, use the private channel in [SECURITY.md](./SECURITY.md) instead.
