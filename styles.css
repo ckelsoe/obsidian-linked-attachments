@@ -302,6 +302,22 @@
 }
 
 .linked-attachments-footer {
+	justify-content: center;
 	text-align: center;
 	opacity: 0.8;
+}
+
+/* Separators are a flex gap, not whitespace in text nodes: settingEl is a flex
+   row and a flex item drops the whitespace at its own edges, which collapsed
+   "GitHub | Discord" into "GitHub|Discord". */
+.linked-attachments-footer-inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-2);
+}
+
+.linked-attachments-footer-separator {
+	color: var(--text-faint);
 }

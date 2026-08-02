@@ -1,5 +1,11 @@
 import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SettingGroupItem, SecretComponent } from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
+
+// Community discussion for this plugin. This must stay a never-expiring
+// discord.gg invite. A discord.com/channels/... deep link only resolves for
+// accounts already in the server, so it cannot get anyone in, and a default
+// invite expires after 7 days and would rot in a shipped release.
+const DISCORD_URL = 'https://discord.gg/gd6tKJDPj4';
 import { describeError } from './credentials';
 import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
 import { activeMachine, localMachineView, MachineListView, selectActiveRoot } from './src/storage/local-root';
@@ -243,19 +249,27 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		el.empty();
 		el.addClass('linked-attachments-footer');
 
-		const manifestVersion = this.plugin.manifest.version || '0.0.0';
-		el.createSpan({ text: `Version ${manifestVersion} | ` });
+		// One inner flex container, and the separators are a gap rather than
+		// whitespace in text nodes. settingEl is a flex row, and a flex item drops
+		// the whitespace at its own edges, so the old ' | ' spans could render as
+		// "GitHub|Report issues". Same fix as the reference plugin's footer.
+		const inner = el.createDiv({ cls: 'linked-attachments-footer-inner' });
 
-		const createExternalLink = (text: string, url: string): HTMLAnchorElement =>
-			el.createEl('a', {
+		const manifestVersion = this.plugin.manifest.version || '0.0.0';
+		inner.createSpan({ text: `Version ${manifestVersion}` });
+
+		const createExternalLink = (text: string, url: string): HTMLAnchorElement => {
+			inner.createSpan({ cls: 'linked-attachments-footer-separator', text: '|' });
+			return inner.createEl('a', {
 				text,
 				href: url,
 				attr: { target: '_blank', rel: 'noopener' },
 			});
+		};
 
 		createExternalLink('GitHub', 'https://github.com/ckelsoe/obsidian-linked-attachments');
-		el.createSpan({ text: ' | ' });
-		createExternalLink('Report Issues', 'https://github.com/ckelsoe/obsidian-linked-attachments/issues');
+		createExternalLink('Discord', DISCORD_URL);
+		createExternalLink('Report issues', 'https://github.com/ckelsoe/obsidian-linked-attachments/issues');
 	}
 
 	// Routes declarative control reads/writes to the plugin's own settings store so
