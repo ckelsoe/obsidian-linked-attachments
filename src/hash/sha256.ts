@@ -19,7 +19,10 @@ function arrayBufferView(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
 }
 
 async function digest(bytes: Uint8Array): Promise<Uint8Array> {
-	const result = await crypto.subtle.digest('SHA-256', arrayBufferView(bytes));
+	const result = await crypto.subtle.digest(
+		'SHA-256',
+		arrayBufferView(bytes),
+	);
 	return new Uint8Array(result);
 }
 

@@ -59,7 +59,9 @@ export async function signRequest(input: SignInput): Promise<SignedRequest> {
 	}
 
 	const sortedNames = Object.keys(headersToSign).sort();
-	const canonicalHeaders = sortedNames.map((n) => `${n}:${headersToSign[n] ?? ''}\n`).join('');
+	const canonicalHeaders = sortedNames
+		.map((n) => `${n}:${headersToSign[n] ?? ''}\n`)
+		.join('');
 	const signedHeaders = sortedNames.join(';');
 
 	const canonicalRequest = [
@@ -79,7 +81,12 @@ export async function signRequest(input: SignInput): Promise<SignedRequest> {
 		await sha256Hex(canonicalRequest),
 	].join('\n');
 
-	const signingKey = await deriveSigningKey(input.secretAccessKey, dateStamp, input.region, input.service);
+	const signingKey = await deriveSigningKey(
+		input.secretAccessKey,
+		dateStamp,
+		input.region,
+		input.service,
+	);
 	const signature = toHex(await hmac(signingKey, stringToSign));
 
 	const authorization =
@@ -93,7 +100,12 @@ export async function signRequest(input: SignInput): Promise<SignedRequest> {
 	};
 }
 
-async function deriveSigningKey(secret: string, dateStamp: string, region: string, service: string): Promise<Uint8Array<ArrayBuffer>> {
+async function deriveSigningKey(
+	secret: string,
+	dateStamp: string,
+	region: string,
+	service: string,
+): Promise<Uint8Array<ArrayBuffer>> {
 	const kDate = await hmac(utf8(`AWS4${secret}`), dateStamp);
 	const kRegion = await hmac(kDate, region);
 	const kService = await hmac(kRegion, service);
@@ -120,7 +132,10 @@ function canonicalUri(pathname: string): string {
 	// "%20" -> "%2520"), producing a signature over a different path than the one
 	// the server receives. Decode each segment first, then apply the single AWS
 	// RFC3986 encoding, so the signed path matches the sent path exactly.
-	return pathname.split('/').map((segment) => encodeRfc3986(safeDecode(segment))).join('/');
+	return pathname
+		.split('/')
+		.map((segment) => encodeRfc3986(safeDecode(segment)))
+		.join('/');
 }
 
 function safeDecode(segment: string): string {
@@ -138,7 +153,17 @@ function canonicalQueryString(params: URLSearchParams): string {
 	for (const [key, value] of params.entries()) {
 		pairs.push([encodeRfc3986(key), encodeRfc3986(value)]);
 	}
-	pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0)));
+	pairs.sort((a, b) =>
+		a[0] < b[0]
+			? -1
+			: a[0] > b[0]
+				? 1
+				: a[1] < b[1]
+					? -1
+					: a[1] > b[1]
+						? 1
+						: 0,
+	);
 	return pairs.map(([k, v]) => `${k}=${v}`).join('&');
 }
 
@@ -179,9 +204,20 @@ export async function sha256Base64(input: string): Promise<string> {
 	return btoa(binary);
 }
 
-async function hmac(key: Uint8Array<ArrayBuffer>, data: string): Promise<Uint8Array<ArrayBuffer>> {
-	const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-	return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, utf8(data)));
+async function hmac(
+	key: Uint8Array<ArrayBuffer>,
+	data: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+	const cryptoKey = await crypto.subtle.importKey(
+		'raw',
+		key,
+		{ name: 'HMAC', hash: 'SHA-256' },
+		false,
+		['sign'],
+	);
+	return new Uint8Array(
+		await crypto.subtle.sign('HMAC', cryptoKey, utf8(data)),
+	);
 }
 
 function currentAmzDate(): string {

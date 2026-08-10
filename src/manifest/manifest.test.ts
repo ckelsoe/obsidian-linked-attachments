@@ -16,9 +16,13 @@ import { PointerRecord } from '../pointer/codec';
 
 // Tier 0: pure cache data structure. No backend, no network.
 
-const HASH_A = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+const HASH_A =
+	'9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
 
-function recordFor(key: string, overrides: Partial<PointerRecord> = {}): PointerRecord {
+function recordFor(
+	key: string,
+	overrides: Partial<PointerRecord> = {},
+): PointerRecord {
 	return {
 		laVersion: 1,
 		id: `id-${key}`,
@@ -90,9 +94,14 @@ describe('manifest cache acceptance (la-p1-05)', () => {
 	// AC3 :: on a per-key conflict the pointer-derived entry wins over the cached
 	// one. (spec section 10 pointers > LIST > any manifest copy)
 	it('test_pointers_win_conflict', () => {
-		const cached = buildManifestFromBucket('s3-dev-test', [{ key: 'k', byteSize: 999 }]);
+		const cached = buildManifestFromBucket('s3-dev-test', [
+			{ key: 'k', byteSize: 999 },
+		]);
 		const authoritative = buildManifestFromPointers([
-			{ pointerPath: 'books/x.pdf.md', record: recordFor('k', { byteSize: 2048 }) },
+			{
+				pointerPath: 'books/x.pdf.md',
+				record: recordFor('k', { byteSize: 2048 }),
+			},
 		]);
 		const merged = mergeManifests(cached, authoritative);
 		expect(findByKey(merged, 'k')?.byteSize).toBe(2048);
@@ -101,7 +110,9 @@ describe('manifest cache acceptance (la-p1-05)', () => {
 
 	// AC4 :: serialize then parse returns the same manifest.
 	it('test_serialize_roundtrip', () => {
-		const manifest = buildManifestFromPointers([{ pointerPath: 'p.md', record: recordFor('k') }]);
+		const manifest = buildManifestFromPointers([
+			{ pointerPath: 'p.md', record: recordFor('k') },
+		]);
 		const result = parseManifest(serializeManifest(manifest));
 		expect(result.ok).toBe(true);
 		if (result.ok) {
@@ -115,7 +126,9 @@ describe('manifest cache acceptance (la-p1-05)', () => {
 		expect(parseManifest('not json at all {{{').ok).toBe(false);
 		expect(parseManifest('{"version":1}').ok).toBe(false); // missing entries
 		expect(parseManifest('[]').ok).toBe(false); // wrong root shape
-		expect(parseManifest('{"version":1,"entries":{"k":{"key":"k"}}}').ok).toBe(false); // entry missing fields
+		expect(
+			parseManifest('{"version":1,"entries":{"k":{"key":"k"}}}').ok,
+		).toBe(false); // entry missing fields
 	});
 
 	// AC6 :: lookup by key and by hash (dedup-on-adopt and reconciliation depend on
@@ -127,7 +140,11 @@ describe('manifest cache acceptance (la-p1-05)', () => {
 		]);
 		expect(hasKey(manifest, 'k-a')).toBe(true);
 		expect(hasKey(manifest, 'missing')).toBe(false);
-		expect(findByHash(manifest, HASH_A).map((e) => e.key).sort()).toEqual(['k-a', 'k-b']);
+		expect(
+			findByHash(manifest, HASH_A)
+				.map((e) => e.key)
+				.sort(),
+		).toEqual(['k-a', 'k-b']);
 	});
 });
 
@@ -139,7 +156,12 @@ describe('manifest cache property tests (la-p1-05)', () => {
 		hash: fc.option(fc.string({ minLength: 8 }), { nil: null }),
 		bucket: fc.string(),
 		byteSize: fc.nat(),
-		verificationTier: fc.constantFrom('content' as const, 'md5' as const, 'existence' as const, 'asserted' as const),
+		verificationTier: fc.constantFrom(
+			'content' as const,
+			'md5' as const,
+			'existence' as const,
+			'asserted' as const,
+		),
 		originalPath: fc.string(),
 		pointerPath: fc.option(fc.string(), { nil: null }),
 		remoteChecksum: fc.option(fc.string(), { nil: null }),
@@ -148,17 +170,20 @@ describe('manifest cache property tests (la-p1-05)', () => {
 	// prop_serialize_roundtrip :: any manifest survives serialize -> parse.
 	it('prop_serialize_roundtrip', () => {
 		fc.assert(
-			fc.property(fc.uniqueArray(entryArb, { selector: (e) => e.key }), (entries) => {
-				const manifest: Manifest = { version: 1, entries: {} };
-				for (const entry of entries) {
-					manifest.entries[entry.key] = entry;
-				}
-				const result = parseManifest(serializeManifest(manifest));
-				expect(result.ok).toBe(true);
-				if (result.ok) {
-					expect(result.manifest).toEqual(manifest);
-				}
-			}),
+			fc.property(
+				fc.uniqueArray(entryArb, { selector: (e) => e.key }),
+				(entries) => {
+					const manifest: Manifest = { version: 1, entries: {} };
+					for (const entry of entries) {
+						manifest.entries[entry.key] = entry;
+					}
+					const result = parseManifest(serializeManifest(manifest));
+					expect(result.ok).toBe(true);
+					if (result.ok) {
+						expect(result.manifest).toEqual(manifest);
+					}
+				},
+			),
 			{ numRuns: 200 },
 		);
 	});
@@ -167,12 +192,23 @@ describe('manifest cache property tests (la-p1-05)', () => {
 	// a permutation of the same records yields an equal manifest.
 	it('prop_build_is_order_independent', () => {
 		fc.assert(
-			fc.property(fc.uniqueArray(fc.string({ minLength: 1 }), { minLength: 0, maxLength: 20 }), (keys) => {
-				const sources = keys.map((k) => ({ pointerPath: `${k}.md`, record: recordFor(k) }));
-				const forward = buildManifestFromPointers(sources);
-				const reversed = buildManifestFromPointers([...sources].reverse());
-				expect(reversed).toEqual(forward);
-			}),
+			fc.property(
+				fc.uniqueArray(fc.string({ minLength: 1 }), {
+					minLength: 0,
+					maxLength: 20,
+				}),
+				(keys) => {
+					const sources = keys.map((k) => ({
+						pointerPath: `${k}.md`,
+						record: recordFor(k),
+					}));
+					const forward = buildManifestFromPointers(sources);
+					const reversed = buildManifestFromPointers(
+						[...sources].reverse(),
+					);
+					expect(reversed).toEqual(forward);
+				},
+			),
 			{ numRuns: 100 },
 		);
 	});
@@ -181,7 +217,9 @@ describe('manifest cache property tests (la-p1-05)', () => {
 describe('manifest cache failure injection (la-p1-05)', () => {
 	// Truncated JSON is discardable, not a crash.
 	it('fault_truncated_json_discardable', () => {
-		const manifest = buildManifestFromPointers([{ pointerPath: 'p.md', record: recordFor('k') }]);
+		const manifest = buildManifestFromPointers([
+			{ pointerPath: 'p.md', record: recordFor('k') },
+		]);
 		const text = serializeManifest(manifest);
 		const truncated = text.slice(0, Math.floor(text.length / 2));
 		expect(() => parseManifest(truncated)).not.toThrow();
@@ -190,7 +228,8 @@ describe('manifest cache failure injection (la-p1-05)', () => {
 
 	// A wrong-typed field (byteSize as a string) is discardable, never coerced.
 	it('fault_wrong_typed_field_discardable', () => {
-		const bad = '{"version":1,"entries":{"k":{"key":"k","keyKind":"hash","id":"i","hash":null,"bucket":"b","byteSize":"big","verificationTier":"asserted","originalPath":"p","pointerPath":null,"remoteChecksum":null}}}';
+		const bad =
+			'{"version":1,"entries":{"k":{"key":"k","keyKind":"hash","id":"i","hash":null,"bucket":"b","byteSize":"big","verificationTier":"asserted","originalPath":"p","pointerPath":null,"remoteChecksum":null}}}';
 		expect(parseManifest(bad).ok).toBe(false);
 	});
 
@@ -198,8 +237,14 @@ describe('manifest cache failure injection (la-p1-05)', () => {
 	// never throws.
 	it('fault_duplicate_key_last_wins', () => {
 		const manifest = buildManifestFromPointers([
-			{ pointerPath: 'first.md', record: recordFor('k', { byteSize: 1 }) },
-			{ pointerPath: 'second.md', record: recordFor('k', { byteSize: 2 }) },
+			{
+				pointerPath: 'first.md',
+				record: recordFor('k', { byteSize: 1 }),
+			},
+			{
+				pointerPath: 'second.md',
+				record: recordFor('k', { byteSize: 2 }),
+			},
 		]);
 		expect(Object.keys(manifest.entries)).toEqual(['k']);
 		expect(findByKey(manifest, 'k')?.byteSize).toBe(2);

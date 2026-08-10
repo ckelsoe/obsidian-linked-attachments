@@ -12,7 +12,10 @@ export function pointerTrustLine(record: PointerRecord): string {
 	return `${badge.label}: ${badge.cardLine}`;
 }
 
-export function offloadOutcomeLine(fileName: string, result: OffloadResult): string {
+export function offloadOutcomeLine(
+	fileName: string,
+	result: OffloadResult,
+): string {
 	if (!result.ok) {
 		return `Offload of ${fileName} did not complete: ${result.error ?? 'unknown error'}. Your file was not removed.`;
 	}

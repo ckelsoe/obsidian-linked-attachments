@@ -4,7 +4,9 @@ describe('parsePointerLink', () => {
 	// The current block format carries the verb on `op`; `action` stays the route so
 	// it never collides with Obsidian's reserved protocol field.
 	it('parses a current op-format link', () => {
-		const params = parsePointerLink('obsidian://linked-attachments?op=reveal&backend=local&id=la-abc');
+		const params = parsePointerLink(
+			'obsidian://linked-attachments?op=reveal&backend=local&id=la-abc',
+		);
 		expect(params.action).toBe('linked-attachments');
 		expect(params.op).toBe('reveal');
 		expect(params.backend).toBe('local');
@@ -15,7 +17,9 @@ describe('parsePointerLink', () => {
 	// to `action` when `op` is absent, and those links must still resolve to a verb
 	// (here the query `action` overrides the route default).
 	it('parses a legacy action-format link', () => {
-		const params = parsePointerLink('obsidian://linked-attachments?action=open&id=la-legacy');
+		const params = parsePointerLink(
+			'obsidian://linked-attachments?action=open&id=la-legacy',
+		);
 		expect(params.action).toBe('open');
 		expect(params.op).toBeUndefined();
 		expect(params.id).toBe('la-legacy');
@@ -24,7 +28,9 @@ describe('parsePointerLink', () => {
 	// A percent-encoded id round-trips (the block encodes the id so an odd id cannot
 	// break the link).
 	it('decodes a percent-encoded id', () => {
-		const params = parsePointerLink('obsidian://linked-attachments?op=open&id=la%2Fweird%20id');
+		const params = parsePointerLink(
+			'obsidian://linked-attachments?op=open&id=la%2Fweird%20id',
+		);
 		expect(params.id).toBe('la/weird id');
 	});
 

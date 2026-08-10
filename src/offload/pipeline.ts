@@ -1,4 +1,10 @@
-import { BackendRef, encodePointer, LA_VERSION, PointerRecord, VerificationTier } from '../pointer/codec';
+import {
+	BackendRef,
+	encodePointer,
+	LA_VERSION,
+	PointerRecord,
+	VerificationTier,
+} from '../pointer/codec';
 import { sha256Base64 } from '../hash/sha256';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { StorageBackend } from '../storage/backend';
@@ -22,7 +28,8 @@ import { OffloadPlan, planOffload } from './plan';
 // The verify ladder and the delete-gate minimum tier are seams (la-p2-08); this
 // story ships the default checksummed-PUT verifier and a content/md5 remove gate.
 
-export type OffloadStage = 'staged' | 'uploaded' | 'verified' | 'committed' | 'removed';
+export type OffloadStage =
+	'staged' | 'uploaded' | 'verified' | 'committed' | 'removed';
 
 export interface OffloadFile {
 	path: string;
@@ -43,7 +50,11 @@ export interface VerifyOutcome {
 	reason: string | null;
 }
 
-export type Verifier = (backend: StorageBackend, key: string, expectation: VerifyExpectation) => Promise<VerifyOutcome>;
+export type Verifier = (
+	backend: StorageBackend,
+	key: string,
+	expectation: VerifyExpectation,
+) => Promise<VerifyOutcome>;
 
 // One destination an offload writes to, plus how it is recorded on the pointer.
 // The same object key addresses every backend (the key layout is backend-neutral),
@@ -94,8 +105,16 @@ export interface OffloadResult {
 // on R2). The richer ladder (md5 fallback, GET+rehash, refuse floor) is la-p2-08.
 export const checksumVerifier: Verifier = async (backend, key, expectation) => {
 	const head = await backend.head(key);
-	if (head.size === expectation.size && head.checksumSha256 === expectation.checksumBase64) {
-		return { ok: true, tier: 'content', remoteChecksum: head.checksumSha256 ?? null, reason: null };
+	if (
+		head.size === expectation.size &&
+		head.checksumSha256 === expectation.checksumBase64
+	) {
+		return {
+			ok: true,
+			tier: 'content',
+			remoteChecksum: head.checksumSha256 ?? null,
+			reason: null,
+		};
 	}
 	return {
 		ok: false,
@@ -111,7 +130,10 @@ export function defaultCanRemoveOriginal(tier: VerificationTier): boolean {
 	return tier === 'content' || tier === 'md5';
 }
 
-export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise<OffloadResult> {
+export async function offloadFile(
+	file: OffloadFile,
+	deps: OffloadDeps,
+): Promise<OffloadResult> {
 	const verify = deps.verify ?? checksumVerifier;
 	const canRemove = deps.canRemoveOriginal ?? defaultCanRemoveOriginal;
 
@@ -120,12 +142,23 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	// against a pointer that has zero backends. Never do that - fail before any side
 	// effect so the original is untouched.
 	if (deps.targets.length === 0) {
-		return { ok: false, reachedStage: 'staged', removed: false, record: null, pointerPath: null, error: 'no storage targets configured', deduped: false };
+		return {
+			ok: false,
+			reachedStage: 'staged',
+			removed: false,
+			record: null,
+			pointerPath: null,
+			error: 'no storage targets configured',
+			deduped: false,
+		};
 	}
 
 	// The preview module is the single source of the key/pointerPath/hash
 	// derivation, so the committed pointer matches what a dry-run showed.
-	const plan = await planOffload(file, { vaultPrefix: deps.vaultPrefix, bucket: deps.bucket });
+	const plan = await planOffload(file, {
+		vaultPrefix: deps.vaultPrefix,
+		bucket: deps.bucket,
+	});
 	const { hash, key, pointerPath } = plan;
 	const checksumBase64 = await sha256Base64(file.bytes);
 
@@ -136,7 +169,15 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	if (deps.findExistingByHash !== undefined) {
 		const existing = await deps.findExistingByHash(hash);
 		if (existing !== null) {
-			const linked = await tryDedup(file, plan, existing, checksumBase64, deps, verify, canRemove);
+			const linked = await tryDedup(
+				file,
+				plan,
+				existing,
+				checksumBase64,
+				deps,
+				verify,
+				canRemove,
+			);
 			if (linked !== null) {
 				return linked;
 			}
@@ -183,22 +224,45 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	let remoteChecksum: string | null = null;
 	for (const target of deps.targets) {
 		try {
-			await target.backend.put(key, file.bytes, file.bytes.length, { checksumSha256: checksumBase64, contentType: file.contentType, metadata });
+			await target.backend.put(key, file.bytes, file.bytes.length, {
+				checksumSha256: checksumBase64,
+				contentType: file.contentType,
+				metadata,
+			});
 		} catch (error) {
 			await rollback(written, key);
-			return failure('staged', record, pointerPath, `upload failed: ${describe(error)}`);
+			return failure(
+				'staged',
+				record,
+				pointerPath,
+				`upload failed: ${describe(error)}`,
+			);
 		}
 		let outcome: VerifyOutcome;
 		try {
-			outcome = await verify(target.backend, key, { hash, checksumBase64, size: file.bytes.length });
+			outcome = await verify(target.backend, key, {
+				hash,
+				checksumBase64,
+				size: file.bytes.length,
+			});
 		} catch (error) {
 			// This target's PUT landed but could not be verified; roll it back too.
 			await rollback([...written, target], key);
-			return failure('uploaded', record, pointerPath, `verify failed: ${describe(error)}`);
+			return failure(
+				'uploaded',
+				record,
+				pointerPath,
+				`verify failed: ${describe(error)}`,
+			);
 		}
 		if (!outcome.ok) {
 			await rollback([...written, target], key);
-			return failure('uploaded', record, pointerPath, outcome.reason ?? 'verification failed');
+			return failure(
+				'uploaded',
+				record,
+				pointerPath,
+				outcome.reason ?? 'verification failed',
+			);
 		}
 		written.push(target);
 		worstTier = weakerTier(worstTier, outcome.tier);
@@ -212,20 +276,49 @@ export async function offloadFile(file: OffloadFile, deps: OffloadDeps): Promise
 	try {
 		await deps.writePointer(pointerPath, encodePointer(record, ''));
 	} catch (error) {
-		return failure('verified', record, pointerPath, `commit failed: ${describe(error)}`);
+		return failure(
+			'verified',
+			record,
+			pointerPath,
+			`commit failed: ${describe(error)}`,
+		);
 	}
 
 	// Remove the local original, only if the achieved tier clears the gate.
 	if (!canRemove(record.verificationTier)) {
-		return { ok: true, reachedStage: 'committed', removed: false, record, pointerPath, error: null, deduped: false };
+		return {
+			ok: true,
+			reachedStage: 'committed',
+			removed: false,
+			record,
+			pointerPath,
+			error: null,
+			deduped: false,
+		};
 	}
 	try {
 		await deps.trashOriginal(file.path);
 	} catch (error) {
 		// Pointer committed + verified; the original simply remains. Non-fatal.
-		return { ok: true, reachedStage: 'committed', removed: false, record, pointerPath, error: `original not trashed: ${describe(error)}`, deduped: false };
+		return {
+			ok: true,
+			reachedStage: 'committed',
+			removed: false,
+			record,
+			pointerPath,
+			error: `original not trashed: ${describe(error)}`,
+			deduped: false,
+		};
 	}
-	return { ok: true, reachedStage: 'removed', removed: true, record, pointerPath, error: null, deduped: false };
+	return {
+		ok: true,
+		reachedStage: 'removed',
+		removed: true,
+		record,
+		pointerPath,
+		error: null,
+		deduped: false,
+	};
 }
 
 // --- internals --------------------------------------------------------------
@@ -253,7 +346,11 @@ async function tryDedup(
 	}
 	let outcome: VerifyOutcome;
 	try {
-		outcome = await verify(s3Backend, existing.key, { hash: plan.hash, checksumBase64, size: plan.byteSize });
+		outcome = await verify(s3Backend, existing.key, {
+			hash: plan.hash,
+			checksumBase64,
+			size: plan.byteSize,
+		});
 	} catch {
 		return null; // cannot reach / confirm the existing object -> upload normally
 	}
@@ -265,7 +362,14 @@ async function tryDedup(
 		laVersion: LA_VERSION,
 		id: deps.newId(),
 		hash: plan.hash,
-		backends: [{ type: 's3', bucket: existing.bucket, key: existing.key, keyKind: existing.keyKind }],
+		backends: [
+			{
+				type: 's3',
+				bucket: existing.bucket,
+				key: existing.key,
+				keyKind: existing.keyKind,
+			},
+		],
 		originalName: plan.originalName,
 		originalExt: plan.originalExt,
 		originalPath: file.path,
@@ -285,17 +389,49 @@ async function tryDedup(
 	try {
 		await deps.writePointer(plan.pointerPath, encodePointer(record, ''));
 	} catch (error) {
-		return { ok: false, reachedStage: 'verified', removed: false, record, pointerPath: plan.pointerPath, error: `commit failed: ${describe(error)}`, deduped: true };
+		return {
+			ok: false,
+			reachedStage: 'verified',
+			removed: false,
+			record,
+			pointerPath: plan.pointerPath,
+			error: `commit failed: ${describe(error)}`,
+			deduped: true,
+		};
 	}
 	if (!canRemove(record.verificationTier)) {
-		return { ok: true, reachedStage: 'committed', removed: false, record, pointerPath: plan.pointerPath, error: null, deduped: true };
+		return {
+			ok: true,
+			reachedStage: 'committed',
+			removed: false,
+			record,
+			pointerPath: plan.pointerPath,
+			error: null,
+			deduped: true,
+		};
 	}
 	try {
 		await deps.trashOriginal(file.path);
 	} catch (error) {
-		return { ok: true, reachedStage: 'committed', removed: false, record, pointerPath: plan.pointerPath, error: `original not trashed: ${describe(error)}`, deduped: true };
+		return {
+			ok: true,
+			reachedStage: 'committed',
+			removed: false,
+			record,
+			pointerPath: plan.pointerPath,
+			error: `original not trashed: ${describe(error)}`,
+			deduped: true,
+		};
 	}
-	return { ok: true, reachedStage: 'removed', removed: true, record, pointerPath: plan.pointerPath, error: null, deduped: true };
+	return {
+		ok: true,
+		reachedStage: 'removed',
+		removed: true,
+		record,
+		pointerPath: plan.pointerPath,
+		error: null,
+		deduped: true,
+	};
 }
 
 // Best-effort rollback of the copies already written in a paired offload. A delete
@@ -312,16 +448,37 @@ async function rollback(written: OffloadTarget[], key: string): Promise<void> {
 	}
 }
 
-const TIER_ORDER: Record<VerificationTier, number> = { asserted: 0, existence: 1, md5: 2, content: 3 };
+const TIER_ORDER: Record<VerificationTier, number> = {
+	asserted: 0,
+	existence: 1,
+	md5: 2,
+	content: 3,
+};
 
 // The weaker of two tiers, so a paired pointer records the LEAST it proved across
 // all copies (the delete gate must see every copy verified, not just the strongest).
-function weakerTier(a: VerificationTier, b: VerificationTier): VerificationTier {
+function weakerTier(
+	a: VerificationTier,
+	b: VerificationTier,
+): VerificationTier {
 	return TIER_ORDER[a] <= TIER_ORDER[b] ? a : b;
 }
 
-function failure(reachedStage: OffloadStage, record: PointerRecord, pointerPath: string, error: string): OffloadResult {
-	return { ok: false, reachedStage, removed: false, record, pointerPath, error, deduped: false };
+function failure(
+	reachedStage: OffloadStage,
+	record: PointerRecord,
+	pointerPath: string,
+	error: string,
+): OffloadResult {
+	return {
+		ok: false,
+		reachedStage,
+		removed: false,
+		record,
+		pointerPath,
+		error,
+		deduped: false,
+	};
 }
 
 function describe(error: unknown): string {

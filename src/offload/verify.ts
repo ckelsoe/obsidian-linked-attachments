@@ -49,15 +49,28 @@ export interface DeleteDecision {
 	reason: string | null;
 }
 
-const TIER_RANK: Record<VerificationTier, number> = { asserted: 0, existence: 1, md5: 2, content: 3 };
+const TIER_RANK: Record<VerificationTier, number> = {
+	asserted: 0,
+	existence: 1,
+	md5: 2,
+	content: 3,
+};
 
-export async function verifyByLadder(backend: StorageBackend, key: string, expectation: LadderExpectation): Promise<LadderResult> {
+export async function verifyByLadder(
+	backend: StorageBackend,
+	key: string,
+	expectation: LadderExpectation,
+): Promise<LadderResult> {
 	let head;
 	try {
 		head = await backend.head(key);
 	} catch (error) {
 		// No HEAD -> nothing is proven -> asserted (the gate will refuse a delete).
-		return { tier: 'asserted', remoteChecksum: null, reason: `head failed: ${describe(error)}` };
+		return {
+			tier: 'asserted',
+			remoteChecksum: null,
+			reason: `head failed: ${describe(error)}`,
+		};
 	}
 	// Size is only a cheap sanity check; the server checksum and the GET+rehash are
 	// the real byte proofs. Obsidian's requestUrl reports content-length as 0 on a
@@ -68,7 +81,10 @@ export async function verifyByLadder(backend: StorageBackend, key: string, expec
 	const remoteChecksum = head.checksumSha256 ?? null;
 
 	// Rung 1: server checksum (cheapest content verification).
-	if (backend.capabilities.upload.serverChecksum && head.checksumSha256 !== undefined) {
+	if (
+		backend.capabilities.upload.serverChecksum &&
+		head.checksumSha256 !== undefined
+	) {
 		if (sizeOk && head.checksumSha256 === expectation.checksumBase64) {
 			return { tier: 'content', remoteChecksum, reason: null };
 		}
@@ -105,8 +121,13 @@ export async function verifyByLadder(backend: StorageBackend, key: string, expec
 	}
 }
 
-export function canHardDelete(tier: VerificationTier, config: DeleteGateConfig = {}): boolean {
-	const minimum: VerificationTier = config.allowAssertedDelete ? 'asserted' : config.minimumTier ?? 'md5';
+export function canHardDelete(
+	tier: VerificationTier,
+	config: DeleteGateConfig = {},
+): boolean {
+	const minimum: VerificationTier = config.allowAssertedDelete
+		? 'asserted'
+		: (config.minimumTier ?? 'md5');
 	return TIER_RANK[tier] >= TIER_RANK[minimum];
 }
 
@@ -124,13 +145,21 @@ export async function verifyBeforeDelete(
 			refused: true,
 			achievedTier: result.tier,
 			remoteChecksum: result.remoteChecksum,
-			reason: result.reason ?? `refusing to delete: achieved ${result.tier}, below the configured minimum`,
+			reason:
+				result.reason ??
+				`refusing to delete: achieved ${result.tier}, below the configured minimum`,
 		};
 	}
 	// The delete callback's own errors propagate to the caller; verification
 	// passed, so this is the caller's I/O failure to handle, not a verify refusal.
 	await doDelete();
-	return { deleted: true, refused: false, achievedTier: result.tier, remoteChecksum: result.remoteChecksum, reason: null };
+	return {
+		deleted: true,
+		refused: false,
+		achievedTier: result.tier,
+		remoteChecksum: result.remoteChecksum,
+		reason: null,
+	};
 }
 
 // Adapt the ladder to the offload pipeline's Verifier contract: ok is true only

@@ -3,26 +3,86 @@ import { signRequest } from '../../sigv4';
 import { S3AddressingStyle, CredentialStore } from '../../credentials';
 import { S3ConnectionConfig } from '../../s3-url';
 import { S3Backend } from '../storage/s3-backend';
-import { LocalBackend, osTempDir, resolveLocalRoot } from '../storage/local-backend';
+import {
+	LocalBackend,
+	osTempDir,
+	resolveLocalRoot,
+} from '../storage/local-backend';
 import { requestUrlTransport } from '../storage/requesturl-transport';
 import { toArrayBuffer } from '../storage/body';
 import { StorageMode } from '../../settings';
-import { offloadFile, OffloadDeps, OffloadResult, OffloadTarget } from '../offload/pipeline';
+import {
+	offloadFile,
+	OffloadDeps,
+	OffloadResult,
+	OffloadTarget,
+} from '../offload/pipeline';
 import { planOffload, OffloadPlan } from '../offload/plan';
 import { ladderVerifier } from '../offload/verify';
-import { runTrustRehearsal, TrustRehearsalResult, TrustStage } from '../onboard/trust-ladder';
+import {
+	runTrustRehearsal,
+	TrustRehearsalResult,
+	TrustStage,
+} from '../onboard/trust-ladder';
 import { rewriteEmbedsInNotes, RewriteDirection } from '../scan/embed-rewrite';
 import { runBatch, BatchItem, BatchProgress } from '../offload/batch';
-import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItems, OffloadJournal, JournalStage } from '../offload/journal';
-import { scanReconcile, linkUnlinked, ReconcileFinding } from '../reconcile/scanner';
+import {
+	createJournal,
+	setStage,
+	serializeJournal,
+	parseJournal,
+	unfinishedItems,
+	OffloadJournal,
+	JournalStage,
+} from '../offload/journal';
+import {
+	scanReconcile,
+	linkUnlinked,
+	ReconcileFinding,
+} from '../reconcile/scanner';
 import { buildManifestFromPointers, PointerSource } from '../manifest/manifest';
-import { buildHashIndex, lookupByHash, rememberObject, HashIndex } from '../offload/dedup';
-import { CheckoutManager, CheckoutDeps, CheckoutResult, CheckinResult } from '../checkout/checkout-manager';
-import { dirtyState, DirtyState, readCheckoutBase, workingCopyPath } from '../checkout/checkout-state';
-import { cleanupIncompleteUploads, buildListUploadsUrl, buildAbortUploadUrl, MultipartTransport, CleanupResult } from '../storage/multipart';
-import { BackendRef, BackendType, decodePointer, encodePointer, localBackend, PointerRecord, refreshManagedBlock } from '../pointer/codec';
+import {
+	buildHashIndex,
+	lookupByHash,
+	rememberObject,
+	HashIndex,
+} from '../offload/dedup';
+import {
+	CheckoutManager,
+	CheckoutDeps,
+	CheckoutResult,
+	CheckinResult,
+} from '../checkout/checkout-manager';
+import {
+	dirtyState,
+	DirtyState,
+	readCheckoutBase,
+	workingCopyPath,
+} from '../checkout/checkout-state';
+import {
+	cleanupIncompleteUploads,
+	buildListUploadsUrl,
+	buildAbortUploadUrl,
+	MultipartTransport,
+	CleanupResult,
+} from '../storage/multipart';
+import {
+	BackendRef,
+	BackendType,
+	decodePointer,
+	encodePointer,
+	localBackend,
+	PointerRecord,
+	refreshManagedBlock,
+} from '../pointer/codec';
 import { StorageBackend } from '../storage/backend';
-import { scanForAdoption, adoptByKey, mirrorKeyToVaultPath, AdoptRow, AdoptScanResult } from '../adopt/adopt-scan';
+import {
+	scanForAdoption,
+	adoptByKey,
+	mirrorKeyToVaultPath,
+	AdoptRow,
+	AdoptScanResult,
+} from '../adopt/adopt-scan';
 import { planAdoption } from '../adopt/adopt-plan';
 import { sha256Base64, sha256Hex } from '../hash/sha256';
 import { contentTypeForExtension } from './content-type';
@@ -82,8 +142,15 @@ export class AttachmentService {
 		const config = this.getConfig();
 		const bytes = new Uint8Array(await this.app.vault.readBinary(file));
 		return planOffload(
-			{ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) },
-			{ vaultPrefix: this.resolveVaultPrefix(config), bucket: config.bucket },
+			{
+				path: file.path,
+				bytes,
+				contentType: contentTypeForExtension(file.extension),
+			},
+			{
+				vaultPrefix: this.resolveVaultPrefix(config),
+				bucket: config.bucket,
+			},
 		);
 	}
 
@@ -91,13 +158,22 @@ export class AttachmentService {
 	// against the user's real bucket, so they can watch upload -> verify -> retrieve
 	// -> match succeed before trusting a real file. The throwaway key and payload are
 	// random; the rehearsal cleans the object up itself.
-	async rehearseTrust(onStage?: (stage: TrustStage) => void): Promise<TrustRehearsalResult> {
+	async rehearseTrust(
+		onStage?: (stage: TrustStage) => void,
+	): Promise<TrustRehearsalResult> {
 		const config = this.getConfig();
 		const prefix = this.resolveVaultPrefix(config);
 		const nonce = generateId();
 		const key = `${prefix}/.linked-attachments/rehearsal-${nonce}.txt`;
-		const payload = new TextEncoder().encode(`Linked Attachments round-trip rehearsal ${nonce}`);
-		return runTrustRehearsal({ backend: this.backend(config), key, payload, onStage });
+		const payload = new TextEncoder().encode(
+			`Linked Attachments round-trip rehearsal ${nonce}`,
+		);
+		return runTrustRehearsal({
+			backend: this.backend(config),
+			key,
+			payload,
+			onStage,
+		});
 	}
 
 	// Reconciliation scan (the moat): diff the vault's pointers against what is in
@@ -105,8 +181,14 @@ export class AttachmentService {
 	// Strictly read-only - LIST, and HEAD only when deep is asked for.
 	async reconcile(deep = false): Promise<ReconcileFinding[]> {
 		const config = this.getConfig();
-		const manifest = buildManifestFromPointers(await this.collectPointerSources());
-		return scanReconcile(this.backend(config), Object.values(manifest.entries), { deep });
+		const manifest = buildManifestFromPointers(
+			await this.collectPointerSources(),
+		);
+		return scanReconcile(
+			this.backend(config),
+			Object.values(manifest.entries),
+			{ deep },
+		);
 	}
 
 	// Find and abort incomplete multipart uploads, stopping same-session billing from
@@ -118,13 +200,26 @@ export class AttachmentService {
 
 	// The single v1 remediation: create pointers for the unlinked candidates. Broken
 	// and drift findings are never touched (resolver is v2).
-	async linkFindings(findings: ReconcileFinding[]): Promise<{ created: number; failed: number }> {
-		const pointers = linkUnlinked(findings, {}, { bucket: this.getConfig().bucket, newId: () => generateId(), now: () => new Date().toISOString() });
+	async linkFindings(
+		findings: ReconcileFinding[],
+	): Promise<{ created: number; failed: number }> {
+		const pointers = linkUnlinked(
+			findings,
+			{},
+			{
+				bucket: this.getConfig().bucket,
+				newId: () => generateId(),
+				now: () => new Date().toISOString(),
+			},
+		);
 		let created = 0;
 		let failed = 0;
 		for (const pointer of pointers) {
 			try {
-				await this.writePointer(pointer.pointerPath, encodePointer(pointer.record, ''));
+				await this.writePointer(
+					pointer.pointerPath,
+					encodePointer(pointer.record, ''),
+				);
 				created++;
 			} catch {
 				failed++;
@@ -136,12 +231,18 @@ export class AttachmentService {
 	// Adopt-from-bucket: LIST under an optional prefix and classify each object
 	// against what the vault already has (pointer keys + existing paths), so the
 	// checklist can hide already-adopted objects and flag collisions. LIST only.
-	async adoptScan(prefix: string, destinationFolder: string): Promise<AdoptScanResult> {
+	async adoptScan(
+		prefix: string,
+		destinationFolder: string,
+	): Promise<AdoptScanResult> {
 		const config = this.getConfig();
-		const existingVaultPaths = new Set(this.app.vault.getFiles().map((file) => file.path));
+		const existingVaultPaths = new Set(
+			this.app.vault.getFiles().map((file) => file.path),
+		);
 		const existingPointerKeys = new Set<string>();
 		for (const file of this.app.vault.getMarkdownFiles()) {
-			const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			const frontmatter: Record<string, unknown> | undefined =
+				this.app.metadataCache.getFileCache(file)?.frontmatter;
 			const key = frontmatter?.['la_key'];
 			if (typeof key === 'string') {
 				existingPointerKeys.add(key);
@@ -150,7 +251,8 @@ export class AttachmentService {
 		return scanForAdoption({
 			backend: this.backend(config),
 			prefix: prefix.length > 0 ? prefix : undefined,
-			destinationFolder: destinationFolder.length > 0 ? destinationFolder : undefined,
+			destinationFolder:
+				destinationFolder.length > 0 ? destinationFolder : undefined,
 			existingPointerKeys,
 			existingVaultPaths,
 		});
@@ -159,13 +261,22 @@ export class AttachmentService {
 	// Create pointer notes for the selected adoptable rows. planAdoption guards that
 	// only adoptable rows ever become pointers; writePointer guards against an
 	// existing file at the path (so a race still never overwrites).
-	async adoptRows(rows: AdoptRow[]): Promise<{ created: number; failed: number }> {
-		const pointers = planAdoption(rows, { bucket: this.getConfig().bucket, newId: () => generateId(), now: () => new Date().toISOString() });
+	async adoptRows(
+		rows: AdoptRow[],
+	): Promise<{ created: number; failed: number }> {
+		const pointers = planAdoption(rows, {
+			bucket: this.getConfig().bucket,
+			newId: () => generateId(),
+			now: () => new Date().toISOString(),
+		});
 		let created = 0;
 		let failed = 0;
 		for (const pointer of pointers) {
 			try {
-				await this.writePointer(pointer.pointerPath, encodePointer(pointer.record, ''));
+				await this.writePointer(
+					pointer.pointerPath,
+					encodePointer(pointer.record, ''),
+				);
 				created++;
 			} catch {
 				failed++;
@@ -176,19 +287,43 @@ export class AttachmentService {
 
 	// Paste-a-key: adopt one object by its exact key (a single HEAD, no LIST). The
 	// vault path mirrors the key unless the caller overrides it.
-	async adoptKey(key: string, vaultPath?: string): Promise<{ ok: boolean; pointerPath: string | null; error: string | null }> {
+	async adoptKey(
+		key: string,
+		vaultPath?: string,
+	): Promise<{
+		ok: boolean;
+		pointerPath: string | null;
+		error: string | null;
+	}> {
 		const config = this.getConfig();
-		const placement = { vaultPath: vaultPath !== undefined && vaultPath.length > 0 ? vaultPath : mirrorKeyToVaultPath(key, {}) };
+		const placement = {
+			vaultPath:
+				vaultPath !== undefined && vaultPath.length > 0
+					? vaultPath
+					: mirrorKeyToVaultPath(key, {}),
+		};
 		try {
-			const result = await adoptByKey(this.backend(config), key, placement, {
-				bucket: config.bucket,
-				newId: () => generateId(),
-				now: () => new Date().toISOString(),
-			});
+			const result = await adoptByKey(
+				this.backend(config),
+				key,
+				placement,
+				{
+					bucket: config.bucket,
+					newId: () => generateId(),
+					now: () => new Date().toISOString(),
+				},
+			);
 			if ('collision' in result) {
-				return { ok: false, pointerPath: null, error: 'a pointer already exists for this object' };
+				return {
+					ok: false,
+					pointerPath: null,
+					error: 'a pointer already exists for this object',
+				};
 			}
-			await this.writePointer(result.pointerPath, encodePointer(result.record, ''));
+			await this.writePointer(
+				result.pointerPath,
+				encodePointer(result.record, ''),
+			);
 			return { ok: true, pointerPath: result.pointerPath, error: null };
 		} catch (error) {
 			return { ok: false, pointerPath: null, error: describe(error) };
@@ -201,10 +336,17 @@ export class AttachmentService {
 	// batch finishes, so it only survives a crash - making recovery deterministic.
 	async offloadMany(
 		files: TFile[],
-		onProgress?: (item: BatchItem<OffloadResult>, progress: BatchProgress<OffloadResult>) => void,
+		onProgress?: (
+			item: BatchItem<OffloadResult>,
+			progress: BatchProgress<OffloadResult>,
+		) => void,
 	): Promise<BatchProgress<OffloadResult>> {
 		const batchId = generateId();
-		let journal = createJournal(batchId, files.map((f) => f.path), new Date().toISOString());
+		let journal = createJournal(
+			batchId,
+			files.map((f) => f.path),
+			new Date().toISOString(),
+		);
 		await this.writeJournal(journal);
 		// One hash index for the whole batch, so two identical files in the same
 		// selection link to one object (the index accumulates as each file commits).
@@ -215,9 +357,17 @@ export class AttachmentService {
 				idOf: (file) => file.path,
 				run: async (file) => {
 					const result = await this.offload(file, hashIndex);
-					journal = setStage(journal, file.path, journalStageFor(result));
+					journal = setStage(
+						journal,
+						file.path,
+						journalStageFor(result),
+					);
 					await this.writeJournal(journal);
-					return { ok: result.ok, value: result, error: result.error };
+					return {
+						ok: result.ok,
+						value: result,
+						error: result.error,
+					};
 				},
 				onProgress,
 			});
@@ -231,7 +381,11 @@ export class AttachmentService {
 	// re-offload the unfinished items whose original file still exists (the pipeline
 	// re-verifies an already-uploaded object rather than trusting the key). A
 	// committed-then-trashed item whose original is gone is simply skipped.
-	async resumeInterrupted(): Promise<{ journals: number; resumed: number; failed: number }> {
+	async resumeInterrupted(): Promise<{
+		journals: number;
+		resumed: number;
+		failed: number;
+	}> {
 		const journals = await this.readJournals();
 		let resumed = 0;
 		let failed = 0;
@@ -275,9 +429,19 @@ export class AttachmentService {
 			// duplicate (spec section 10). It is an S3-side optimization, so it applies
 			// only when S3 is the sole destination; paired/local offloads always write
 			// the local copy fresh. The pipeline still verifies before trashing.
-			findExistingByHash: config.storageMode === 's3-only' ? (hash) => Promise.resolve(lookupByHash(index, hash)) : undefined,
+			findExistingByHash:
+				config.storageMode === 's3-only'
+					? (hash) => Promise.resolve(lookupByHash(index, hash))
+					: undefined,
 		};
-		const result = await offloadFile({ path: file.path, bytes, contentType: contentTypeForExtension(file.extension) }, deps);
+		const result = await offloadFile(
+			{
+				path: file.path,
+				bytes,
+				contentType: contentTypeForExtension(file.extension),
+			},
+			deps,
+		);
 		// Keep the live index current so a later identical file (same batch) dedups.
 		if (result.ok && result.record !== null) {
 			rememberObject(index, result.record);
@@ -299,7 +463,11 @@ export class AttachmentService {
 		try {
 			record = decodePointer(await this.app.vault.read(pointer)).record;
 		} catch (error) {
-			return { ok: false, restoredPath: null, error: `not a pointer note: ${describe(error)}` };
+			return {
+				ok: false,
+				restoredPath: null,
+				error: `not a pointer note: ${describe(error)}`,
+			};
 		}
 
 		// Restore next to the pointer's CURRENT location, not the path recorded at
@@ -309,7 +477,11 @@ export class AttachmentService {
 		const targetPath = restoreTargetPath(pointer.path, record.originalName);
 
 		if (this.app.vault.getAbstractFileByPath(targetPath) !== null) {
-			return { ok: false, restoredPath: null, error: `a file already exists at ${targetPath}; not overwriting` };
+			return {
+				ok: false,
+				restoredPath: null,
+				error: `a file already exists at ${targetPath}; not overwriting`,
+			};
 		}
 
 		// Fetch from the pointer's backends in read-preference order (prefer local),
@@ -329,7 +501,11 @@ export class AttachmentService {
 		await this.app.vault.createBinary(targetPath, toArrayBuffer(bytes));
 		// Rewrite ![[file.ext.md]] -> ![[file.ext]] while the pointer still exists, so
 		// no embed is left dangling between the rewrite and the pointer removal.
-		await this.rewriteEmbeds(record.originalName, embeddingNotes, 'to-attachment');
+		await this.rewriteEmbeds(
+			record.originalName,
+			embeddingNotes,
+			'to-attachment',
+		);
 		await this.app.fileManager.trashFile(pointer);
 		return { ok: true, restoredPath: targetPath, error: null };
 	}
@@ -338,7 +514,10 @@ export class AttachmentService {
 
 	// Check out a pointer: download + verify the bytes, write the editable working
 	// copy to the sync-excluded checkout dir, mark the pointer, and open it natively.
-	async checkout(pointer: TFile, opts: { force?: boolean } = {}): Promise<CheckoutResult> {
+	async checkout(
+		pointer: TFile,
+		opts: { force?: boolean } = {},
+	): Promise<CheckoutResult> {
 		return this.checkoutManager().checkout(pointer.path, opts);
 	}
 
@@ -349,7 +528,9 @@ export class AttachmentService {
 	}
 
 	// Discard a checkout: release the lock and remove the working copy, no upload.
-	async discardCheckout(pointer: TFile): Promise<{ ok: boolean; error: string | null }> {
+	async discardCheckout(
+		pointer: TFile,
+	): Promise<{ ok: boolean; error: string | null }> {
 		return this.checkoutManager().discard(pointer.path);
 	}
 
@@ -363,7 +544,9 @@ export class AttachmentService {
 		const wcPath = workingCopyPath(base, decoded.record.originalName);
 		let workingHash: string | null = null;
 		if (await this.app.vault.adapter.exists(wcPath)) {
-			workingHash = await sha256Hex(new Uint8Array(await this.app.vault.adapter.readBinary(wcPath)));
+			workingHash = await sha256Hex(
+				new Uint8Array(await this.app.vault.adapter.readBinary(wcPath)),
+			);
 		}
 		return dirtyState(decoded.record, workingHash);
 	}
@@ -371,7 +554,10 @@ export class AttachmentService {
 	// Pointer paths currently marked checked-out, for the quit guard seed.
 	async checkedOutPointers(): Promise<string[]> {
 		const paths: string[] = [];
-		for (const { pointerPath, record } of await this.collectPointerSources()) {
+		for (const {
+			pointerPath,
+			record,
+		} of await this.collectPointerSources()) {
 			if (record.copyState === 'checked-out') {
 				paths.push(pointerPath);
 			}
@@ -403,7 +589,8 @@ export class AttachmentService {
 				await this.ensureAdapterDir(parentDir(path));
 				await adapter.writeBinary(path, toArrayBuffer(bytes));
 			},
-			readWorkingCopy: async (path) => new Uint8Array(await adapter.readBinary(path)),
+			readWorkingCopy: async (path) =>
+				new Uint8Array(await adapter.readBinary(path)),
 			removeWorkingCopy: (path) => adapter.remove(path),
 			workingCopyExists: (path) => adapter.exists(path),
 			openInDefaultApp: (path) => this.app.openWithDefaultApp(path),
@@ -459,12 +646,15 @@ export class AttachmentService {
 	private async collectPointerSources(): Promise<PointerSource[]> {
 		const sources: PointerSource[] = [];
 		for (const file of this.app.vault.getMarkdownFiles()) {
-			const frontmatter: Record<string, unknown> | undefined = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			const frontmatter: Record<string, unknown> | undefined =
+				this.app.metadataCache.getFileCache(file)?.frontmatter;
 			if (frontmatter === undefined || !('la_version' in frontmatter)) {
 				continue;
 			}
 			try {
-				const record = decodePointer(await this.app.vault.read(file)).record;
+				const record = decodePointer(
+					await this.app.vault.read(file),
+				).record;
 				sources.push({ pointerPath: file.path, record });
 			} catch {
 				// not a valid pointer; skip
@@ -494,7 +684,10 @@ export class AttachmentService {
 		const sources: string[] = [];
 		const resolved = this.app.metadataCache.resolvedLinks;
 		for (const source of Object.keys(resolved)) {
-			if (source.endsWith('.md') && targetPath in (resolved[source] ?? {})) {
+			if (
+				source.endsWith('.md') &&
+				targetPath in (resolved[source] ?? {})
+			) {
 				sources.push(source);
 			}
 		}
@@ -504,7 +697,11 @@ export class AttachmentService {
 	// Read the given notes, rewrite the embeds in the requested direction, and write
 	// back only those that changed. Best-effort: a failure is logged by the caller's
 	// guard and never undoes a completed offload/restore.
-	private async rewriteEmbeds(attachmentName: string, sourcePaths: string[], direction: RewriteDirection): Promise<number> {
+	private async rewriteEmbeds(
+		attachmentName: string,
+		sourcePaths: string[],
+		direction: RewriteDirection,
+	): Promise<number> {
 		if (sourcePaths.length === 0) {
 			return 0;
 		}
@@ -515,7 +712,11 @@ export class AttachmentService {
 				notes.push({ path, content: await this.app.vault.read(file) });
 			}
 		}
-		const { rewrites, embedsRewritten } = rewriteEmbedsInNotes(notes, attachmentName, direction);
+		const { rewrites, embedsRewritten } = rewriteEmbedsInNotes(
+			notes,
+			attachmentName,
+			direction,
+		);
 		for (const rewrite of rewrites) {
 			const file = this.app.vault.getAbstractFileByPath(rewrite.path);
 			if (file instanceof TFile) {
@@ -536,7 +737,10 @@ export class AttachmentService {
 		if (!(await this.app.vault.adapter.exists(dir))) {
 			await this.app.vault.adapter.mkdir(dir);
 		}
-		await this.app.vault.adapter.write(`${dir}/${journal.batchId}.json`, serializeJournal(journal));
+		await this.app.vault.adapter.write(
+			`${dir}/${journal.batchId}.json`,
+			serializeJournal(journal),
+		);
 	}
 
 	private async deleteJournal(batchId: string): Promise<void> {
@@ -556,7 +760,9 @@ export class AttachmentService {
 			if (!path.endsWith('.json')) {
 				continue;
 			}
-			const parsed = parseJournal(await this.app.vault.adapter.read(path));
+			const parsed = parseJournal(
+				await this.app.vault.adapter.read(path),
+			);
 			if (parsed.ok) {
 				journals.push(parsed.journal);
 			} else {
@@ -572,7 +778,10 @@ export class AttachmentService {
 	// test. The host header is dropped (the client sets it from the URL).
 	private multipartTransport(): MultipartTransport {
 		const config = this.getConfig();
-		const send = async (method: 'GET' | 'DELETE', url: string): Promise<{ status: number; text: string }> => {
+		const send = async (
+			method: 'GET' | 'DELETE',
+			url: string,
+		): Promise<{ status: number; text: string }> => {
 			const creds = this.credentials.getCredentials();
 			if (creds === null) {
 				throw new Error('credentials are not configured');
@@ -587,13 +796,24 @@ export class AttachmentService {
 			});
 			const headers = { ...signed.headers };
 			delete headers.host;
-			const response = await requestUrl({ url: signed.url, method, headers, throw: false });
+			const response = await requestUrl({
+				url: signed.url,
+				method,
+				headers,
+				throw: false,
+			});
 			return { status: response.status, text: response.text };
 		};
-		const s3Config = { endpoint: config.endpoint, region: config.region, bucket: config.bucket, addressingStyle: config.addressingStyle };
+		const s3Config = {
+			endpoint: config.endpoint,
+			region: config.region,
+			bucket: config.bucket,
+			addressingStyle: config.addressingStyle,
+		};
 		return {
 			list: () => send('GET', buildListUploadsUrl(s3Config)),
-			abort: (key, uploadId) => send('DELETE', buildAbortUploadUrl(s3Config, key, uploadId)),
+			abort: (key, uploadId) =>
+				send('DELETE', buildAbortUploadUrl(s3Config, key, uploadId)),
 		};
 	}
 
@@ -604,7 +824,11 @@ export class AttachmentService {
 			bucket: config.bucket,
 			addressingStyle: config.addressingStyle,
 		};
-		return new S3Backend({ config: s3Config, getCredentials: () => this.credentials.getCredentials(), transport: requestUrlTransport });
+		return new S3Backend({
+			config: s3Config,
+			getCredentials: () => this.credentials.getCredentials(),
+			transport: requestUrlTransport,
+		});
 	}
 
 	// The offload destinations for the active storage mode, in read-preference order
@@ -613,7 +837,12 @@ export class AttachmentService {
 	private offloadTargets(config: AttachmentServiceConfig): OffloadTarget[] {
 		const s3Target: OffloadTarget = {
 			backend: this.backend(config),
-			toRef: (key) => ({ type: 's3', bucket: config.bucket, key, keyKind: 'hash' }),
+			toRef: (key) => ({
+				type: 's3',
+				bucket: config.bucket,
+				key,
+				keyKind: 'hash',
+			}),
 		};
 		if (config.storageMode === 's3-only') {
 			return [s3Target];
@@ -625,13 +854,17 @@ export class AttachmentService {
 			// configured root on any machine.
 			toRef: (key) => ({ type: 'local', path: key }),
 		};
-		return config.storageMode === 'local-only' ? [localTarget] : [localTarget, s3Target];
+		return config.storageMode === 'local-only'
+			? [localTarget]
+			: [localTarget, s3Target];
 	}
 
 	private localBackend(config: AttachmentServiceConfig): LocalBackend {
 		const root = resolveLocalRoot(config.localRoot);
 		if (root.length === 0) {
-			throw new Error('local storage mode needs a local root path (set it in settings)');
+			throw new Error(
+				'local storage mode needs a local root path (set it in settings)',
+			);
 		}
 		return new LocalBackend(root);
 	}
@@ -722,14 +955,25 @@ export class AttachmentService {
 	// not collide in the temp dir. Reuses an already-downloaded copy whose size
 	// matches: reopening then never re-downloads and never clobbers a file the
 	// external app may still hold open (a Windows write failure).
-	async downloadForOpen(record: PointerRecord, only?: BackendType): Promise<string | null> {
+	async downloadForOpen(
+		record: PointerRecord,
+		only?: BackendType,
+	): Promise<string | null> {
 		const tempBackend = new LocalBackend(osTempDir());
 		const cacheKey = `${OPEN_CACHE_PREFIX}/${record.id}/${record.originalName}`;
-		const cached = await this.reusableCachedOpen(tempBackend, cacheKey, record);
+		const cached = await this.reusableCachedOpen(
+			tempBackend,
+			cacheKey,
+			record,
+		);
 		if (cached !== null) {
 			return cached;
 		}
-		const fetched = await this.fetchFromBackends(record, this.getConfig(), only);
+		const fetched = await this.fetchFromBackends(
+			record,
+			this.getConfig(),
+			only,
+		);
 		if (!fetched.ok) {
 			throw new Error(fetched.error);
 		}
@@ -743,10 +987,16 @@ export class AttachmentService {
 	// a needless re-download and clobbering a file the external app may still hold
 	// open, without ever serving bytes that were modified in place. Any mismatch or
 	// read error returns null so the caller re-downloads.
-	private async reusableCachedOpen(tempBackend: LocalBackend, cacheKey: string, record: PointerRecord): Promise<string | null> {
+	private async reusableCachedOpen(
+		tempBackend: LocalBackend,
+		cacheKey: string,
+		record: PointerRecord,
+	): Promise<string | null> {
 		try {
 			if (record.hash !== null) {
-				const bytes = new Uint8Array(await (await tempBackend.get(cacheKey)).arrayBuffer());
+				const bytes = new Uint8Array(
+					await (await tempBackend.get(cacheKey)).arrayBuffer(),
+				);
 				if ((await sha256Hex(bytes)) === record.hash) {
 					return tempBackend.displayKey(cacheKey);
 				}
@@ -777,7 +1027,9 @@ export class AttachmentService {
 	async findRecordById(id: string): Promise<PointerRecord | null> {
 		for (const file of this.app.vault.getMarkdownFiles()) {
 			try {
-				const record = decodePointer(await this.app.vault.read(file)).record;
+				const record = decodePointer(
+					await this.app.vault.read(file),
+				).record;
 				if (record.id === id) {
 					return record;
 				}
@@ -789,7 +1041,10 @@ export class AttachmentService {
 	}
 
 	// Resolve one pointer BackendRef to the StorageBackend and key that read it.
-	private backendForRef(ref: BackendRef, config: AttachmentServiceConfig): { backend: StorageBackend; key: string } {
+	private backendForRef(
+		ref: BackendRef,
+		config: AttachmentServiceConfig,
+	): { backend: StorageBackend; key: string } {
 		if (ref.type === 's3') {
 			return { backend: this.backend(config), key: ref.key };
 		}
@@ -807,24 +1062,36 @@ export class AttachmentService {
 		only?: BackendType,
 	): Promise<{ ok: true; bytes: Uint8Array } | { ok: false; error: string }> {
 		const reasons: string[] = [];
-		const candidates = only === undefined ? record.backends : record.backends.filter((ref) => ref.type === only);
+		const candidates =
+			only === undefined
+				? record.backends
+				: record.backends.filter((ref) => ref.type === only);
 		if (candidates.length === 0) {
 			return { ok: false, error: `this pointer has no ${only} backend` };
 		}
 		for (const ref of candidates) {
 			try {
 				const { backend, key } = this.backendForRef(ref, config);
-				const bytes = new Uint8Array(await (await backend.get(key)).arrayBuffer());
+				const bytes = new Uint8Array(
+					await (await backend.get(key)).arrayBuffer(),
+				);
 				if (record.hash !== null) {
 					if ((await sha256Hex(bytes)) !== record.hash) {
-						reasons.push(`${ref.type}: bytes do not match the recorded hash`);
+						reasons.push(
+							`${ref.type}: bytes do not match the recorded hash`,
+						);
 						continue;
 					}
-				} else if (record.byteSize > 0 && bytes.length !== record.byteSize) {
+				} else if (
+					record.byteSize > 0 &&
+					bytes.length !== record.byteSize
+				) {
 					// No content hash (an adopted/external object): fall back on a size
 					// mismatch so a cloud-only placeholder or a truncated copy is not
 					// served as if it were the file, and a good backup is still tried.
-					reasons.push(`${ref.type}: size ${bytes.length} does not match the recorded ${record.byteSize}`);
+					reasons.push(
+						`${ref.type}: size ${bytes.length} does not match the recorded ${record.byteSize}`,
+					);
 					continue;
 				}
 				return { ok: true, bytes };
@@ -832,7 +1099,10 @@ export class AttachmentService {
 				reasons.push(`${ref.type}: ${describe(error)}`);
 			}
 		}
-		return { ok: false, error: `no backend could return the file (${reasons.join('; ')})` };
+		return {
+			ok: false,
+			error: `no backend could return the file (${reasons.join('; ')})`,
+		};
 	}
 
 	// On-demand integrity check (spec section 7): for every pointer, existence-check
@@ -860,7 +1130,12 @@ export class AttachmentService {
 				}
 			}
 			if (broken.length > 0) {
-				findings.push({ pointerPath: file.path, name: record.originalName, broken, totalBackends: record.backends.length });
+				findings.push({
+					pointerPath: file.path,
+					name: record.originalName,
+					broken,
+					totalBackends: record.backends.length,
+				});
 			}
 		}
 		return findings;
@@ -892,19 +1167,28 @@ export class AttachmentService {
 			}
 			const record = decoded.record;
 			const source = record.backends[0];
-			if (record.backends.some((backend) => backend.type === target) || source === undefined) {
+			if (
+				record.backends.some((backend) => backend.type === target) ||
+				source === undefined
+			) {
 				result.skipped++;
 				continue;
 			}
 			try {
-				const { backend: srcBackend, key: sharedKey } = this.backendForRef(source, config);
-				const bytes = new Uint8Array(await (await srcBackend.get(sharedKey)).arrayBuffer());
+				const { backend: srcBackend, key: sharedKey } =
+					this.backendForRef(source, config);
+				const bytes = new Uint8Array(
+					await (await srcBackend.get(sharedKey)).arrayBuffer(),
+				);
 				if (record.hash !== null) {
 					if ((await sha256Hex(bytes)) !== record.hash) {
 						result.failed++; // source drifted - do not mirror bad bytes
 						continue;
 					}
-				} else if (record.byteSize > 0 && bytes.length !== record.byteSize) {
+				} else if (
+					record.byteSize > 0 &&
+					bytes.length !== record.byteSize
+				) {
 					// No content hash (adopted/external): a size mismatch means the source
 					// is a placeholder or truncated, so do not propagate it to a new mirror.
 					result.failed++;
@@ -912,11 +1196,29 @@ export class AttachmentService {
 				}
 				// The object key is shared across backends (one layout), so the mirror
 				// reuses the source's key/path.
-				const newRef: BackendRef = target === 'local' ? { type: 'local', path: sharedKey } : { type: 's3', bucket: config.bucket, key: sharedKey, keyKind: 'hash' };
-				const { backend: dstBackend, key: dstKey } = this.backendForRef(newRef, config);
+				const newRef: BackendRef =
+					target === 'local'
+						? { type: 'local', path: sharedKey }
+						: {
+								type: 's3',
+								bucket: config.bucket,
+								key: sharedKey,
+								keyKind: 'hash',
+							};
+				const { backend: dstBackend, key: dstKey } = this.backendForRef(
+					newRef,
+					config,
+				);
 				const checksumBase64 = await sha256Base64(bytes);
-				await dstBackend.put(dstKey, bytes, bytes.length, { checksumSha256: checksumBase64, contentType: record.contentType });
-				const outcome = await ladderVerifier(dstBackend, dstKey, { hash: record.hash ?? '', checksumBase64, size: bytes.length });
+				await dstBackend.put(dstKey, bytes, bytes.length, {
+					checksumSha256: checksumBase64,
+					contentType: record.contentType,
+				});
+				const outcome = await ladderVerifier(dstBackend, dstKey, {
+					hash: record.hash ?? '',
+					checksumBase64,
+					size: bytes.length,
+				});
 				if (!outcome.ok) {
 					// The mirror could not be verified; roll it back and count a failure so
 					// the pointer is never told it has a backend that is not proven.
@@ -928,8 +1230,18 @@ export class AttachmentService {
 					result.failed++;
 					continue;
 				}
-				const updated: PointerRecord = { ...record, backends: [...record.backends, newRef] };
-				await this.app.vault.modify(file, encodePointer(updated, decoded.body, decoded.extraFrontmatter));
+				const updated: PointerRecord = {
+					...record,
+					backends: [...record.backends, newRef],
+				};
+				await this.app.vault.modify(
+					file,
+					encodePointer(
+						updated,
+						decoded.body,
+						decoded.extraFrontmatter,
+					),
+				);
 				result.added++;
 			} catch {
 				result.failed++;
@@ -961,7 +1273,10 @@ export class AttachmentService {
 			return;
 		}
 		const dir = path.slice(0, slash);
-		if (dir.length > 0 && this.app.vault.getAbstractFileByPath(dir) === null) {
+		if (
+			dir.length > 0 &&
+			this.app.vault.getAbstractFileByPath(dir) === null
+		) {
 			try {
 				await this.app.vault.createFolder(dir);
 			} catch {

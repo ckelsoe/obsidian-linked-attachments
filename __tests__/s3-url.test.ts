@@ -1,4 +1,14 @@
-import { buildListUrl, classifyListResult, objectUrl, buildObjectListUrl, parseListedKeys, parseXmlTag, parseListContents, parseCommonPrefixes, describeNetworkFailure } from '../s3-url';
+import {
+	buildListUrl,
+	classifyListResult,
+	objectUrl,
+	buildObjectListUrl,
+	parseListedKeys,
+	parseXmlTag,
+	parseListContents,
+	parseCommonPrefixes,
+	describeNetworkFailure,
+} from '../s3-url';
 
 describe('parseListContents', () => {
 	const xml =
@@ -11,7 +21,12 @@ describe('parseListContents', () => {
 	it('extracts key, size, and unescaped etag per object', () => {
 		const objects = parseListContents(xml);
 		expect(objects).toHaveLength(2);
-		expect(objects[0]).toEqual({ key: 'p/a.pdf', size: 1024, etag: '"abc123"', lastModified: '2026-06-16T12:00:00.000Z' });
+		expect(objects[0]).toEqual({
+			key: 'p/a.pdf',
+			size: 1024,
+			etag: '"abc123"',
+			lastModified: '2026-06-16T12:00:00.000Z',
+		});
 		expect(objects[1]?.size).toBe(2048);
 	});
 
@@ -20,29 +35,72 @@ describe('parseListContents', () => {
 	});
 
 	it('returns an empty array for a listing with no contents', () => {
-		expect(parseListContents('<ListBucketResult></ListBucketResult>')).toEqual([]);
+		expect(
+			parseListContents('<ListBucketResult></ListBucketResult>'),
+		).toEqual([]);
 	});
 });
 
 describe('objectUrl', () => {
 	it('path style puts bucket and key in the path', () => {
-		expect(objectUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }, 'a/b/c.txt'))
-			.toBe('https://s3.us-east-1.amazonaws.com/b/a/b/c.txt');
+		expect(
+			objectUrl(
+				{
+					endpoint: 'https://s3.us-east-1.amazonaws.com',
+					region: 'us-east-1',
+					bucket: 'b',
+					addressingStyle: 'path',
+				},
+				'a/b/c.txt',
+			),
+		).toBe('https://s3.us-east-1.amazonaws.com/b/a/b/c.txt');
 	});
 	it('virtual-hosted puts bucket in the host and key in the path', () => {
-		expect(objectUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'virtual-hosted' }, 'k.txt'))
-			.toBe('https://b.s3.us-east-1.amazonaws.com/k.txt');
+		expect(
+			objectUrl(
+				{
+					endpoint: 'https://s3.us-east-1.amazonaws.com',
+					region: 'us-east-1',
+					bucket: 'b',
+					addressingStyle: 'virtual-hosted',
+				},
+				'k.txt',
+			),
+		).toBe('https://b.s3.us-east-1.amazonaws.com/k.txt');
 	});
 	it('percent-encodes spaces and unicode once per segment, preserving slashes', () => {
-		expect(objectUrl({ endpoint: 'https://s3.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }, 'epub-test/Ancient Book café.epub'))
-			.toBe('https://s3.amazonaws.com/b/epub-test/Ancient%20Book%20caf%C3%A9.epub');
+		expect(
+			objectUrl(
+				{
+					endpoint: 'https://s3.amazonaws.com',
+					region: 'us-east-1',
+					bucket: 'b',
+					addressingStyle: 'path',
+				},
+				'epub-test/Ancient Book café.epub',
+			),
+		).toBe(
+			'https://s3.amazonaws.com/b/epub-test/Ancient%20Book%20caf%C3%A9.epub',
+		);
 	});
 });
 
 describe('buildObjectListUrl', () => {
 	it('includes prefix, max-keys, and continuation token', () => {
-		const url = buildObjectListUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }, 'pre/fix/', 1, 'tok123');
-		expect(url.startsWith('https://s3.us-east-1.amazonaws.com/b?')).toBe(true);
+		const url = buildObjectListUrl(
+			{
+				endpoint: 'https://s3.us-east-1.amazonaws.com',
+				region: 'us-east-1',
+				bucket: 'b',
+				addressingStyle: 'path',
+			},
+			'pre/fix/',
+			1,
+			'tok123',
+		);
+		expect(url.startsWith('https://s3.us-east-1.amazonaws.com/b?')).toBe(
+			true,
+		);
 		expect(url).toContain('list-type=2');
 		expect(url).toContain('max-keys=1');
 		expect(url).toContain('prefix=pre%2Ffix%2F');
@@ -69,26 +127,46 @@ describe('ListObjectsV2 XML parsing', () => {
 describe('buildListUrl', () => {
 	it('path style puts the bucket in the path', () => {
 		expect(
-			buildListUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 's3-dev-test', addressingStyle: 'path' }),
-		).toBe('https://s3.us-east-1.amazonaws.com/s3-dev-test?list-type=2&max-keys=1');
+			buildListUrl({
+				endpoint: 'https://s3.us-east-1.amazonaws.com',
+				region: 'us-east-1',
+				bucket: 's3-dev-test',
+				addressingStyle: 'path',
+			}),
+		).toBe(
+			'https://s3.us-east-1.amazonaws.com/s3-dev-test?list-type=2&max-keys=1',
+		);
 	});
 
 	it('virtual-hosted style puts the bucket in the host', () => {
 		expect(
-			buildListUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com', region: 'us-east-1', bucket: 's3-dev-test', addressingStyle: 'virtual-hosted' }),
-		).toBe('https://s3-dev-test.s3.us-east-1.amazonaws.com/?list-type=2&max-keys=1');
+			buildListUrl({
+				endpoint: 'https://s3.us-east-1.amazonaws.com',
+				region: 'us-east-1',
+				bucket: 's3-dev-test',
+				addressingStyle: 'virtual-hosted',
+			}),
+		).toBe(
+			'https://s3-dev-test.s3.us-east-1.amazonaws.com/?list-type=2&max-keys=1',
+		);
 	});
 
 	it('trims a trailing slash on the endpoint', () => {
 		expect(
-			buildListUrl({ endpoint: 'https://s3.us-east-1.amazonaws.com/', region: 'us-east-1', bucket: 'b', addressingStyle: 'path' }),
+			buildListUrl({
+				endpoint: 'https://s3.us-east-1.amazonaws.com/',
+				region: 'us-east-1',
+				bucket: 'b',
+				addressingStyle: 'path',
+			}),
 		).toBe('https://s3.us-east-1.amazonaws.com/b?list-type=2&max-keys=1');
 	});
 });
 
 describe('classifyListResult', () => {
 	it('treats 200 as success and counts keys on the first page', () => {
-		const body = '<ListBucketResult><Contents><Key>a.pdf</Key></Contents></ListBucketResult>';
+		const body =
+			'<ListBucketResult><Contents><Key>a.pdf</Key></Contents></ListBucketResult>';
 		const result = classifyListResult(200, body, 's3-dev-test');
 		expect(result.ok).toBe(true);
 		expect(result.detail).toContain('reachable');
@@ -104,7 +182,11 @@ describe('classifyListResult', () => {
 	});
 
 	it('maps NoSuchBucket to a bucket hint', () => {
-		const result = classifyListResult(404, '<Error><Code>NoSuchBucket</Code></Error>', 'missing');
+		const result = classifyListResult(
+			404,
+			'<Error><Code>NoSuchBucket</Code></Error>',
+			'missing',
+		);
 		expect(result.ok).toBe(false);
 		expect(result.detail).toContain('no bucket by that name');
 	});
@@ -114,7 +196,11 @@ describe('classifyListResult', () => {
 	// Without naming it, the user sees a generic auth failure and re-checks keys
 	// that are actually fine; the real fix is the device clock.
 	it('maps RequestTimeTooSkewed to a device-clock hint', () => {
-		const result = classifyListResult(403, '<Error><Code>RequestTimeTooSkewed</Code></Error>', 's3-dev-test');
+		const result = classifyListResult(
+			403,
+			'<Error><Code>RequestTimeTooSkewed</Code></Error>',
+			's3-dev-test',
+		);
 		expect(result.ok).toBe(false);
 		expect(result.detail).toContain('RequestTimeTooSkewed');
 		expect(result.detail).toContain('clock');

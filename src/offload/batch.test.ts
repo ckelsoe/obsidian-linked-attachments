@@ -25,9 +25,16 @@ describe('runBatch', () => {
 		const progress = await runBatch<string, string>({
 			items: ['a', 'bad', 'c'],
 			idOf: (x) => x,
-			run: (x) => (x === 'bad' ? Promise.resolve({ ok: false, error: 'nope' }) : Promise.resolve({ ok: true, value: x })),
+			run: (x) =>
+				x === 'bad'
+					? Promise.resolve({ ok: false, error: 'nope' })
+					: Promise.resolve({ ok: true, value: x }),
 		});
-		expect(progress.items.map((i) => i.status)).toEqual(['done', 'failed', 'done']);
+		expect(progress.items.map((i) => i.status)).toEqual([
+			'done',
+			'failed',
+			'done',
+		]);
 		expect(progress.items[1]?.error).toBe('nope');
 		expect(progress.completed).toBe(3);
 	});
@@ -48,13 +55,20 @@ describe('runBatch', () => {
 		await runBatch<string, string>({
 			items: ['first', 'second', 'third'],
 			idOf: (x) => x,
-			run: (x) => { seen.push(x); return Promise.resolve({ ok: true, value: x }); },
+			run: (x) => {
+				seen.push(x);
+				return Promise.resolve({ ok: true, value: x });
+			},
 		});
 		expect(seen).toEqual(['first', 'second', 'third']);
 	});
 
 	it('AC5 test_empty_batch :: no items is a clean no-op', async () => {
-		const progress = await runBatch<string, string>({ items: [], idOf: (x) => x, run: () => Promise.resolve({ ok: true }) });
+		const progress = await runBatch<string, string>({
+			items: [],
+			idOf: (x) => x,
+			run: () => Promise.resolve({ ok: true }),
+		});
 		expect(progress.total).toBe(0);
 		expect(progress.completed).toBe(0);
 		expect(progress.items).toEqual([]);
@@ -64,25 +78,45 @@ describe('runBatch', () => {
 		const progress = await runBatch<string, string>({
 			items: ['a', 'boom', 'c'],
 			idOf: (x) => x,
-			run: (x) => { if (x === 'boom') { throw new Error('kaboom'); } return Promise.resolve({ ok: true, value: x }); },
+			run: (x) => {
+				if (x === 'boom') {
+					throw new Error('kaboom');
+				}
+				return Promise.resolve({ ok: true, value: x });
+			},
 		});
-		expect(progress.items.map((i) => i.status)).toEqual(['done', 'failed', 'done']);
+		expect(progress.items.map((i) => i.status)).toEqual([
+			'done',
+			'failed',
+			'done',
+		]);
 		expect(progress.items[1]?.error).toContain('kaboom');
 	});
 
 	it('prop_every_item_terminal :: no item is left queued or running', async () => {
 		await fc.assert(
-			fc.asyncProperty(fc.array(fc.boolean(), { maxLength: 8 }), async (oks) => {
-				const items = oks.map((_, i) => `item-${i}`);
-				const progress = await runBatch<string, number>({
-					items,
-					idOf: (x) => x,
-					run: (_x, i) => (oks[i] ? Promise.resolve({ ok: true, value: i }) : Promise.resolve({ ok: false, error: 'x' })),
-				});
-				const terminal = (s: BatchItem<number>['status']): boolean => s === 'done' || s === 'failed' || s === 'skipped';
-				expect(progress.items.every((it) => terminal(it.status))).toBe(true);
-				expect(progress.completed).toBe(items.length);
-			}),
+			fc.asyncProperty(
+				fc.array(fc.boolean(), { maxLength: 8 }),
+				async (oks) => {
+					const items = oks.map((_, i) => `item-${i}`);
+					const progress = await runBatch<string, number>({
+						items,
+						idOf: (x) => x,
+						run: (_x, i) =>
+							oks[i]
+								? Promise.resolve({ ok: true, value: i })
+								: Promise.resolve({ ok: false, error: 'x' }),
+					});
+					const terminal = (
+						s: BatchItem<number>['status'],
+					): boolean =>
+						s === 'done' || s === 'failed' || s === 'skipped';
+					expect(
+						progress.items.every((it) => terminal(it.status)),
+					).toBe(true);
+					expect(progress.completed).toBe(items.length);
+				},
+			),
 			{ numRuns: 30 },
 		);
 	});

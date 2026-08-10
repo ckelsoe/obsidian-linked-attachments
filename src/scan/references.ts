@@ -36,8 +36,10 @@ export interface GcAnalysis {
 }
 
 const WIKI_LINK = /(!?)\[\[([^[\]\n]+?)\]\]/g;
-const MARKDOWN_LINK = /!?\[[^\]]*\]\(([^)]+)\)/g;
-const FENCED_CODE = /```[^\n]*\n[\s\S]*?```/g;
+// Link text excludes both brackets ([^\][], not [^\]]). Excluding the opening "["
+// keeps the class from matching a delimiter, which is what makes the match
+// re-anchor super-linearly on a run of "[". Group 1 is still the URL.
+const MARKDOWN_LINK = /!?\[[^\][]*\]\(([^)]+)\)/g;
 const INLINE_CODE = /`[^`\n]+`/g;
 
 export function scanReferences(text: string): ReferenceMatch[] {
@@ -64,7 +66,10 @@ export function scanReferences(text: string): ReferenceMatch[] {
 
 // True when `target` (path-qualified or not) names the attachment in either the
 // basename form (file.ext) or the explicit pointer form (file.ext.md).
-export function referencesAttachment(target: string, attachmentName: string): boolean {
+export function referencesAttachment(
+	target: string,
+	attachmentName: string,
+): boolean {
 	const base = basenameOf(target);
 	return base === attachmentName || base === `${attachmentName}.md`;
 }
@@ -72,7 +77,10 @@ export function referencesAttachment(target: string, attachmentName: string): bo
 // Offload: rewrite every embed that references the attachment to the explicit
 // ![[...file.ext.md]] form, preserving the original path qualification, subpath,
 // and alias. Already-explicit embeds are left as-is.
-export function rewriteEmbedsToPointer(text: string, attachmentName: string): RewriteResult {
+export function rewriteEmbedsToPointer(
+	text: string,
+	attachmentName: string,
+): RewriteResult {
 	return rewriteMatchingEmbeds(text, attachmentName, (target) => {
 		if (basenameOf(target) === attachmentName) {
 			return `${target}.md`;
@@ -83,7 +91,10 @@ export function rewriteEmbedsToPointer(text: string, attachmentName: string): Re
 
 // Restore: rewrite every explicit ![[...file.ext.md]] embed back to the raw
 // attachment ![[...file.ext]].
-export function rewriteEmbedsToAttachment(text: string, attachmentName: string): RewriteResult {
+export function rewriteEmbedsToAttachment(
+	text: string,
+	attachmentName: string,
+): RewriteResult {
 	return rewriteMatchingEmbeds(text, attachmentName, (target) => {
 		if (basenameOf(target) === `${attachmentName}.md`) {
 			return target.slice(0, target.length - '.md'.length);
@@ -96,7 +107,9 @@ export function rewriteEmbedsToAttachment(text: string, attachmentName: string):
 // block if any markdown-style link to the raw attachment exists (a shape the wiki
 // rewriter does not manage, so deleting the object could break it).
 export function analyzeForGc(text: string, attachmentName: string): GcAnalysis {
-	const references = scanReferences(text).filter((r) => referencesAttachment(r.target, attachmentName));
+	const references = scanReferences(text).filter((r) =>
+		referencesAttachment(r.target, attachmentName),
+	);
 	const masked = codeRanges(text);
 	for (const match of text.matchAll(MARKDOWN_LINK)) {
 		if (inRanges(match.index, masked)) {
@@ -116,8 +129,14 @@ export function analyzeForGc(text: string, attachmentName: string): GcAnalysis {
 
 // --- internals --------------------------------------------------------------
 
-function rewriteMatchingEmbeds(text: string, attachmentName: string, remap: (target: string) => string): RewriteResult {
-	const targets = scanReferences(text).filter((r) => r.embed && referencesAttachment(r.target, attachmentName));
+function rewriteMatchingEmbeds(
+	text: string,
+	attachmentName: string,
+	remap: (target: string) => string,
+): RewriteResult {
+	const targets = scanReferences(text).filter(
+		(r) => r.embed && referencesAttachment(r.target, attachmentName),
+	);
 	let result = text;
 	let rewritten = 0;
 	// Replace from the end so earlier indices stay valid.
@@ -131,13 +150,18 @@ function rewriteMatchingEmbeds(text: string, attachmentName: string, remap: (tar
 			continue;
 		}
 		const replacement = buildEmbed(newTarget, ref.subpath, ref.alias);
-		result = result.slice(0, ref.start) + replacement + result.slice(ref.end);
+		result =
+			result.slice(0, ref.start) + replacement + result.slice(ref.end);
 		rewritten++;
 	}
 	return { text: result, rewritten };
 }
 
-function buildEmbed(target: string, subpath: string, alias: string | null): string {
+function buildEmbed(
+	target: string,
+	subpath: string,
+	alias: string | null,
+): string {
 	const aliasPart = alias !== null ? `|${alias}` : '';
 	return `![[${target}${subpath}${aliasPart}]]`;
 }
@@ -184,11 +208,37 @@ function stripUrl(url: string): string {
 
 type Range = [number, number];
 
-function codeRanges(text: string): Range[] {
+// The fenced-code ranges, reproducing the old /```[^\n]*\n[\s\S]*?```/g exactly but
+// with indexOf scans instead of a regex. A regex that lets content contain "`" while
+// the closing fence is "```" is super-linear (the content and the terminator can
+// both start on a backtick), so it is done as a linear scan: for each opening ```,
+// take the rest of that line up to the first newline, then close at the first ```
+// after it (lazy). An opening with no following newline, or no later ```, matches
+// nothing, and no later opening could either (its search window is a subset).
+function fencedRanges(text: string): Range[] {
 	const ranges: Range[] = [];
-	for (const match of text.matchAll(FENCED_CODE)) {
-		ranges.push([match.index, match.index + match[0].length]);
+	let pos = 0;
+	while (pos < text.length) {
+		const open = text.indexOf('```', pos);
+		if (open < 0) {
+			break;
+		}
+		const newline = text.indexOf('\n', open + 3);
+		if (newline < 0) {
+			break;
+		}
+		const close = text.indexOf('```', newline + 1);
+		if (close < 0) {
+			break;
+		}
+		ranges.push([open, close + 3]);
+		pos = close + 3;
 	}
+	return ranges;
+}
+
+function codeRanges(text: string): Range[] {
+	const ranges: Range[] = fencedRanges(text);
 	for (const match of text.matchAll(INLINE_CODE)) {
 		if (!inRanges(match.index, ranges)) {
 			ranges.push([match.index, match.index + match[0].length]);

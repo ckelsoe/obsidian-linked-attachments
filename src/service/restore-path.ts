@@ -4,7 +4,10 @@
 // restore - never the path recorded at offload time, which goes stale on a rename or
 // a move synced from another device. Using the recorded original name also keeps the
 // correct filename even if the pointer note's own basename was changed.
-export function restoreTargetPath(pointerPath: string, originalName: string): string {
+export function restoreTargetPath(
+	pointerPath: string,
+	originalName: string,
+): string {
 	const slash = pointerPath.lastIndexOf('/');
 	const dir = slash >= 0 ? pointerPath.slice(0, slash) : '';
 	return dir.length > 0 ? `${dir}/${originalName}` : originalName;

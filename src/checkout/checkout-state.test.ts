@@ -30,7 +30,8 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 		originalExt: 'xlsx',
 		originalPath: 'finance/budget.xlsx',
 		byteSize: 2048,
-		contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		contentType:
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		copyState: 'offloaded',
 		verificationTier: 'content',
 		remoteChecksum: null,
@@ -44,7 +45,10 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 	};
 }
 
-function pointerText(rec: PointerRecord, body = 'My notes about the budget.\n'): string {
+function pointerText(
+	rec: PointerRecord,
+	body = 'My notes about the budget.\n',
+): string {
 	return encodePointer(rec, body);
 }
 
@@ -52,16 +56,25 @@ describe('checkout markers (la-p6-30)', () => {
 	// AC1 :: withCheckoutMarkers flips copyState to checked-out and records host+time
 	// in frontmatter (so a synced pointer carries the advisory lock).
 	it('test_sets_checkout_markers', () => {
-		const text = withCheckoutMarkers(pointerText(record()), { host: 'charles-mbp', at: '2026-06-18T10:00:00.000Z' });
+		const text = withCheckoutMarkers(pointerText(record()), {
+			host: 'charles-mbp',
+			at: '2026-06-18T10:00:00.000Z',
+		});
 		const decoded = decodePointer(text);
 		expect(decoded.record.copyState).toBe(CHECKED_OUT_STATE);
 		const info = readCheckout(decoded);
-		expect(info).toEqual({ host: 'charles-mbp', at: '2026-06-18T10:00:00.000Z' });
+		expect(info).toEqual({
+			host: 'charles-mbp',
+			at: '2026-06-18T10:00:00.000Z',
+		});
 	});
 
 	// AC2 :: clearCheckoutMarkers returns to offloaded and removes the markers.
 	it('test_clears_checkout_markers', () => {
-		const checkedOut = withCheckoutMarkers(pointerText(record()), { host: 'h', at: '2026-06-18T10:00:00.000Z' });
+		const checkedOut = withCheckoutMarkers(pointerText(record()), {
+			host: 'h',
+			at: '2026-06-18T10:00:00.000Z',
+		});
 		const cleared = clearCheckoutMarkers(checkedOut);
 		const decoded = decodePointer(cleared);
 		expect(decoded.record.copyState).toBe('offloaded');
@@ -71,8 +84,16 @@ describe('checkout markers (la-p6-30)', () => {
 	// AC3 :: the user body and identity survive setting and clearing markers (the
 	// pointer stays the lineage anchor; section 4a).
 	it('test_body_and_identity_preserved', () => {
-		const original = pointerText(record(), 'Important user notes.\nLine two.\n');
-		const roundTripped = clearCheckoutMarkers(withCheckoutMarkers(original, { host: 'h', at: '2026-06-18T10:00:00.000Z' }));
+		const original = pointerText(
+			record(),
+			'Important user notes.\nLine two.\n',
+		);
+		const roundTripped = clearCheckoutMarkers(
+			withCheckoutMarkers(original, {
+				host: 'h',
+				at: '2026-06-18T10:00:00.000Z',
+			}),
+		);
 		const decoded = decodePointer(roundTripped);
 		expect(decoded.body).toBe('Important user notes.\nLine two.\n');
 		expect(decoded.record.id).toBe('ptr-1');
@@ -121,6 +142,8 @@ describe('dirty state (la-p6-30)', () => {
 	it('test_dirty_label_is_human', () => {
 		expect(dirtyLabel('up-to-date')).toMatch(/up to date/i);
 		expect(dirtyLabel('checked-out-clean')).toMatch(/checked out/i);
-		expect(dirtyLabel('checked-out-dirty')).toMatch(/not.*cloud|unsaved|edits/i);
+		expect(dirtyLabel('checked-out-dirty')).toMatch(
+			/not.*cloud|unsaved|edits/i,
+		);
 	});
 });

@@ -12,7 +12,9 @@ describe('default secret IDs', () => {
 	});
 
 	it('are distinct, so the two credentials never alias one secret', () => {
-		expect(DEFAULT_ACCESS_KEY_SECRET_ID).not.toBe(DEFAULT_SECRET_KEY_SECRET_ID);
+		expect(DEFAULT_ACCESS_KEY_SECRET_ID).not.toBe(
+			DEFAULT_SECRET_KEY_SECRET_ID,
+		);
 	});
 
 	it('carry the "la-" prefix to reduce collisions in the shared secret store', () => {
@@ -21,7 +23,11 @@ describe('default secret IDs', () => {
 	});
 
 	it('are wired into the default settings the plugin loads', () => {
-		expect(DEFAULT_SETTINGS.accessKeyIdSecretName).toBe(DEFAULT_ACCESS_KEY_SECRET_ID);
-		expect(DEFAULT_SETTINGS.secretAccessKeySecretName).toBe(DEFAULT_SECRET_KEY_SECRET_ID);
+		expect(DEFAULT_SETTINGS.accessKeyIdSecretName).toBe(
+			DEFAULT_ACCESS_KEY_SECRET_ID,
+		);
+		expect(DEFAULT_SETTINGS.secretAccessKeySecretName).toBe(
+			DEFAULT_SECRET_KEY_SECRET_ID,
+		);
 	});
 });

@@ -16,28 +16,46 @@ const row = (key: string, status: AdoptRow['status']): AdoptRow => ({
 	status,
 });
 
-const options = { bucket: 'b', newId: () => 'id', now: () => '2026-06-17T00:00:00.000Z' };
+const options = {
+	bucket: 'b',
+	newId: () => 'id',
+	now: () => '2026-06-17T00:00:00.000Z',
+};
 
 describe('planAdoption', () => {
 	it('AC1 test_builds_pointer_per_adoptable_row', () => {
-		const pointers = planAdoption([row('a.pdf', 'adoptable'), row('b.pdf', 'adoptable')], options);
+		const pointers = planAdoption(
+			[row('a.pdf', 'adoptable'), row('b.pdf', 'adoptable')],
+			options,
+		);
 		expect(pointers).toHaveLength(2);
-		expect(pointers.map((p) => p.pointerPath)).toEqual(['vault/a.pdf.md', 'vault/b.pdf.md']);
+		expect(pointers.map((p) => p.pointerPath)).toEqual([
+			'vault/a.pdf.md',
+			'vault/b.pdf.md',
+		]);
 	});
 
 	it('AC2 test_skips_non_adoptable :: collision and already-adopted never build', () => {
 		const pointers = planAdoption(
-			[row('a.pdf', 'adoptable'), row('b.pdf', 'collision'), row('c.pdf', 'already-adopted')],
+			[
+				row('a.pdf', 'adoptable'),
+				row('b.pdf', 'collision'),
+				row('c.pdf', 'already-adopted'),
+			],
 			options,
 		);
-		expect(pointers.map((p) => requireS3Backend(p.record).key)).toEqual(['a.pdf']);
+		expect(pointers.map((p) => requireS3Backend(p.record).key)).toEqual([
+			'a.pdf',
+		]);
 	});
 
 	it('AC3 test_built_pointers_are_asserted', () => {
 		const [pointer] = planAdoption([row('a.pdf', 'adoptable')], options);
 		expect(pointer?.record.verificationTier).toBe('asserted');
 		expect(pointer?.record.hash).toBeNull();
-		expect(pointer && requireS3Backend(pointer.record).keyKind).toBe('external');
+		expect(pointer && requireS3Backend(pointer.record).keyKind).toBe(
+			'external',
+		);
 	});
 
 	it('AC4 test_empty_is_empty', () => {
@@ -53,6 +71,11 @@ describe('summarizeRows', () => {
 			row('c', 'collision'),
 			row('d', 'already-adopted'),
 		];
-		expect(summarizeRows(rows)).toEqual({ total: 4, adoptable: 2, collision: 1, alreadyAdopted: 1 });
+		expect(summarizeRows(rows)).toEqual({
+			total: 4,
+			adoptable: 2,
+			collision: 1,
+			alreadyAdopted: 1,
+		});
 	});
 });

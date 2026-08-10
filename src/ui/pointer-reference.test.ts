@@ -53,11 +53,15 @@ describe('formatPointerReference', () => {
 
 	it('tells the mobile user how to act on it', () => {
 		// The actionable handle is the S3 key, which the user opens in their own S3 app.
-		expect(formatPointerReference(record()).toLowerCase()).toContain('s3 key');
+		expect(formatPointerReference(record()).toLowerCase()).toContain(
+			's3 key',
+		);
 	});
 
 	it('handles an adopted pointer with no content type or hash', () => {
-		const ref = formatPointerReference(record({ contentType: '', hash: null }));
+		const ref = formatPointerReference(
+			record({ contentType: '', hash: null }),
+		);
 		expect(ref).toContain('Cranfield.pdf');
 		expect(ref).toContain('my-bucket');
 	});

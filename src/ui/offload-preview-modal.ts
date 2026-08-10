@@ -31,7 +31,9 @@ export class OffloadPreviewModal extends Modal {
 		this.row(table, 'Pointer note', this.plan.pointerPath);
 
 		new Setting(contentEl)
-			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
 			.addButton((button) =>
 				button
 					.setButtonText('Offload')

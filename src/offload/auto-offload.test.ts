@@ -34,8 +34,15 @@ function config(overrides: Partial<AutoOffloadConfig> = {}): AutoOffloadConfig {
 	};
 }
 
-function candidate(overrides: Partial<AutoOffloadCandidate> = {}): AutoOffloadCandidate {
-	return { path: 'inbox/big.pdf', extension: 'pdf', size: 10 * MB, ...overrides };
+function candidate(
+	overrides: Partial<AutoOffloadCandidate> = {},
+): AutoOffloadCandidate {
+	return {
+		path: 'inbox/big.pdf',
+		extension: 'pdf',
+		size: 10 * MB,
+		...overrides,
+	};
 }
 
 describe('auto-offload trigger policy (la-p5-28)', () => {
@@ -50,7 +57,11 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 
 	// AC2 :: a small file is left alone (small files sync fine - spec section 4b).
 	it('test_rejects_small_file', () => {
-		const d = decideAutoOffload(candidate({ size: 1 * MB }), config(), true);
+		const d = decideAutoOffload(
+			candidate({ size: 1 * MB }),
+			config(),
+			true,
+		);
 		expect(d.qualifies).toBe(false);
 		if (!d.qualifies) {
 			expect(d.reason).toMatch(/size|threshold|small/i);
@@ -60,7 +71,11 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 	// AC3 :: a type with no rule is not auto-offloaded (actively-authored types are
 	// simply left out of the rule table).
 	it('test_rejects_unlisted_type', () => {
-		const d = decideAutoOffload(candidate({ path: 'note.txt', extension: 'txt' }), config(), true);
+		const d = decideAutoOffload(
+			candidate({ path: 'note.txt', extension: 'txt' }),
+			config(),
+			true,
+		);
 		expect(d.qualifies).toBe(false);
 		if (!d.qualifies) {
 			expect(d.reason).toMatch(/rule|listed/i);
@@ -69,7 +84,11 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 
 	// AC4 :: disabled never qualifies (off by default; the whole feature is opt-in).
 	it('test_disabled_never_qualifies', () => {
-		const d = decideAutoOffload(candidate(), config({ enabled: false }), true);
+		const d = decideAutoOffload(
+			candidate(),
+			config({ enabled: false }),
+			true,
+		);
 		expect(d.qualifies).toBe(false);
 	});
 
@@ -77,35 +96,56 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 	// it returns to the bucket only via the explicit check-in.
 	it('test_skips_checkout_working_copy', () => {
 		const d = decideAutoOffload(
-			candidate({ path: `${CHECKOUT_DIR_PREFIX}checkout/abc123/big.pdf` }),
+			candidate({
+				path: `${CHECKOUT_DIR_PREFIX}checkout/abc123/big.pdf`,
+			}),
 			config(),
 			true,
 		);
 		expect(d.qualifies).toBe(false);
 		if (!d.qualifies) {
-			expect(d.reason).toMatch(/checked|working copy|linked-attachments/i);
+			expect(d.reason).toMatch(
+				/checked|working copy|linked-attachments/i,
+			);
 		}
 	});
 
 	// AC6 :: a markdown note (including a pointer note) is never auto-offloaded.
 	it('test_skips_markdown', () => {
-		const d = decideAutoOffload(candidate({ path: 'big.pdf.md', extension: 'md' }), config(), true);
+		const d = decideAutoOffload(
+			candidate({ path: 'big.pdf.md', extension: 'md' }),
+			config(),
+			true,
+		);
 		expect(d.qualifies).toBe(false);
 	});
 
 	// AC7 :: the over-size threshold flows through from the matched rule; exactly at
 	// the threshold qualifies, one byte under is left alone.
 	it('test_size_threshold_boundary', () => {
-		const cfg = config({ rules: [{ extension: 'pdf', mode: 'over-size', thresholdMb: 1 }] });
-		expect(decideAutoOffload(candidate({ size: 1 * MB }), cfg, true).qualifies).toBe(true);
-		expect(decideAutoOffload(candidate({ size: 1 * MB - 1 }), cfg, true).qualifies).toBe(false);
+		const cfg = config({
+			rules: [{ extension: 'pdf', mode: 'over-size', thresholdMb: 1 }],
+		});
+		expect(
+			decideAutoOffload(candidate({ size: 1 * MB }), cfg, true).qualifies,
+		).toBe(true);
+		expect(
+			decideAutoOffload(candidate({ size: 1 * MB - 1 }), cfg, true)
+				.qualifies,
+		).toBe(false);
 	});
 
 	// AC7b :: an 'always' rule qualifies a tiny file (the new capability the old
 	// allowlist + global threshold could not express).
 	it('test_always_rule_qualifies_small_file', () => {
-		const cfg = config({ rules: [{ extension: 'epub', mode: 'always', thresholdMb: 0 }] });
-		const d = decideAutoOffload(candidate({ extension: 'epub', path: 'x.epub', size: 1 }), cfg, true);
+		const cfg = config({
+			rules: [{ extension: 'epub', mode: 'always', thresholdMb: 0 }],
+		});
+		const d = decideAutoOffload(
+			candidate({ extension: 'epub', path: 'x.epub', size: 1 }),
+			cfg,
+			true,
+		);
 		expect(d.qualifies).toBe(true);
 	});
 
@@ -121,7 +161,11 @@ describe('auto-offload trigger policy (la-p5-28)', () => {
 
 	// AC9 :: case-insensitive type match (an uppercase extension still qualifies).
 	it('test_type_match_case_insensitive', () => {
-		const d = decideAutoOffload(candidate({ extension: 'PDF' }), config(), true);
+		const d = decideAutoOffload(
+			candidate({ extension: 'PDF' }),
+			config(),
+			true,
+		);
 		expect(d.qualifies).toBe(true);
 	});
 });
@@ -135,10 +179,18 @@ describe('auto-offload property (la-p5-28)', () => {
 				fc.integer({ min: 2, max: 1000 }),
 				fc.constantFrom('pdf', 'epub', 'mp3', 'zip'),
 				(thresholdMb, ext) => {
-					const cfg = config({ rules: [{ extension: ext, mode: 'over-size', thresholdMb }] });
+					const cfg = config({
+						rules: [
+							{ extension: ext, mode: 'over-size', thresholdMb },
+						],
+					});
 					// One byte under the threshold: must never qualify.
 					const d = decideAutoOffload(
-						candidate({ extension: ext, path: `x.${ext}`, size: thresholdMb * MB - 1 }),
+						candidate({
+							extension: ext,
+							path: `x.${ext}`,
+							size: thresholdMb * MB - 1,
+						}),
 						cfg,
 						true,
 					);

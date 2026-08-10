@@ -15,7 +15,10 @@ import { requireS3Backend } from '../pointer/codec';
 // against MemoryBackend. The governing rule is surface/offer/flag, never
 // auto-destroy - a call-counting backend proves zero put/delete.
 
-function entry(key: string, overrides: Partial<ManifestEntry> = {}): ManifestEntry {
+function entry(
+	key: string,
+	overrides: Partial<ManifestEntry> = {},
+): ManifestEntry {
 	return {
 		key,
 		keyKind: 'hash',
@@ -31,7 +34,10 @@ function entry(key: string, overrides: Partial<ManifestEntry> = {}): ManifestEnt
 	};
 }
 
-function obj(key: string, overrides: Partial<BucketObjectInfo> = {}): BucketObjectInfo {
+function obj(
+	key: string,
+	overrides: Partial<BucketObjectInfo> = {},
+): BucketObjectInfo {
 	return { key, size: 100, etag: '"e"', ...overrides };
 }
 
@@ -42,7 +48,10 @@ interface Counts {
 	delete: number;
 }
 
-function counting(backend: StorageBackend): { backend: StorageBackend; counts: Counts } {
+function counting(backend: StorageBackend): {
+	backend: StorageBackend;
+	counts: Counts;
+} {
 	const counts: Counts = { list: 0, head: 0, put: 0, delete: 0 };
 	const wrapped: StorageBackend = {
 		capabilities: backend.capabilities,
@@ -68,7 +77,11 @@ function counting(backend: StorageBackend): { backend: StorageBackend; counts: C
 	return { backend: wrapped, counts };
 }
 
-const adoptOptions = { bucket: 's3-dev-test', newId: () => 'ID', now: () => '2026-06-16T12:00:00.000Z' };
+const adoptOptions = {
+	bucket: 's3-dev-test',
+	newId: () => 'ID',
+	now: () => '2026-06-16T12:00:00.000Z',
+};
 
 function outcomesByKey(findings: ReconcileFinding[]): Record<string, string> {
 	const out: Record<string, string> = {};
@@ -81,7 +94,10 @@ function outcomesByKey(findings: ReconcileFinding[]): Record<string, string> {
 describe('reconciliation scanner acceptance (la-p2-10)', () => {
 	// AC1 :: a pointer with a matching object is healthy, stamped with a tier.
 	it('test_healthy_match', () => {
-		const findings = reconcile([entry('k', { byteSize: 100 })], [obj('k', { size: 100 })]);
+		const findings = reconcile(
+			[entry('k', { byteSize: 100 })],
+			[obj('k', { size: 100 })],
+		);
 		expect(findings).toHaveLength(1);
 		expect(findings[0]?.outcome).toBe('healthy');
 		expect(findings[0]?.stampedTier).toBe('existence');
@@ -101,7 +117,10 @@ describe('reconciliation scanner acceptance (la-p2-10)', () => {
 
 	// AC4 :: a pointer + object whose sizes disagree is drift (flagged loudly).
 	it('test_drift_size_mismatch', () => {
-		const findings = reconcile([entry('k', { byteSize: 100 })], [obj('k', { size: 200 })]);
+		const findings = reconcile(
+			[entry('k', { byteSize: 100 })],
+			[obj('k', { size: 200 })],
+		);
 		expect(findings[0]?.outcome).toBe('drift');
 	});
 
@@ -123,7 +142,9 @@ describe('reconciliation scanner acceptance (la-p2-10)', () => {
 		expect(pointers).toHaveLength(1);
 		expect(pointers[0]?.pointerPath).toBe('docs/new.pdf.md');
 		expect(pointers[0]?.record.verificationTier).toBe('asserted');
-		expect(pointers[0] && requireS3Backend(pointers[0].record).key).toBe('docs/new.pdf');
+		expect(pointers[0] && requireS3Backend(pointers[0].record).key).toBe(
+			'docs/new.pdf',
+		);
 	});
 
 	// AC7 :: a full scan issues only LIST/HEAD - never a put or delete (surface,
@@ -132,7 +153,10 @@ describe('reconciliation scanner acceptance (la-p2-10)', () => {
 		const mem = new MemoryBackend();
 		await mem.seedObject('a/x.pdf', new TextEncoder().encode('hello'));
 		const { backend, counts } = counting(mem);
-		await scanReconcile(backend, [entry('a/x.pdf', { byteSize: 5 })], { prefix: 'a/', deep: true });
+		await scanReconcile(backend, [entry('a/x.pdf', { byteSize: 5 })], {
+			prefix: 'a/',
+			deep: true,
+		});
 		expect(counts.put).toBe(0);
 		expect(counts.delete).toBe(0);
 		expect(counts.list).toBeGreaterThan(0);
@@ -146,7 +170,11 @@ describe('reconciliation scanner acceptance (la-p2-10)', () => {
 				entry('broken'),
 				entry('drift', { byteSize: 100 }),
 			],
-			[obj('healthy', { size: 100 }), obj('drift', { size: 999 }), obj('unlinked', { size: 10 })],
+			[
+				obj('healthy', { size: 100 }),
+				obj('drift', { size: 999 }),
+				obj('unlinked', { size: 10 }),
+			],
 		);
 		expect(outcomesByKey(findings)).toEqual({
 			healthy: 'healthy',
@@ -161,8 +189,15 @@ describe('reconciliation scanner acceptance (la-p2-10)', () => {
 		const mem = new MemoryBackend();
 		await mem.seedObject('a/keep.pdf', new TextEncoder().encode('12345'));
 		await mem.seedObject('a/orphan.pdf', new TextEncoder().encode('99'));
-		const findings = await scanReconcile(mem, [entry('a/keep.pdf', { byteSize: 5 })], { prefix: 'a/' });
-		expect(outcomesByKey(findings)).toEqual({ 'a/keep.pdf': 'healthy', 'a/orphan.pdf': 'unlinked' });
+		const findings = await scanReconcile(
+			mem,
+			[entry('a/keep.pdf', { byteSize: 5 })],
+			{ prefix: 'a/' },
+		);
+		expect(outcomesByKey(findings)).toEqual({
+			'a/keep.pdf': 'healthy',
+			'a/orphan.pdf': 'unlinked',
+		});
 	});
 });
 
@@ -173,8 +208,12 @@ describe('reconciliation scanner property tests (la-p2-10)', () => {
 	it('prop_every_item_classified', () => {
 		fc.assert(
 			fc.property(
-				fc.uniqueArray(fc.stringMatching(/^[a-z]{1,6}$/), { maxLength: 12 }),
-				fc.uniqueArray(fc.stringMatching(/^[a-z]{1,6}$/), { maxLength: 12 }),
+				fc.uniqueArray(fc.stringMatching(/^[a-z]{1,6}$/), {
+					maxLength: 12,
+				}),
+				fc.uniqueArray(fc.stringMatching(/^[a-z]{1,6}$/), {
+					maxLength: 12,
+				}),
 				(pointerKeys, objectKeys) => {
 					const findings = reconcile(
 						pointerKeys.map((k) => entry(k)),
@@ -184,17 +223,28 @@ describe('reconciliation scanner property tests (la-p2-10)', () => {
 					const objectSet = new Set(objectKeys);
 					// every pointer key is present
 					for (const k of pointerKeys) {
-						expect(findings.some((f) => f.key === k && f.pointer !== null)).toBe(true);
+						expect(
+							findings.some(
+								(f) => f.key === k && f.pointer !== null,
+							),
+						).toBe(true);
 					}
 					// every object-only key is an unlinked finding
 					for (const k of objectKeys) {
 						if (!pointerSet.has(k)) {
-							expect(findings.some((f) => f.key === k && f.outcome === 'unlinked')).toBe(true);
+							expect(
+								findings.some(
+									(f) =>
+										f.key === k && f.outcome === 'unlinked',
+								),
+							).toBe(true);
 						}
 					}
 					// no finding invents a key
 					for (const f of findings) {
-						expect(pointerSet.has(f.key) || objectSet.has(f.key)).toBe(true);
+						expect(
+							pointerSet.has(f.key) || objectSet.has(f.key),
+						).toBe(true);
 					}
 				},
 			),
@@ -205,12 +255,19 @@ describe('reconciliation scanner property tests (la-p2-10)', () => {
 	// prop_no_false_healthy :: a healthy finding always has a size-matching object.
 	it('prop_no_false_healthy', () => {
 		fc.assert(
-			fc.property(fc.nat({ max: 1000 }), fc.nat({ max: 1000 }), (pSize, oSize) => {
-				const findings = reconcile([entry('k', { byteSize: pSize })], [obj('k', { size: oSize })]);
-				if (findings[0]?.outcome === 'healthy') {
-					expect(oSize).toBe(pSize);
-				}
-			}),
+			fc.property(
+				fc.nat({ max: 1000 }),
+				fc.nat({ max: 1000 }),
+				(pSize, oSize) => {
+					const findings = reconcile(
+						[entry('k', { byteSize: pSize })],
+						[obj('k', { size: oSize })],
+					);
+					if (findings[0]?.outcome === 'healthy') {
+						expect(oSize).toBe(pSize);
+					}
+				},
+			),
 			{ numRuns: 200 },
 		);
 	});
@@ -221,7 +278,14 @@ describe('reconciliation scanner failure injection (la-p2-10)', () => {
 	// not drift - there is no checksum to disagree on.
 	it('fault_external_pointer_no_false_drift', () => {
 		const findings = reconcile(
-			[entry('k', { keyKind: 'external', hash: null, remoteChecksum: null, byteSize: 100 })],
+			[
+				entry('k', {
+					keyKind: 'external',
+					hash: null,
+					remoteChecksum: null,
+					byteSize: 100,
+				}),
+			],
 			[obj('k', { size: 100 })],
 		);
 		expect(findings[0]?.outcome).toBe('healthy');
@@ -233,7 +297,11 @@ describe('reconciliation scanner failure injection (la-p2-10)', () => {
 		const mem = new MemoryBackend();
 		await mem.seedObject('a/x.pdf', new TextEncoder().encode('hello'));
 		const { backend, counts } = counting(mem);
-		const findings = await scanReconcile(backend, [entry('a/x.pdf', { byteSize: 5 })], { prefix: 'a/', deep: false });
+		const findings = await scanReconcile(
+			backend,
+			[entry('a/x.pdf', { byteSize: 5 })],
+			{ prefix: 'a/', deep: false },
+		);
 		expect(counts.head).toBe(0);
 		expect(findings[0]?.outcome).toBe('healthy');
 	});

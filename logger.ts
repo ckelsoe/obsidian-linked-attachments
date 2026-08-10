@@ -94,15 +94,33 @@ export class Logger implements AuditSink {
 	// Records a bucket interaction. Always written, regardless of the debug toggle.
 	audit(entry: BucketAuditEntry): void {
 		const level: LogLevel = entry.outcome === 'error' ? 'warn' : 'info';
-		this.record(level, 'bucket', `${entry.op} ${entry.outcome}`, { ...entry });
+		this.record(level, 'bucket', `${entry.op} ${entry.outcome}`, {
+			...entry,
+		});
 	}
 
-	private record(level: LogLevel, category: string, message: string, fields: Record<string, unknown>): void {
-		const entry: LogEntry = { ts: new Date().toISOString(), level, category, message, ...fields };
+	private record(
+		level: LogLevel,
+		category: string,
+		message: string,
+		fields: Record<string, unknown>,
+	): void {
+		const entry: LogEntry = {
+			ts: new Date().toISOString(),
+			level,
+			category,
+			message,
+			...fields,
+		};
 		const line = formatLogLine(entry);
 		this.writeChain = this.writeChain
 			.then(() => this.appendLine(line))
-			.catch((error) => { console.error('Linked Attachments: failed to write to the log file.', error); });
+			.catch((error) => {
+				console.error(
+					'Linked Attachments: failed to write to the log file.',
+					error,
+				);
+			});
 	}
 
 	private async appendLine(line: string): Promise<void> {

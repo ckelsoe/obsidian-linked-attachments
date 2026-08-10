@@ -41,7 +41,9 @@ describe('signRequest (AWS S3 GET Object known-answer)', () => {
 			'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
 		);
 		// host, x-amz-content-sha256, x-amz-date are always signed.
-		expect(signed.headers.authorization).toContain('SignedHeaders=host;x-amz-content-sha256;x-amz-date');
+		expect(signed.headers.authorization).toContain(
+			'SignedHeaders=host;x-amz-content-sha256;x-amz-date',
+		);
 	});
 
 	// A precomputed payload hash (used for binary PUT, where the bytes are hashed
@@ -58,10 +60,16 @@ describe('signRequest (AWS S3 GET Object known-answer)', () => {
 			amzDate: '20130524T000000Z',
 		} as const;
 		// sha256("hello") in hex.
-		const helloHash = '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824';
+		const helloHash =
+			'2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824';
 		const viaBody = await signRequest({ ...common, body: 'hello' });
-		const viaHash = await signRequest({ ...common, payloadHashHex: helloHash });
+		const viaHash = await signRequest({
+			...common,
+			payloadHashHex: helloHash,
+		});
 		expect(viaHash.headers['x-amz-content-sha256']).toBe(helloHash);
-		expect(viaHash.headers.authorization).toBe(viaBody.headers.authorization);
+		expect(viaHash.headers.authorization).toBe(
+			viaBody.headers.authorization,
+		);
 	});
 });

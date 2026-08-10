@@ -9,18 +9,29 @@ import { restoreTargetPath } from './restore-path';
 
 describe('restoreTargetPath', () => {
 	it('restores next to the pointer, using the recorded original name', () => {
-		expect(restoreTargetPath('epub-test-renamed/Ancient Book.epub.md', 'Ancient Book.epub')).toBe('epub-test-renamed/Ancient Book.epub');
+		expect(
+			restoreTargetPath(
+				'epub-test-renamed/Ancient Book.epub.md',
+				'Ancient Book.epub',
+			),
+		).toBe('epub-test-renamed/Ancient Book.epub');
 	});
 
 	it('handles a pointer at the vault root', () => {
-		expect(restoreTargetPath('Ancient Book.epub.md', 'Ancient Book.epub')).toBe('Ancient Book.epub');
+		expect(
+			restoreTargetPath('Ancient Book.epub.md', 'Ancient Book.epub'),
+		).toBe('Ancient Book.epub');
 	});
 
 	it('uses the recorded name even if the pointer note itself was renamed', () => {
-		expect(restoreTargetPath('folder/renamed-note.md', 'original.epub')).toBe('folder/original.epub');
+		expect(
+			restoreTargetPath('folder/renamed-note.md', 'original.epub'),
+		).toBe('folder/original.epub');
 	});
 
 	it('handles deeply nested folders', () => {
-		expect(restoreTargetPath('a/b/c/file.pdf.md', 'file.pdf')).toBe('a/b/c/file.pdf');
+		expect(restoreTargetPath('a/b/c/file.pdf.md', 'file.pdf')).toBe(
+			'a/b/c/file.pdf',
+		);
 	});
 });

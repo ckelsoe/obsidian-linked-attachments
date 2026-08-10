@@ -140,7 +140,9 @@ describe('runSecretStorageProbe (AC-G6)', () => {
 
 	it('reports a failed round-trip when the store throws', () => {
 		const throwingStore: SecretStore = {
-			setSecret: () => { throw new Error('storage backend offline'); },
+			setSecret: () => {
+				throw new Error('storage backend offline');
+			},
 			getSecret: () => null,
 			listSecrets: () => [],
 		};

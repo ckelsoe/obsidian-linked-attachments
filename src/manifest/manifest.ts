@@ -1,4 +1,9 @@
-import { KeyKind, PointerRecord, s3Backend, VerificationTier } from '../pointer/codec';
+import {
+	KeyKind,
+	PointerRecord,
+	s3Backend,
+	VerificationTier,
+} from '../pointer/codec';
 
 // The manifest cache (spec section 3, section 10). A fast index of every
 // offloaded object, REBUILDABLE and never the source of truth:
@@ -28,7 +33,12 @@ export const OBJECT_METADATA_KEYS = {
 } as const;
 
 const KEY_KINDS: readonly KeyKind[] = ['hash', 'external'];
-const VERIFICATION_TIERS: readonly VerificationTier[] = ['content', 'md5', 'existence', 'asserted'];
+const VERIFICATION_TIERS: readonly VerificationTier[] = [
+	'content',
+	'md5',
+	'existence',
+	'asserted',
+];
 
 export interface ManifestEntry {
 	key: string;
@@ -60,7 +70,8 @@ export interface BucketObject {
 	remoteChecksum?: string | null;
 }
 
-export type ManifestParseResult = { ok: true; manifest: Manifest } | { ok: false; reason: string };
+export type ManifestParseResult =
+	{ ok: true; manifest: Manifest } | { ok: false; reason: string };
 
 export function buildManifestFromPointers(sources: PointerSource[]): Manifest {
 	const entries: Record<string, ManifestEntry> = {};
@@ -89,7 +100,10 @@ export function buildManifestFromPointers(sources: PointerSource[]): Manifest {
 	return { version: MANIFEST_VERSION, entries };
 }
 
-export function buildManifestFromBucket(bucket: string, objects: BucketObject[]): Manifest {
+export function buildManifestFromBucket(
+	bucket: string,
+	objects: BucketObject[],
+): Manifest {
 	const entries: Record<string, ManifestEntry> = {};
 	for (const object of objects) {
 		const metadata = object.metadata ?? {};
@@ -105,7 +119,8 @@ export function buildManifestFromBucket(bucket: string, objects: BucketObject[])
 			// LIST/HEAD only locate the object; bytes are not re-checked, so the
 			// strongest tier a bucket rebuild can claim is asserted (spec section 6).
 			verificationTier: 'asserted',
-			originalPath: readMeta(metadata, OBJECT_METADATA_KEYS.originalPath) ?? '',
+			originalPath:
+				readMeta(metadata, OBJECT_METADATA_KEYS.originalPath) ?? '',
 			pointerPath: null,
 			remoteChecksum: object.remoteChecksum ?? null,
 		};
@@ -115,7 +130,10 @@ export function buildManifestFromBucket(bucket: string, objects: BucketObject[])
 
 // Overlay authoritative (pointer-derived) entries onto a cached manifest:
 // per-key, the pointer wins (spec section 10).
-export function mergeManifests(cached: Manifest, authoritative: Manifest): Manifest {
+export function mergeManifests(
+	cached: Manifest,
+	authoritative: Manifest,
+): Manifest {
 	return {
 		version: MANIFEST_VERSION,
 		entries: { ...cached.entries, ...authoritative.entries },
@@ -133,7 +151,11 @@ export function parseManifest(text: string): ManifestParseResult {
 	} catch {
 		return { ok: false, reason: 'manifest is not valid JSON' };
 	}
-	if (!isRecord(raw) || typeof raw.version !== 'number' || !isRecord(raw.entries)) {
+	if (
+		!isRecord(raw) ||
+		typeof raw.version !== 'number' ||
+		!isRecord(raw.entries)
+	) {
 		return { ok: false, reason: 'manifest has an unexpected shape' };
 	}
 	const entries: Record<string, ManifestEntry> = {};
@@ -147,12 +169,17 @@ export function parseManifest(text: string): ManifestParseResult {
 	return { ok: true, manifest: { version: raw.version, entries } };
 }
 
-export function findByKey(manifest: Manifest, key: string): ManifestEntry | null {
+export function findByKey(
+	manifest: Manifest,
+	key: string,
+): ManifestEntry | null {
 	return manifest.entries[key] ?? null;
 }
 
 export function findByHash(manifest: Manifest, hash: string): ManifestEntry[] {
-	return Object.values(manifest.entries).filter((entry) => entry.hash === hash);
+	return Object.values(manifest.entries).filter(
+		(entry) => entry.hash === hash,
+	);
 }
 
 export function hasKey(manifest: Manifest, key: string): boolean {
@@ -161,7 +188,10 @@ export function hasKey(manifest: Manifest, key: string): boolean {
 
 // --- internals --------------------------------------------------------------
 
-function readMeta(metadata: Record<string, string>, key: string): string | null {
+function readMeta(
+	metadata: Record<string, string>,
+	key: string,
+): string | null {
 	const value = metadata[key];
 	return typeof value === 'string' ? value : null;
 }
@@ -207,6 +237,12 @@ function isStringOrNull(value: unknown): value is string | null {
 	return value === null || typeof value === 'string';
 }
 
-function isMember<T extends string>(value: unknown, allowed: readonly T[]): value is T {
-	return typeof value === 'string' && (allowed as readonly string[]).includes(value);
+function isMember<T extends string>(
+	value: unknown,
+	allowed: readonly T[],
+): value is T {
+	return (
+		typeof value === 'string' &&
+		(allowed as readonly string[]).includes(value)
+	);
 }

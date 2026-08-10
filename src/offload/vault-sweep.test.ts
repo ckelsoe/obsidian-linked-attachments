@@ -31,7 +31,10 @@ describe('vault sweep planner', () => {
 			file('d.txt', 'txt', 100), // no rule -> skipped
 		];
 		const plan = planVaultSweep(files, RULES);
-		expect(plan.selected.map((f) => f.path).sort()).toEqual(['a.epub', 'b.pdf']);
+		expect(plan.selected.map((f) => f.path).sort()).toEqual([
+			'a.epub',
+			'b.pdf',
+		]);
 		expect(plan.skipped).toBe(2);
 	});
 
@@ -46,8 +49,16 @@ describe('vault sweep planner', () => {
 		const plan = planVaultSweep(files, RULES);
 		const epub = plan.groups.find((g) => g.extension === 'epub');
 		const pdf = plan.groups.find((g) => g.extension === 'pdf');
-		expect(epub).toEqual({ extension: 'epub', count: 2, totalBytes: 3 * MB });
-		expect(pdf).toEqual({ extension: 'pdf', count: 1, totalBytes: 10 * MB });
+		expect(epub).toEqual({
+			extension: 'epub',
+			count: 2,
+			totalBytes: 3 * MB,
+		});
+		expect(pdf).toEqual({
+			extension: 'pdf',
+			count: 1,
+			totalBytes: 10 * MB,
+		});
 		expect(plan.totalBytes).toBe(13 * MB);
 	});
 
@@ -63,15 +74,22 @@ describe('vault sweep planner', () => {
 	// if a stray 'md' rule exists - the heavy-bytes invariant only concerns
 	// attachments, and sweeping notes would be catastrophic.
 	it('test_never_sweeps_markdown', () => {
-		const rules: OffloadRule[] = [{ extension: 'md', mode: 'always', thresholdMb: 0 }];
-		const plan = planVaultSweep([file('note.md', 'md', 1), file('big.pdf.md', 'md', 9)], rules);
+		const rules: OffloadRule[] = [
+			{ extension: 'md', mode: 'always', thresholdMb: 0 },
+		];
+		const plan = planVaultSweep(
+			[file('note.md', 'md', 1), file('big.pdf.md', 'md', 9)],
+			rules,
+		);
 		expect(plan.selected).toEqual([]);
 	});
 
 	// AC5 :: a checked-out working copy under the plugin dir is never swept (it
 	// returns to the bucket only via check-in).
 	it('test_never_sweeps_checkout_copy', () => {
-		const files = [file(`${CHECKOUT_DIR_PREFIX}checkout/abc/big.pdf`, 'pdf', 100)];
+		const files = [
+			file(`${CHECKOUT_DIR_PREFIX}checkout/abc/big.pdf`, 'pdf', 100),
+		];
 		const plan = planVaultSweep(files, RULES);
 		expect(plan.selected).toEqual([]);
 		expect(plan.skipped).toBe(1);
@@ -80,8 +98,18 @@ describe('vault sweep planner', () => {
 	// AC6b :: a disabled rule is skipped by the sweep (configured but paused), so its
 	// type is left in the vault even when files would otherwise match.
 	it('test_disabled_rule_is_not_swept', () => {
-		const rules: OffloadRule[] = [{ extension: 'epub', mode: 'always', thresholdMb: 0, enabled: false }];
-		const plan = planVaultSweep([file('a.epub', 'epub', 50), file('b.epub', 'epub', 1)], rules);
+		const rules: OffloadRule[] = [
+			{
+				extension: 'epub',
+				mode: 'always',
+				thresholdMb: 0,
+				enabled: false,
+			},
+		];
+		const plan = planVaultSweep(
+			[file('a.epub', 'epub', 50), file('b.epub', 'epub', 1)],
+			rules,
+		);
 		expect(plan.selected).toEqual([]);
 	});
 

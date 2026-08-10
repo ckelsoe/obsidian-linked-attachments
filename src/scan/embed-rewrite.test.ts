@@ -8,7 +8,10 @@ import { rewriteEmbedsInNotes } from './embed-rewrite';
 // returns ONLY the notes that changed (so the service writes back the minimum), and
 // is fully reversible. It is pure - the vault read/write is the service's job.
 
-const note = (path: string, content: string): { path: string; content: string } => ({ path, content });
+const note = (
+	path: string,
+	content: string,
+): { path: string; content: string } => ({ path, content });
 
 describe('rewriteEmbedsInNotes', () => {
 	it('AC1 test_rewrites_basename_to_pointer :: offload direction targets the pointer', () => {
@@ -25,7 +28,11 @@ describe('rewriteEmbedsInNotes', () => {
 
 	it('AC2 test_rewrites_pointer_to_attachment :: restore direction targets the raw file', () => {
 		const notes = [note('a.md', 'see ![[report.pdf.md]] here')];
-		const result = rewriteEmbedsInNotes(notes, 'report.pdf', 'to-attachment');
+		const result = rewriteEmbedsInNotes(
+			notes,
+			'report.pdf',
+			'to-attachment',
+		);
 		expect(result.embedsRewritten).toBe(1);
 		expect(result.rewrites[0]?.content).toBe('see ![[report.pdf]] here');
 	});
@@ -43,7 +50,9 @@ describe('rewriteEmbedsInNotes', () => {
 	it('AC4 test_preserves_subpath_and_alias :: page anchor and caption survive', () => {
 		const notes = [note('a.md', '![[docs/report.pdf#page=3|Cover]]')];
 		const result = rewriteEmbedsInNotes(notes, 'report.pdf', 'to-pointer');
-		expect(result.rewrites[0]?.content).toBe('![[docs/report.pdf.md#page=3|Cover]]');
+		expect(result.rewrites[0]?.content).toBe(
+			'![[docs/report.pdf.md#page=3|Cover]]',
+		);
 	});
 
 	it('AC5 test_code_fenced_embed_untouched :: an embed in code is inert', () => {
@@ -54,10 +63,14 @@ describe('rewriteEmbedsInNotes', () => {
 	});
 
 	it('AC6 test_multiple_embeds_one_note :: every embed in a note is rewritten', () => {
-		const notes = [note('a.md', '![[report.pdf]] and again ![[report.pdf]]')];
+		const notes = [
+			note('a.md', '![[report.pdf]] and again ![[report.pdf]]'),
+		];
 		const result = rewriteEmbedsInNotes(notes, 'report.pdf', 'to-pointer');
 		expect(result.embedsRewritten).toBe(2);
-		expect(result.rewrites[0]?.content).toBe('![[report.pdf.md]] and again ![[report.pdf.md]]');
+		expect(result.rewrites[0]?.content).toBe(
+			'![[report.pdf.md]] and again ![[report.pdf.md]]',
+		);
 	});
 
 	it('fault_empty_notes_no_changes :: no notes is a no-op, not a crash', () => {
@@ -69,17 +82,29 @@ describe('rewriteEmbedsInNotes', () => {
 	it('prop_rewrite_roundtrip_across_notes :: to-pointer then to-attachment restores the originals', () => {
 		fc.assert(
 			fc.property(fc.array(fc.string(), { maxLength: 4 }), (bodies) => {
-				const notes = bodies.map((b, i) => note(`n${i}.md`, `${b} ![[asset.bin]] ${b}`));
-				const forward = rewriteEmbedsInNotes(notes, 'asset.bin', 'to-pointer');
+				const notes = bodies.map((b, i) =>
+					note(`n${i}.md`, `${b} ![[asset.bin]] ${b}`),
+				);
+				const forward = rewriteEmbedsInNotes(
+					notes,
+					'asset.bin',
+					'to-pointer',
+				);
 				// apply forward rewrites, then reverse, and compare to the originals
-				const afterForward = notes.map((n) => forward.rewrites.find((r) => r.path === n.path)?.content ?? n.content);
+				const afterForward = notes.map(
+					(n) =>
+						forward.rewrites.find((r) => r.path === n.path)
+							?.content ?? n.content,
+				);
 				const reversed = rewriteEmbedsInNotes(
 					afterForward.map((content, i) => note(`n${i}.md`, content)),
 					'asset.bin',
 					'to-attachment',
 				);
 				for (let i = 0; i < notes.length; i++) {
-					const final = reversed.rewrites.find((r) => r.path === `n${i}.md`)?.content ?? afterForward[i];
+					const final =
+						reversed.rewrites.find((r) => r.path === `n${i}.md`)
+							?.content ?? afterForward[i];
 					expect(final).toBe(notes[i]?.content);
 				}
 			}),

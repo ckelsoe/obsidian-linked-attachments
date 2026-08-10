@@ -28,26 +28,61 @@ export class AdoptModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		this.setTitle('Adopt files from storage');
-		contentEl.createEl('p', { text: 'List objects already in your bucket and create pointer notes for them. Adopted files are catalogued, not yet byte-verified.' });
+		contentEl.createEl('p', {
+			text: 'List objects already in your bucket and create pointer notes for them. Adopted files are catalogued, not yet byte-verified.',
+		});
 
 		new Setting(contentEl)
 			.setName('Prefix')
-			.setDesc('Only list objects whose key starts with this. Leave empty to list from the top.')
-			.addText((text) => text.setPlaceholder('Prefix to list under').onChange((value) => { this.prefix = value; }));
+			.setDesc(
+				'Only list objects whose key starts with this. Leave empty to list from the top.',
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('Prefix to list under')
+					.onChange((value) => {
+						this.prefix = value;
+					}),
+			);
 		new Setting(contentEl)
 			.setName('Destination folder')
 			.setDesc('Optional vault folder to place the pointer notes under.')
-			.addButton((button) => button.setButtonText('Scan').setCta().onClick(() => { void this.runScan(); }))
-			.addText((text) => text.setPlaceholder('Vault folder for the pointers').onChange((value) => { this.destinationFolder = value; }));
+			.addButton((button) =>
+				button
+					.setButtonText('Scan')
+					.setCta()
+					.onClick(() => {
+						void this.runScan();
+					}),
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('Vault folder for the pointers')
+					.onChange((value) => {
+						this.destinationFolder = value;
+					}),
+			);
 
 		this.resultsEl = contentEl.createDiv();
 
 		contentEl.createEl('hr');
 		new Setting(contentEl)
 			.setName('Paste a key')
-			.setDesc('Already have an exact object key from your S3 browser? Adopt it directly.')
-			.addText((text) => text.setPlaceholder('books/Romans/Cranfield--9f86d0.pdf').onChange((value) => { this.pasteKey = value; }))
-			.addButton((button) => button.setButtonText('Adopt key').onClick(() => { void this.runPasteKey(); }));
+			.setDesc(
+				'Already have an exact object key from your S3 browser? Adopt it directly.',
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder('books/Romans/Cranfield--9f86d0.pdf')
+					.onChange((value) => {
+						this.pasteKey = value;
+					}),
+			)
+			.addButton((button) =>
+				button.setButtonText('Adopt key').onClick(() => {
+					void this.runPasteKey();
+				}),
+			);
 	}
 
 	onClose(): void {
@@ -61,14 +96,19 @@ export class AdoptModal extends Modal {
 		this.resultsEl.empty();
 		this.resultsEl.createEl('p', { text: 'Scanning...' });
 		try {
-			const result = await this.service.adoptScan(this.prefix, this.destinationFolder);
+			const result = await this.service.adoptScan(
+				this.prefix,
+				this.destinationFolder,
+			);
 			this.rows = result.rows;
 			this.selected.clear();
 			this.renderRows();
 		} catch (error) {
 			this.onError(error);
 			this.resultsEl.empty();
-			this.resultsEl.createEl('p', { text: 'The scan failed. See the log for details.' });
+			this.resultsEl.createEl('p', {
+				text: 'The scan failed. See the log for details.',
+			});
 		}
 	}
 
@@ -82,9 +122,13 @@ export class AdoptModal extends Modal {
 			text: `${summary.adoptable} adoptable, ${summary.alreadyAdopted} already adopted, ${summary.collision} would collide.`,
 		});
 
-		const list = this.resultsEl.createDiv({ cls: 'linked-attachments-adopt' });
+		const list = this.resultsEl.createDiv({
+			cls: 'linked-attachments-adopt',
+		});
 		for (const row of this.rows) {
-			const rowEl = list.createDiv({ cls: 'linked-attachments-adopt-row' });
+			const rowEl = list.createDiv({
+				cls: 'linked-attachments-adopt-row',
+			});
 			if (row.status === 'adoptable') {
 				const checkbox = rowEl.createEl('input', { type: 'checkbox' });
 				checkbox.addEventListener('change', () => {
@@ -94,15 +138,30 @@ export class AdoptModal extends Modal {
 						this.selected.delete(row.key);
 					}
 				});
-				rowEl.createSpan({ cls: 'linked-attachments-adopt-name', text: row.displayName });
-				rowEl.createSpan({ cls: 'linked-attachments-adopt-size', text: formatBytes(row.size) });
-			} else {
-				rowEl.createSpan({ cls: 'linked-attachments-adopt-name', text: row.displayName });
+				rowEl.createSpan({
+					cls: 'linked-attachments-adopt-name',
+					text: row.displayName,
+				});
 				rowEl.createSpan({
 					cls: 'linked-attachments-adopt-size',
-					text: row.status === 'already-adopted' ? 'Already adopted' : 'Name in use',
+					text: formatBytes(row.size),
 				});
-				rowEl.toggleClass('linked-attachments-adopt-row-disabled', true);
+			} else {
+				rowEl.createSpan({
+					cls: 'linked-attachments-adopt-name',
+					text: row.displayName,
+				});
+				rowEl.createSpan({
+					cls: 'linked-attachments-adopt-size',
+					text:
+						row.status === 'already-adopted'
+							? 'Already adopted'
+							: 'Name in use',
+				});
+				rowEl.toggleClass(
+					'linked-attachments-adopt-row-disabled',
+					true,
+				);
 			}
 		}
 
@@ -111,7 +170,9 @@ export class AdoptModal extends Modal {
 				button
 					.setButtonText('Adopt selected')
 					.setCta()
-					.onClick(() => { void this.runAdopt(); }),
+					.onClick(() => {
+						void this.runAdopt();
+					}),
 			);
 		}
 	}
@@ -124,7 +185,9 @@ export class AdoptModal extends Modal {
 		}
 		try {
 			const result = await this.service.adoptRows(chosen);
-			new Notice(`Adopted ${result.created} file(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}.`);
+			new Notice(
+				`Adopted ${result.created} file(s)${result.failed > 0 ? `, ${result.failed} failed` : ''}.`,
+			);
 			void this.runScan();
 		} catch (error) {
 			this.onError(error);
@@ -139,7 +202,11 @@ export class AdoptModal extends Modal {
 		}
 		try {
 			const result = await this.service.adoptKey(this.pasteKey);
-			new Notice(result.ok ? `Adopted ${result.pointerPath}.` : `Could not adopt: ${result.error ?? 'unknown error'}.`);
+			new Notice(
+				result.ok
+					? `Adopted ${result.pointerPath}.`
+					: `Could not adopt: ${result.error ?? 'unknown error'}.`,
+			);
 		} catch (error) {
 			this.onError(error);
 			new Notice('Adoption failed. See the log for details.');

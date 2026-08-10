@@ -2,7 +2,11 @@ import fc from 'fast-check';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as nodePath from 'path';
-import { isDatalessStat, LocalBackend, resolveLocalRoot } from './local-backend';
+import {
+	isDatalessStat,
+	LocalBackend,
+	resolveLocalRoot,
+} from './local-backend';
 import { BackendError, ObjectNotFoundError } from './backend';
 import { sha256Base64, sha256Hex } from '../hash/sha256';
 import { verifyByLadder } from '../offload/verify';
@@ -30,7 +34,9 @@ function bytes(text: string): Uint8Array {
 	return new TextEncoder().encode(text);
 }
 
-async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+async function readAll(
+	stream: ReadableStream<Uint8Array>,
+): Promise<Uint8Array> {
 	const reader = stream.getReader();
 	const chunks: Uint8Array[] = [];
 	let total = 0;
@@ -63,7 +69,9 @@ describe('LocalBackend acceptance', () => {
 		expect(await readAll(got.stream())).toEqual(body);
 		expect(new Uint8Array(await got.arrayBuffer())).toEqual(body);
 		// The bytes really landed at the mirrored path under the root.
-		const onDisk = await fs.readFile(nodePath.join(root, 'books', 'romans', 'a.pdf'));
+		const onDisk = await fs.readFile(
+			nodePath.join(root, 'books', 'romans', 'a.pdf'),
+		);
 		expect(new Uint8Array(onDisk)).toEqual(body);
 	});
 
@@ -113,9 +121,15 @@ describe('LocalBackend acceptance', () => {
 		const body = bytes('x');
 		await backend.put('deep/nested/k.bin', body, body.length);
 		await backend.delete('deep/nested/k.bin');
-		await expect(backend.head('deep/nested/k.bin')).rejects.toBeInstanceOf(ObjectNotFoundError);
-		await expect(backend.get('deep/nested/k.bin')).rejects.toBeInstanceOf(ObjectNotFoundError);
-		await expect(fs.access(nodePath.join(root, 'deep'))).rejects.toBeDefined();
+		await expect(backend.head('deep/nested/k.bin')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
+		await expect(backend.get('deep/nested/k.bin')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
+		await expect(
+			fs.access(nodePath.join(root, 'deep')),
+		).rejects.toBeDefined();
 		// The root itself is never pruned.
 		await expect(fs.access(root)).resolves.toBeUndefined();
 	});
@@ -137,7 +151,10 @@ describe('LocalBackend acceptance', () => {
 		const seen: string[] = [];
 		let cursor: string | null = null;
 		do {
-			const page = await backend.list('p/', { maxKeys: 2, cursor: cursor ?? undefined });
+			const page = await backend.list('p/', {
+				maxKeys: 2,
+				cursor: cursor ?? undefined,
+			});
 			seen.push(...page.entries.map((e) => e.key));
 			cursor = page.cursor;
 		} while (cursor !== null);
@@ -156,7 +173,10 @@ describe('LocalBackend acceptance', () => {
 		expect(first.cursor).toBe('p/b');
 		// The cursor key vanishes before the next page is fetched.
 		await backend.delete('p/b');
-		const second = await backend.list('p/', { maxKeys: 2, cursor: first.cursor ?? undefined });
+		const second = await backend.list('p/', {
+			maxKeys: 2,
+			cursor: first.cursor ?? undefined,
+		});
 		expect(second.entries.map((e) => e.key)).toEqual(['p/c']);
 	});
 
@@ -175,7 +195,12 @@ describe('LocalBackend acceptance', () => {
 	// like the S3 / Memory backends (the reconcile scanner depends on one behavior).
 	it('test_list_delimiter_groups_prefixes', async () => {
 		const { backend } = await makeBackend();
-		for (const name of ['books/a.pdf', 'books/b.pdf', 'audio/c.mp3', 'top.txt']) {
+		for (const name of [
+			'books/a.pdf',
+			'books/b.pdf',
+			'audio/c.mp3',
+			'top.txt',
+		]) {
 			await backend.put(name, bytes(name), name.length);
 		}
 		const page = await backend.list('', { delimiter: '/' });
@@ -192,7 +217,9 @@ describe('LocalBackend acceptance', () => {
 		expect(backend.capabilities.upload.conditionalWrite).toBe(false);
 		expect(backend.capabilities.upload.range).toBe(true);
 		expect(backend.capabilities.access).toBe('local-path');
-		expect(backend.displayKey('folder/file--9f86d0.pdf')).toBe(nodePath.join(root, 'folder', 'file--9f86d0.pdf'));
+		expect(backend.displayKey('folder/file--9f86d0.pdf')).toBe(
+			nodePath.join(root, 'folder', 'file--9f86d0.pdf'),
+		);
 	});
 
 	// a serverChecksum-false backend returns no checksum on PUT/GET; the caller's
@@ -200,7 +227,9 @@ describe('LocalBackend acceptance', () => {
 	it('test_no_server_checksum', async () => {
 		const { backend } = await makeBackend();
 		const body = bytes('verify me');
-		const result = await backend.put('k', body, body.length, { checksumSha256: await sha256Base64(body) });
+		const result = await backend.put('k', body, body.length, {
+			checksumSha256: await sha256Base64(body),
+		});
 		expect(result.checksumSha256).toBeUndefined();
 		expect((await backend.get('k')).checksumSha256).toBeUndefined();
 		expect((await backend.head('k')).checksumSha256).toBeUndefined();
@@ -270,8 +299,12 @@ describe('LocalBackend safety', () => {
 	it('test_traversal_key_rejected', async () => {
 		const { backend } = await makeBackend();
 		const body = bytes('x');
-		await expect(backend.put('../escape.txt', body, body.length)).rejects.toBeInstanceOf(BackendError);
-		await expect(backend.get('a/../../etc/passwd')).rejects.toBeInstanceOf(BackendError);
+		await expect(
+			backend.put('../escape.txt', body, body.length),
+		).rejects.toBeInstanceOf(BackendError);
+		await expect(backend.get('a/../../etc/passwd')).rejects.toBeInstanceOf(
+			BackendError,
+		);
 	});
 
 	// a declared size that disagrees with the body is rejected and nothing is
@@ -279,8 +312,12 @@ describe('LocalBackend safety', () => {
 	it('test_size_mismatch_rejected', async () => {
 		const { backend } = await makeBackend();
 		const body = bytes('four');
-		await expect(backend.put('k', body, 999)).rejects.toBeInstanceOf(BackendError);
-		await expect(backend.head('k')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.put('k', body, 999)).rejects.toBeInstanceOf(
+			BackendError,
+		);
+		await expect(backend.head('k')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	// a backslash in a key is rejected: on Windows it would alias with the
@@ -288,7 +325,9 @@ describe('LocalBackend safety', () => {
 	it('test_backslash_key_rejected', async () => {
 		const { backend } = await makeBackend();
 		const body = bytes('x');
-		await expect(backend.put('a\\b.txt', body, body.length)).rejects.toBeInstanceOf(BackendError);
+		await expect(
+			backend.put('a\\b.txt', body, body.length),
+		).rejects.toBeInstanceOf(BackendError);
 	});
 
 	// a key that maps to a prefix directory is not an object: head/get report
@@ -297,8 +336,12 @@ describe('LocalBackend safety', () => {
 		const { backend } = await makeBackend();
 		const body = bytes('x');
 		await backend.put('a/b.bin', body, body.length);
-		await expect(backend.head('a')).rejects.toBeInstanceOf(ObjectNotFoundError);
-		await expect(backend.get('a')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.head('a')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
+		await expect(backend.get('a')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 		await expect(backend.delete('a')).resolves.toBeUndefined();
 		// The real object is untouched by the no-op directory delete.
 		expect((await backend.head('a/b.bin')).size).toBe(body.length);
@@ -312,7 +355,9 @@ describe('LocalBackend safety', () => {
 		const { backend } = await makeBackend();
 		const longKey = `${'a'.repeat(230)}.bin`;
 		const body = bytes('x');
-		await expect(backend.put(longKey, body, body.length)).rejects.toBeInstanceOf(BackendError);
+		await expect(
+			backend.put(longKey, body, body.length),
+		).rejects.toBeInstanceOf(BackendError);
 	});
 
 	// a completed put leaves no .la-tmp write-temp behind, and such temps are never
@@ -324,7 +369,10 @@ describe('LocalBackend safety', () => {
 		const entries = await fs.readdir(nodePath.join(root, 'dir'));
 		expect(entries).toEqual(['k.bin']);
 		// A lingering temp from a crashed write is not an object.
-		await fs.writeFile(nodePath.join(root, 'dir', 'k.bin.la-tmp-99'), 'junk');
+		await fs.writeFile(
+			nodePath.join(root, 'dir', 'k.bin.la-tmp-99'),
+			'junk',
+		);
 		const page = await backend.list('dir/');
 		expect(page.entries.map((e) => e.key)).toEqual(['dir/k.bin']);
 	});
@@ -353,7 +401,10 @@ describe('LocalBackend verify-ladder integration', () => {
 		const intended = bytes('the intended payload');
 		await backend.put('k', intended, intended.length);
 		// Simulate an external overwrite with different, same-length-ish bytes.
-		await fs.writeFile(nodePath.join(root, 'k'), 'a totally different payload!');
+		await fs.writeFile(
+			nodePath.join(root, 'k'),
+			'a totally different payload!',
+		);
 		const result = await verifyByLadder(backend, 'k', {
 			hash: await sha256Hex(intended),
 			checksumBase64: await sha256Base64(intended),
@@ -385,21 +436,33 @@ describe('LocalBackend property tests', () => {
 	it('prop_list_returns_all_keys_once', async () => {
 		await fc.assert(
 			fc.asyncProperty(
-				fc.uniqueArray(fc.stringMatching(/^[a-z0-9]{1,8}$/), { minLength: 0, maxLength: 20 }),
+				fc.uniqueArray(fc.stringMatching(/^[a-z0-9]{1,8}$/), {
+					minLength: 0,
+					maxLength: 20,
+				}),
 				fc.integer({ min: 1, max: 5 }),
 				async (names, pageSize) => {
 					const { backend } = await makeBackend();
 					for (const name of names) {
-						await backend.put(`pre/${name}`, bytes(name), name.length);
+						await backend.put(
+							`pre/${name}`,
+							bytes(name),
+							name.length,
+						);
 					}
 					const seen: string[] = [];
 					let cursor: string | null = null;
 					do {
-						const page = await backend.list('pre/', { maxKeys: pageSize, cursor: cursor ?? undefined });
+						const page = await backend.list('pre/', {
+							maxKeys: pageSize,
+							cursor: cursor ?? undefined,
+						});
 						seen.push(...page.entries.map((e) => e.key));
 						cursor = page.cursor;
 					} while (cursor !== null);
-					expect(seen.sort()).toEqual(names.map((n) => `pre/${n}`).sort());
+					expect(seen.sort()).toEqual(
+						names.map((n) => `pre/${n}`).sort(),
+					);
 				},
 			),
 			{ numRuns: 40 },

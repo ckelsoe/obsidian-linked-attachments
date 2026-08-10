@@ -10,7 +10,9 @@ function bytes(text: string): Uint8Array {
 	return new TextEncoder().encode(text);
 }
 
-async function readAll(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+async function readAll(
+	stream: ReadableStream<Uint8Array>,
+): Promise<Uint8Array> {
 	const reader = stream.getReader();
 	const chunks: Uint8Array[] = [];
 	let total = 0;
@@ -71,8 +73,12 @@ describe('MemoryBackend acceptance (la-p1-01)', () => {
 		const body = bytes('x');
 		await backend.put('k', body, body.length);
 		await backend.delete('k');
-		await expect(backend.head('k')).rejects.toBeInstanceOf(ObjectNotFoundError);
-		await expect(backend.get('k')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.head('k')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
+		await expect(backend.get('k')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	// AC5 :: list under a prefix pages through with maxKeys, returning every key
@@ -86,10 +92,11 @@ describe('MemoryBackend acceptance (la-p1-01)', () => {
 		const seen: string[] = [];
 		let cursor: string | null = null;
 		do {
-			const page: Awaited<ReturnType<MemoryBackend['list']>> = await backend.list('p/', {
-				maxKeys: 2,
-				cursor: cursor ?? undefined,
-			});
+			const page: Awaited<ReturnType<MemoryBackend['list']>> =
+				await backend.list('p/', {
+					maxKeys: 2,
+					cursor: cursor ?? undefined,
+				});
 			seen.push(...page.entries.map((e) => e.key));
 			cursor = page.cursor;
 		} while (cursor !== null);
@@ -102,10 +109,18 @@ describe('MemoryBackend acceptance (la-p1-01)', () => {
 		const backend = new MemoryBackend();
 		expect(typeof backend.capabilities.upload.presign).toBe('boolean');
 		expect(typeof backend.capabilities.upload.range).toBe('boolean');
-		expect(typeof backend.capabilities.upload.serverChecksum).toBe('boolean');
-		expect(typeof backend.capabilities.upload.conditionalWrite).toBe('boolean');
-		expect(['presigned-url', 'local-path', 'native-app']).toContain(backend.capabilities.access);
-		expect(backend.displayKey('folder/file--9f86d0.pdf')).toBe('folder/file--9f86d0.pdf');
+		expect(typeof backend.capabilities.upload.serverChecksum).toBe(
+			'boolean',
+		);
+		expect(typeof backend.capabilities.upload.conditionalWrite).toBe(
+			'boolean',
+		);
+		expect(['presigned-url', 'local-path', 'native-app']).toContain(
+			backend.capabilities.access,
+		);
+		expect(backend.displayKey('folder/file--9f86d0.pdf')).toBe(
+			'folder/file--9f86d0.pdf',
+		);
 	});
 
 	// AC7 :: with serverChecksum, a matching checksummed PUT succeeds and head
@@ -115,14 +130,20 @@ describe('MemoryBackend acceptance (la-p1-01)', () => {
 		const backend = new MemoryBackend();
 		const body = bytes('verify me');
 		const checksum = await sha256Base64(body);
-		const result = await backend.put('ok', body, body.length, { checksumSha256: checksum });
+		const result = await backend.put('ok', body, body.length, {
+			checksumSha256: checksum,
+		});
 		expect(result.checksumSha256).toBe(checksum);
 		expect((await backend.head('ok')).checksumSha256).toBe(checksum);
 
 		await expect(
-			backend.put('bad', body, body.length, { checksumSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' }),
+			backend.put('bad', body, body.length, {
+				checksumSha256: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+			}),
 		).rejects.toMatchObject({ kind: 'checksum-mismatch' });
-		await expect(backend.head('bad')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.head('bad')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	// AC8 :: object metadata written on PUT is returned by HEAD (disaster-recovery
@@ -158,21 +179,33 @@ describe('MemoryBackend property tests (la-p1-01)', () => {
 	it('prop_list_returns_all_keys_once', async () => {
 		await fc.assert(
 			fc.asyncProperty(
-				fc.uniqueArray(fc.stringMatching(/^[a-z0-9]{1,8}$/), { minLength: 0, maxLength: 25 }),
+				fc.uniqueArray(fc.stringMatching(/^[a-z0-9]{1,8}$/), {
+					minLength: 0,
+					maxLength: 25,
+				}),
 				fc.integer({ min: 1, max: 5 }),
 				async (names, pageSize) => {
 					const backend = new MemoryBackend();
 					for (const name of names) {
-						await backend.put(`pre/${name}`, bytes(name), name.length);
+						await backend.put(
+							`pre/${name}`,
+							bytes(name),
+							name.length,
+						);
 					}
 					const seen: string[] = [];
 					let cursor: string | null = null;
 					do {
-						const page = await backend.list('pre/', { maxKeys: pageSize, cursor: cursor ?? undefined });
+						const page = await backend.list('pre/', {
+							maxKeys: pageSize,
+							cursor: cursor ?? undefined,
+						});
 						seen.push(...page.entries.map((e) => e.key));
 						cursor = page.cursor;
 					} while (cursor !== null);
-					expect(seen.sort()).toEqual(names.map((n) => `pre/${n}`).sort());
+					expect(seen.sort()).toEqual(
+						names.map((n) => `pre/${n}`).sort(),
+					);
 				},
 			),
 			{ numRuns: 100 },
@@ -185,8 +218,12 @@ describe('MemoryBackend failure injection (la-p1-01)', () => {
 	// might mistake for success.
 	it('fault_get_missing_is_typed_not_found', async () => {
 		const backend = new MemoryBackend();
-		await expect(backend.get('nope')).rejects.toBeInstanceOf(ObjectNotFoundError);
-		await expect(backend.head('nope')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.get('nope')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
+		await expect(backend.head('nope')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	// An injected PUT fault rejects and stores nothing (the op is atomic, so the
@@ -197,9 +234,13 @@ describe('MemoryBackend failure injection (la-p1-01)', () => {
 			throw new BackendError('network', 'injected put failure');
 		};
 		const body = bytes('data');
-		await expect(backend.put('k', body, body.length)).rejects.toBeInstanceOf(BackendError);
+		await expect(
+			backend.put('k', body, body.length),
+		).rejects.toBeInstanceOf(BackendError);
 		delete backend.faults.put;
-		await expect(backend.head('k')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.head('k')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	// An injected HEAD fault (dead creds) rejects without mutating the object:
@@ -214,7 +255,9 @@ describe('MemoryBackend failure injection (la-p1-01)', () => {
 		};
 		await expect(backend.head('k')).rejects.toMatchObject({ kind: 'auth' });
 		delete backend.faults.head;
-		expect(new Uint8Array(await (await backend.get('k')).arrayBuffer())).toEqual(body);
+		expect(
+			new Uint8Array(await (await backend.get('k')).arrayBuffer()),
+		).toEqual(body);
 	});
 
 	// A seeded truncated object (a dropped PUT that reused the content-hash key)

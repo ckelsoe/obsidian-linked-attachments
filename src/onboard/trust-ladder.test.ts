@@ -21,10 +21,19 @@ const statusOf = (stages: TrustStage[], id: TrustStageId): string =>
 describe('runTrustRehearsal', () => {
 	it('AC1 test_all_four_stages_pass :: the round-trip passes on a healthy backend', async () => {
 		const backend = new MemoryBackend();
-		const result = await runTrustRehearsal({ backend, key: KEY, payload: payload('rehearsal bytes') });
+		const result = await runTrustRehearsal({
+			backend,
+			key: KEY,
+			payload: payload('rehearsal bytes'),
+		});
 		expect(result.ok).toBe(true);
 		expect(result.failedStage).toBeNull();
-		expect(ids(result.stages)).toEqual(['uploaded', 'verified', 'retrieved', 'matched']);
+		expect(ids(result.stages)).toEqual([
+			'uploaded',
+			'verified',
+			'retrieved',
+			'matched',
+		]);
 		expect(result.stages.every((s) => s.status === 'passed')).toBe(true);
 		// cleanup removed the throwaway object: the rehearsal leaves no trace
 		expect(backend.objectCount()).toBe(0);
@@ -32,8 +41,14 @@ describe('runTrustRehearsal', () => {
 
 	it('AC2 test_upload_fault_stops_at_uploaded :: a failed PUT stops at stage one', async () => {
 		const backend = new MemoryBackend();
-		backend.faults.put = () => { throw new Error('dead creds'); };
-		const result = await runTrustRehearsal({ backend, key: KEY, payload: payload('x') });
+		backend.faults.put = () => {
+			throw new Error('dead creds');
+		};
+		const result = await runTrustRehearsal({
+			backend,
+			key: KEY,
+			payload: payload('x'),
+		});
 		expect(result.ok).toBe(false);
 		expect(result.failedStage).toBe('uploaded');
 		expect(statusOf(result.stages, 'uploaded')).toBe('failed');
@@ -44,8 +59,14 @@ describe('runTrustRehearsal', () => {
 
 	it('AC3 test_verify_fault_stops_at_verified :: a failed HEAD stops at stage two', async () => {
 		const backend = new MemoryBackend();
-		backend.faults.head = () => { throw new Error('head failed'); };
-		const result = await runTrustRehearsal({ backend, key: KEY, payload: payload('y') });
+		backend.faults.head = () => {
+			throw new Error('head failed');
+		};
+		const result = await runTrustRehearsal({
+			backend,
+			key: KEY,
+			payload: payload('y'),
+		});
 		expect(result.ok).toBe(false);
 		expect(result.failedStage).toBe('verified');
 		expect(statusOf(result.stages, 'uploaded')).toBe('passed');
@@ -57,8 +78,14 @@ describe('runTrustRehearsal', () => {
 
 	it('AC4 test_retrieve_fault_stops_at_retrieved :: a failed GET stops at stage three', async () => {
 		const backend = new MemoryBackend();
-		backend.faults.get = () => { throw new Error('get failed'); };
-		const result = await runTrustRehearsal({ backend, key: KEY, payload: payload('z') });
+		backend.faults.get = () => {
+			throw new Error('get failed');
+		};
+		const result = await runTrustRehearsal({
+			backend,
+			key: KEY,
+			payload: payload('z'),
+		});
 		expect(result.ok).toBe(false);
 		expect(result.failedStage).toBe('retrieved');
 		expect(statusOf(result.stages, 'verified')).toBe('passed');
@@ -84,11 +111,15 @@ describe('runTrustRehearsal', () => {
 					contentRange: real.contentRange,
 					checksumSha256: real.checksumSha256,
 					stream: real.stream.bind(real),
-					arrayBuffer: async () => altered.buffer,
+					arrayBuffer: () => Promise.resolve(altered.buffer),
 				};
 			},
 		};
-		const result = await runTrustRehearsal({ backend: tampering, key: KEY, payload: payload('the real bytes') });
+		const result = await runTrustRehearsal({
+			backend: tampering,
+			key: KEY,
+			payload: payload('the real bytes'),
+		});
 		expect(result.ok).toBe(false);
 		expect(result.failedStage).toBe('matched');
 		expect(statusOf(result.stages, 'retrieved')).toBe('passed');
@@ -103,13 +134,21 @@ describe('runTrustRehearsal', () => {
 		const zeroHead: StorageBackend = {
 			capabilities: inner.capabilities,
 			put: (k, b, s, o) => inner.put(k, b, s, o),
-			head: async (k) => ({ ...(await inner.head(k)), size: 0, checksumSha256: undefined }),
+			head: async (k) => ({
+				...(await inner.head(k)),
+				size: 0,
+				checksumSha256: undefined,
+			}),
 			get: (k, range) => inner.get(k, range),
 			delete: (k) => inner.delete(k),
 			list: (p, o) => inner.list(p, o),
 			displayKey: (k) => inner.displayKey(k),
 		};
-		const result = await runTrustRehearsal({ backend: zeroHead, key: KEY, payload: payload('the real bytes survive') });
+		const result = await runTrustRehearsal({
+			backend: zeroHead,
+			key: KEY,
+			payload: payload('the real bytes survive'),
+		});
 		expect(result.ok).toBe(true);
 		expect(statusOf(result.stages, 'verified')).toBe('passed');
 		expect(statusOf(result.stages, 'matched')).toBe('passed');
@@ -126,7 +165,11 @@ describe('runTrustRehearsal', () => {
 			list: (p, o) => inner.list(p, o),
 			displayKey: (k) => inner.displayKey(k),
 		};
-		const result = await runTrustRehearsal({ backend: wrongHead, key: KEY, payload: payload('abc') });
+		const result = await runTrustRehearsal({
+			backend: wrongHead,
+			key: KEY,
+			payload: payload('abc'),
+		});
 		expect(result.ok).toBe(false);
 		expect(result.failedStage).toBe('verified');
 	});
@@ -149,8 +192,14 @@ describe('runTrustRehearsal', () => {
 
 	it('fault_cleanup_failure_nonfatal :: a failed cleanup does not fail the rehearsal', async () => {
 		const backend = new MemoryBackend();
-		backend.faults.delete = () => { throw new Error('delete blocked'); };
-		const result = await runTrustRehearsal({ backend, key: KEY, payload: payload('keep') });
+		backend.faults.delete = () => {
+			throw new Error('delete blocked');
+		};
+		const result = await runTrustRehearsal({
+			backend,
+			key: KEY,
+			payload: payload('keep'),
+		});
 		// the four stages still passed; cleanup is best-effort
 		expect(result.ok).toBe(true);
 		expect(result.failedStage).toBeNull();
@@ -158,12 +207,19 @@ describe('runTrustRehearsal', () => {
 
 	it('prop_any_payload_roundtrips :: any non-empty payload passes all four stages', async () => {
 		await fc.assert(
-			fc.asyncProperty(fc.uint8Array({ minLength: 1, maxLength: 256 }), async (bytes) => {
-				const backend = new MemoryBackend();
-				const result = await runTrustRehearsal({ backend, key: KEY, payload: bytes });
-				expect(result.ok).toBe(true);
-				expect(backend.objectCount()).toBe(0);
-			}),
+			fc.asyncProperty(
+				fc.uint8Array({ minLength: 1, maxLength: 256 }),
+				async (bytes) => {
+					const backend = new MemoryBackend();
+					const result = await runTrustRehearsal({
+						backend,
+						key: KEY,
+						payload: bytes,
+					});
+					expect(result.ok).toBe(true);
+					expect(backend.objectCount()).toBe(0);
+				},
+			),
 			{ numRuns: 25 },
 		);
 	});

@@ -1,4 +1,9 @@
-import { decodePointer, encodePointer, DecodedPointer, PointerRecord } from '../pointer/codec';
+import {
+	decodePointer,
+	encodePointer,
+	DecodedPointer,
+	PointerRecord,
+} from '../pointer/codec';
 
 // Checkout state on the pointer note (spec section 4a). The pointer STAYS in place
 // as the visible lineage anchor when a file is checked out; it shows the dirty state
@@ -34,23 +39,37 @@ export interface CheckoutInfo {
 // The working copy path for a checked-out version (spec section 4a:
 // .linked-attachments/checkout/<sha>/<name>). <sha> is the base version's content
 // hash, so each checkout has a unique sync-excluded directory.
-export function workingCopyPath(baseHash: string, originalName: string): string {
+export function workingCopyPath(
+	baseHash: string,
+	originalName: string,
+): string {
 	return `${CHECKOUT_WORKING_DIR}/${baseHash}/${originalName}`;
 }
 
 // orange = checked out / cloud untouched; red = local edits not in cloud; green =
 // up to date (spec section 4a). The dirty state never claims green for a checked-out
 // pointer, and never claims red unless the working copy genuinely differs.
-export type DirtyState = 'up-to-date' | 'checked-out-clean' | 'checked-out-dirty';
+export type DirtyState =
+	'up-to-date' | 'checked-out-clean' | 'checked-out-dirty';
 export type DirtyColor = 'green' | 'orange' | 'red';
 
 // Set the checkout markers: flip copyState to checked-out and record host + time
 // (and optionally the base version hash), preserving identity, every other la_*
 // field, the user body, and any other extras.
-export function withCheckoutMarkers(text: string, info: CheckoutInfo & { baseHash?: string }): string {
+export function withCheckoutMarkers(
+	text: string,
+	info: CheckoutInfo & { baseHash?: string },
+): string {
 	const decoded = decodePointer(text);
-	const record: PointerRecord = { ...decoded.record, copyState: CHECKED_OUT_STATE };
-	const extras: Record<string, unknown> = { ...decoded.extraFrontmatter, [CHECKOUT_HOST_KEY]: info.host, [CHECKOUT_AT_KEY]: info.at };
+	const record: PointerRecord = {
+		...decoded.record,
+		copyState: CHECKED_OUT_STATE,
+	};
+	const extras: Record<string, unknown> = {
+		...decoded.extraFrontmatter,
+		[CHECKOUT_HOST_KEY]: info.host,
+		[CHECKOUT_AT_KEY]: info.at,
+	};
 	if (info.baseHash !== undefined) {
 		extras[CHECKOUT_BASE_HASH_KEY] = info.baseHash;
 	}
@@ -60,15 +79,29 @@ export function withCheckoutMarkers(text: string, info: CheckoutInfo & { baseHas
 // Clear the checkout markers: back to offloaded, remove every checkout marker.
 export function clearCheckoutMarkers(text: string): string {
 	const decoded = decodePointer(text);
-	const record: PointerRecord = { ...decoded.record, copyState: OFFLOADED_STATE };
-	return encodePointer(record, decoded.body, withoutCheckoutKeys(decoded.extraFrontmatter));
+	const record: PointerRecord = {
+		...decoded.record,
+		copyState: OFFLOADED_STATE,
+	};
+	return encodePointer(
+		record,
+		decoded.body,
+		withoutCheckoutKeys(decoded.extraFrontmatter),
+	);
 }
 
 // Encode a checked-in pointer: the new (version) record, the user body preserved,
 // and every checkout marker removed (the file is no longer checked out).
-export function encodeCheckedIn(oldText: string, newRecord: PointerRecord): string {
+export function encodeCheckedIn(
+	oldText: string,
+	newRecord: PointerRecord,
+): string {
 	const decoded = decodePointer(oldText);
-	return encodePointer(newRecord, decoded.body, withoutCheckoutKeys(decoded.extraFrontmatter));
+	return encodePointer(
+		newRecord,
+		decoded.body,
+		withoutCheckoutKeys(decoded.extraFrontmatter),
+	);
 }
 
 // The base version hash recorded at checkout (or null when absent).
@@ -92,11 +125,18 @@ export function readCheckout(decoded: DecodedPointer): CheckoutInfo | null {
 
 // Derive the dirty state from the record and the working copy's current hash (null
 // when the working copy cannot be read). A checked-out pointer is never up-to-date.
-export function dirtyState(record: PointerRecord, workingCopyHash: string | null): DirtyState {
+export function dirtyState(
+	record: PointerRecord,
+	workingCopyHash: string | null,
+): DirtyState {
 	if (record.copyState !== CHECKED_OUT_STATE) {
 		return 'up-to-date';
 	}
-	if (workingCopyHash !== null && record.hash !== null && workingCopyHash !== record.hash) {
+	if (
+		workingCopyHash !== null &&
+		record.hash !== null &&
+		workingCopyHash !== record.hash
+	) {
 		return 'checked-out-dirty';
 	}
 	return 'checked-out-clean';
@@ -126,7 +166,9 @@ export function dirtyLabel(state: DirtyState): string {
 
 // --- internals --------------------------------------------------------------
 
-function withoutCheckoutKeys(extras: Record<string, unknown>): Record<string, unknown> {
+function withoutCheckoutKeys(
+	extras: Record<string, unknown>,
+): Record<string, unknown> {
 	const cleaned = { ...extras };
 	delete cleaned[CHECKOUT_HOST_KEY];
 	delete cleaned[CHECKOUT_AT_KEY];

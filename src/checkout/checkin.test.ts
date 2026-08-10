@@ -23,7 +23,8 @@ function record(overrides: Partial<PointerRecord> = {}): PointerRecord {
 		originalExt: 'xlsx',
 		originalPath: 'finance/budget.xlsx',
 		byteSize: 2048,
-		contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		contentType:
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		copyState: 'checked-out',
 		verificationTier: 'content',
 		remoteChecksum: null,
@@ -64,7 +65,9 @@ describe('check-in planning (la-p6-31)', () => {
 		expect(plan.kind).toBe('version');
 		if (plan.kind === 'version') {
 			expect(plan.record.hash).toBe('b'.repeat(64));
-			expect(requireS3Backend(plan.record).key).not.toBe(requireS3Backend(record()).key);
+			expect(requireS3Backend(plan.record).key).not.toBe(
+				requireS3Backend(record()).key,
+			);
 			expect(plan.record.supersedes).toBe(requireS3Backend(record()).key);
 			expect(plan.record.id).toBe('ptr-1'); // the pointer note (lineage anchor) is stable
 			expect(plan.record.copyState).toBe('offloaded'); // checked back in
@@ -82,14 +85,27 @@ describe('check-in planning (la-p6-31)', () => {
 		// the pointer now points at a DIFFERENT current version than we checked out
 		const diverged = record({
 			hash: 'c'.repeat(64),
-			backends: [{ type: 's3', bucket: 's3-dev-test', key: 'charles-main/budget--cccccc.xlsx', keyKind: 'hash' }],
+			backends: [
+				{
+					type: 's3',
+					bucket: 's3-dev-test',
+					key: 'charles-main/budget--cccccc.xlsx',
+					keyKind: 'hash',
+				},
+			],
 		});
-		const plan = planCheckin(input({ record: diverged, checkoutBaseHash: 'a'.repeat(64) }));
+		const plan = planCheckin(
+			input({ record: diverged, checkoutBaseHash: 'a'.repeat(64) }),
+		);
 		expect(plan.kind).toBe('conflict');
 		if (plan.kind === 'conflict') {
-			expect(plan.record.supersedes).toBe('charles-main/budget--cccccc.xlsx'); // supersedes the CURRENT cloud version
+			expect(plan.record.supersedes).toBe(
+				'charles-main/budget--cccccc.xlsx',
+			); // supersedes the CURRENT cloud version
 			expect(plan.record.hash).toBe('b'.repeat(64));
-			expect(plan.conflictSourceKey).toBe('charles-main/budget--cccccc.xlsx'); // the version to preserve visibly
+			expect(plan.conflictSourceKey).toBe(
+				'charles-main/budget--cccccc.xlsx',
+			); // the version to preserve visibly
 			expect(plan.conflictName).toContain('conflict');
 			expect(plan.conflictName.endsWith('.xlsx')).toBe(true);
 		}
@@ -99,7 +115,13 @@ describe('check-in planning (la-p6-31)', () => {
 	// to contribute; the synced pointer already points at the newer version).
 	it('test_no_op_precedence_over_conflict', () => {
 		const diverged = record({ hash: 'c'.repeat(64) });
-		const plan = planCheckin(input({ record: diverged, workingHash: 'a'.repeat(64), checkoutBaseHash: 'a'.repeat(64) }));
+		const plan = planCheckin(
+			input({
+				record: diverged,
+				workingHash: 'a'.repeat(64),
+				checkoutBaseHash: 'a'.repeat(64),
+			}),
+		);
 		expect(plan.kind).toBe('no-op');
 	});
 

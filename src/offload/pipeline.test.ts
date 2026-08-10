@@ -45,12 +45,25 @@ interface Harness {
 	trashed: string[];
 }
 
-function makeHarness(backend: StorageBackend, overrides: Partial<OffloadDeps> = {}): Harness {
+function makeHarness(
+	backend: StorageBackend,
+	overrides: Partial<OffloadDeps> = {},
+): Harness {
 	const events: string[] = [];
 	const pointers = new Map<string, string>();
 	const trashed: string[] = [];
 	const deps: OffloadDeps = {
-		targets: [{ backend: logged(backend, events), toRef: (key) => ({ type: 's3', bucket: 's3-dev-test', key, keyKind: 'hash' }) }],
+		targets: [
+			{
+				backend: logged(backend, events),
+				toRef: (key) => ({
+					type: 's3',
+					bucket: 's3-dev-test',
+					key,
+					keyKind: 'hash',
+				}),
+			},
+		],
 		bucket: 's3-dev-test',
 		vaultPrefix: 'charles-main',
 		writePointer: (pointerPath, content) => {
@@ -80,7 +93,10 @@ describe('offload pipeline acceptance (la-p2-07)', () => {
 	it('test_happy_path_o6_order', async () => {
 		const backend = new MemoryBackend();
 		const h = makeHarness(backend);
-		const result = await offloadFile(file('books/Cranfield.pdf', 'the epistle to the romans'), h.deps);
+		const result = await offloadFile(
+			file('books/Cranfield.pdf', 'the epistle to the romans'),
+			h.deps,
+		);
 		expect(result.ok).toBe(true);
 		expect(result.removed).toBe(true);
 		expect(result.reachedStage).toBe('removed');
@@ -106,7 +122,13 @@ describe('offload pipeline acceptance (la-p2-07)', () => {
 		const backend = new MemoryBackend();
 		const h = makeHarness(backend, {
 			// a verifier that always reports a mismatch
-			verify: () => Promise.resolve({ ok: false, tier: 'existence', remoteChecksum: null, reason: 'checksum mismatch' }),
+			verify: () =>
+				Promise.resolve({
+					ok: false,
+					tier: 'existence',
+					remoteChecksum: null,
+					reason: 'checksum mismatch',
+				}),
 		});
 		const result = await offloadFile(file('books/x.pdf', 'data'), h.deps);
 		expect(result.ok).toBe(false);
@@ -135,7 +157,10 @@ describe('offload pipeline acceptance (la-p2-07)', () => {
 	it('test_resume_reverifies_truncated', async () => {
 		const backend = new MemoryBackend();
 		const full = 'the complete intended payload of the document';
-		const { key } = await previewKey(file('books/x.pdf', full), 'charles-main');
+		const { key } = await previewKey(
+			file('books/x.pdf', full),
+			'charles-main',
+		);
 		await backend.seedObject(key, bytesOf('trunc')); // dropped PUT left a stub
 		const h = makeHarness(backend);
 		const result = await offloadFile(file('books/x.pdf', full), h.deps);
@@ -150,22 +175,36 @@ describe('offload pipeline acceptance (la-p2-07)', () => {
 	it('test_pointer_and_object_carry_identity', async () => {
 		const backend = new MemoryBackend();
 		const h = makeHarness(backend);
-		const result = await offloadFile(file('books/Cranfield.pdf', 'romans'), h.deps);
-		expect(result.record && requireS3Backend(result.record).bucket).toBe('s3-dev-test');
+		const result = await offloadFile(
+			file('books/Cranfield.pdf', 'romans'),
+			h.deps,
+		);
+		expect(result.record && requireS3Backend(result.record).bucket).toBe(
+			's3-dev-test',
+		);
 		expect(result.record?.verificationTier).toBe('content');
-		expect(result.record && requireS3Backend(result.record).keyKind).toBe('hash');
+		expect(result.record && requireS3Backend(result.record).keyKind).toBe(
+			'hash',
+		);
 		expect(result.record?.hash).not.toBeNull();
 		const key = result.record ? requireS3Backend(result.record).key : '';
 		const head = await backend.head(key);
-		expect(head.metadata?.[OBJECT_METADATA_KEYS.sha256]).toBe(result.record?.hash);
-		expect(head.metadata?.[OBJECT_METADATA_KEYS.originalPath]).toBe('books/Cranfield.pdf');
+		expect(head.metadata?.[OBJECT_METADATA_KEYS.sha256]).toBe(
+			result.record?.hash,
+		);
+		expect(head.metadata?.[OBJECT_METADATA_KEYS.originalPath]).toBe(
+			'books/Cranfield.pdf',
+		);
 	});
 
 	// AC7 :: the pointer note path is the original path plus ".md".
 	it('test_pointer_path_is_md_sidecar', async () => {
 		const backend = new MemoryBackend();
 		const h = makeHarness(backend);
-		const result = await offloadFile(file('books/Cranfield.pdf', 'x'), h.deps);
+		const result = await offloadFile(
+			file('books/Cranfield.pdf', 'x'),
+			h.deps,
+		);
 		expect(result.pointerPath).toBe('books/Cranfield.pdf.md');
 	});
 });
@@ -178,10 +217,21 @@ describe('offload pipeline property tests (la-p2-07)', () => {
 			fc.asyncProperty(fc.uint8Array({ minLength: 1 }), async (data) => {
 				const backend = new MemoryBackend();
 				const h = makeHarness(backend);
-				const result = await offloadFile({ path: 'data/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h.deps);
+				const result = await offloadFile(
+					{
+						path: 'data/blob.bin',
+						bytes: data,
+						contentType: 'application/octet-stream',
+					},
+					h.deps,
+				);
 				expect(result.ok).toBe(true);
-				const key = result.record ? requireS3Backend(result.record).key : '';
-				const restored = new Uint8Array(await (await backend.get(key)).arrayBuffer());
+				const key = result.record
+					? requireS3Backend(result.record).key
+					: '';
+				const restored = new Uint8Array(
+					await (await backend.get(key)).arrayBuffer(),
+				);
 				expect(restored).toEqual(data);
 			}),
 			{ numRuns: 100 },
@@ -196,7 +246,8 @@ describe('offload pipeline failure injection (la-p2-07)', () => {
 	it('fault_commit_failure_keeps_original', async () => {
 		const backend = new MemoryBackend();
 		const h = makeHarness(backend, {
-			writePointer: () => Promise.reject(new Error('disk full writing pointer')),
+			writePointer: () =>
+				Promise.reject(new Error('disk full writing pointer')),
 		});
 		const result = await offloadFile(file('books/x.pdf', 'data'), h.deps);
 		expect(result.ok).toBe(false);
@@ -230,7 +281,11 @@ describe('offload pipeline failure injection (la-p2-07)', () => {
 		});
 		expect(good.ok).toBe(true);
 		expect(good.tier).toBe('content');
-		const bad = await checksumVerifier(backend, 'k', { hash: 'unused', checksumBase64: 'WRONG', size: 999 });
+		const bad = await checksumVerifier(backend, 'k', {
+			hash: 'unused',
+			checksumBase64: 'WRONG',
+			size: 999,
+		});
 		expect(bad.ok).toBe(false);
 	});
 });
@@ -238,12 +293,28 @@ describe('offload pipeline failure injection (la-p2-07)', () => {
 describe('offload pipeline content-dedup (la-p5-26)', () => {
 	// A shared-backend harness: two offloads against one backend + one events log,
 	// so we can assert the second offload does NOT upload a second object.
-	function sharedHarness(backend: StorageBackend, index: Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>) {
+	function sharedHarness(
+		backend: StorageBackend,
+		index: Map<
+			string,
+			{ key: string; bucket: string; keyKind: 'hash' | 'external' }
+		>,
+	) {
 		const events: string[] = [];
 		const pointers = new Map<string, string>();
 		const trashed: string[] = [];
 		const deps: OffloadDeps = {
-			targets: [{ backend: logged(backend, events), toRef: (key) => ({ type: 's3', bucket: 's3-dev-test', key, keyKind: 'hash' }) }],
+			targets: [
+				{
+					backend: logged(backend, events),
+					toRef: (key) => ({
+						type: 's3',
+						bucket: 's3-dev-test',
+						key,
+						keyKind: 'hash',
+					}),
+				},
+			],
 			bucket: 's3-dev-test',
 			vaultPrefix: 'charles-main',
 			writePointer: (p, c) => {
@@ -258,7 +329,8 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 			},
 			newId: () => `ID-${pointers.size}`,
 			now: () => '2026-06-18T00:00:00.000Z',
-			findExistingByHash: (hash) => Promise.resolve(index.get(hash) ?? null),
+			findExistingByHash: (hash) =>
+				Promise.resolve(index.get(hash) ?? null),
 		};
 		return { deps, events, pointers, trashed };
 	}
@@ -268,25 +340,40 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 	// (spec section 10 content-dedup; the goal's tier-0 acceptance case)
 	it('test_dedup_links_existing_no_second_upload', async () => {
 		const backend = new MemoryBackend();
-		const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
+		const index = new Map<
+			string,
+			{ key: string; bucket: string; keyKind: 'hash' | 'external' }
+		>();
 		const bytes = 'the very same bytes under two different names';
 
 		const h1 = sharedHarness(backend, index);
-		const r1 = await offloadFile(file('books/Cranfield.pdf', bytes), h1.deps);
+		const r1 = await offloadFile(
+			file('books/Cranfield.pdf', bytes),
+			h1.deps,
+		);
 		expect(r1.ok).toBe(true);
 		expect(r1.deduped).toBe(false);
 		// register the first object so the second offload can find it
 		if (r1.record?.hash) {
 			const s3 = requireS3Backend(r1.record);
-			index.set(r1.record.hash, { key: s3.key, bucket: s3.bucket, keyKind: s3.keyKind });
+			index.set(r1.record.hash, {
+				key: s3.key,
+				bucket: s3.bucket,
+				keyKind: s3.keyKind,
+			});
 		}
 
 		const h2 = sharedHarness(backend, index);
-		const r2 = await offloadFile(file('inbox/copy-of-cranfield.pdf', bytes), h2.deps);
+		const r2 = await offloadFile(
+			file('inbox/copy-of-cranfield.pdf', bytes),
+			h2.deps,
+		);
 		expect(r2.ok).toBe(true);
 		expect(r2.deduped).toBe(true);
 		// the second pointer references the FIRST object's key
-		expect(r2.record && requireS3Backend(r2.record).key).toBe(r1.record && requireS3Backend(r1.record).key);
+		expect(r2.record && requireS3Backend(r2.record).key).toBe(
+			r1.record && requireS3Backend(r1.record).key,
+		);
 		// ...but carries its OWN original path/name (restore must put it back right)
 		expect(r2.record?.originalPath).toBe('inbox/copy-of-cranfield.pdf');
 		expect(r2.record?.originalName).toBe('copy-of-cranfield.pdf');
@@ -303,12 +390,19 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 	// original is trashed.
 	it('test_dedup_verifies_then_trashes', async () => {
 		const backend = new MemoryBackend();
-		const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
+		const index = new Map<
+			string,
+			{ key: string; bucket: string; keyKind: 'hash' | 'external' }
+		>();
 		const bytes = 'identical content';
 		const h1 = sharedHarness(backend, index);
 		const r1 = await offloadFile(file('a.pdf', bytes), h1.deps);
 		const s3v = requireS3Backend(r1.record!);
-		index.set(r1.record!.hash!, { key: s3v.key, bucket: s3v.bucket, keyKind: s3v.keyKind });
+		index.set(r1.record!.hash!, {
+			key: s3v.key,
+			bucket: s3v.bucket,
+			keyKind: s3v.keyKind,
+		});
 
 		const h2 = sharedHarness(backend, index);
 		const r2 = await offloadFile(file('b.pdf', bytes), h2.deps);
@@ -324,11 +418,25 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 	it('test_dedup_drift_falls_through_to_upload', async () => {
 		const backend = new MemoryBackend();
 		const bytes = 'the real intended bytes';
-		const { key: realKey } = await previewKey(file('a.pdf', bytes), 'charles-main');
+		const { key: realKey } = await previewKey(
+			file('a.pdf', bytes),
+			'charles-main',
+		);
 		// the index points at a key whose object holds DIFFERENT bytes (drift)
 		await backend.seedObject(realKey, bytesOf('totally different bytes'));
-		const hash = await (await import('../hash/sha256')).sha256Hex(bytesOf(bytes));
-		const index = new Map([[hash, { key: realKey, bucket: 's3-dev-test', keyKind: 'hash' as const }]]);
+		const hash = await (
+			await import('../hash/sha256')
+		).sha256Hex(bytesOf(bytes));
+		const index = new Map([
+			[
+				hash,
+				{
+					key: realKey,
+					bucket: 's3-dev-test',
+					keyKind: 'hash' as const,
+				},
+			],
+		]);
 
 		const h = sharedHarness(backend, index);
 		const result = await offloadFile(file('b.pdf', bytes), h.deps);
@@ -344,8 +452,19 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 	it('test_dedup_missing_object_falls_through', async () => {
 		const backend = new MemoryBackend();
 		const bytes = 'content';
-		const hash = await (await import('../hash/sha256')).sha256Hex(bytesOf(bytes));
-		const index = new Map([[hash, { key: 'charles-main/ghost--000000.pdf', bucket: 's3-dev-test', keyKind: 'hash' as const }]]);
+		const hash = await (
+			await import('../hash/sha256')
+		).sha256Hex(bytesOf(bytes));
+		const index = new Map([
+			[
+				hash,
+				{
+					key: 'charles-main/ghost--000000.pdf',
+					bucket: 's3-dev-test',
+					keyKind: 'hash' as const,
+				},
+			],
+		]);
 		const h = sharedHarness(backend, index);
 		const result = await offloadFile(file('b.pdf', bytes), h.deps);
 		expect(result.ok).toBe(true);
@@ -367,19 +486,47 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 	// leaves exactly ONE object in the bucket.
 	it('prop_offload_twice_one_object', async () => {
 		await fc.assert(
-			fc.asyncProperty(fc.uint8Array({ minLength: 1, maxLength: 64 }), async (data) => {
-				const backend = new MemoryBackend();
-				const index = new Map<string, { key: string; bucket: string; keyKind: 'hash' | 'external' }>();
-				const h1 = sharedHarness(backend, index);
-				const r1 = await offloadFile({ path: 'one/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h1.deps);
-				const s3one = requireS3Backend(r1.record!);
-				index.set(r1.record!.hash!, { key: s3one.key, bucket: s3one.bucket, keyKind: s3one.keyKind });
-				const h2 = sharedHarness(backend, index);
-				const r2 = await offloadFile({ path: 'two/blob.bin', bytes: data, contentType: 'application/octet-stream' }, h2.deps);
-				expect(r2.deduped).toBe(true);
-				const list = await backend.list('');
-				expect(list.entries).toHaveLength(1);
-			}),
+			fc.asyncProperty(
+				fc.uint8Array({ minLength: 1, maxLength: 64 }),
+				async (data) => {
+					const backend = new MemoryBackend();
+					const index = new Map<
+						string,
+						{
+							key: string;
+							bucket: string;
+							keyKind: 'hash' | 'external';
+						}
+					>();
+					const h1 = sharedHarness(backend, index);
+					const r1 = await offloadFile(
+						{
+							path: 'one/blob.bin',
+							bytes: data,
+							contentType: 'application/octet-stream',
+						},
+						h1.deps,
+					);
+					const s3one = requireS3Backend(r1.record!);
+					index.set(r1.record!.hash!, {
+						key: s3one.key,
+						bucket: s3one.bucket,
+						keyKind: s3one.keyKind,
+					});
+					const h2 = sharedHarness(backend, index);
+					const r2 = await offloadFile(
+						{
+							path: 'two/blob.bin',
+							bytes: data,
+							contentType: 'application/octet-stream',
+						},
+						h2.deps,
+					);
+					expect(r2.deduped).toBe(true);
+					const list = await backend.list('');
+					expect(list.entries).toHaveLength(1);
+				},
+			),
 			{ numRuns: 50 },
 		);
 	});
@@ -387,11 +534,16 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 
 // Derive the key the pipeline will assign, to seed a colliding object for the
 // resume test. Mirrors the pipeline's own derivation.
-async function previewKey(f: OffloadFile, vaultPrefix: string): Promise<{ key: string }> {
+async function previewKey(
+	f: OffloadFile,
+	vaultPrefix: string,
+): Promise<{ key: string }> {
 	const { layoutHashKey } = await import('../key/layout');
 	const { sha256Hex } = await import('../hash/sha256');
 	const hash = await sha256Hex(f.bytes);
-	return { key: layoutHashKey({ vaultPrefix, originalPath: f.path, hash }).key };
+	return {
+		key: layoutHashKey({ vaultPrefix, originalPath: f.path, hash }).key,
+	};
 }
 
 describe('paired offload atomicity (local + s3)', () => {
@@ -399,7 +551,17 @@ describe('paired offload atomicity (local + s3)', () => {
 	// access), so the verify ladder proves it by GET+rehash the same way LocalBackend
 	// is proven, without touching the filesystem in a tier-0 test.
 	function localLike(): MemoryBackend {
-		return new MemoryBackend({ capabilities: { upload: { presign: false, range: true, serverChecksum: false, conditionalWrite: false }, access: 'local-path' } });
+		return new MemoryBackend({
+			capabilities: {
+				upload: {
+					presign: false,
+					range: true,
+					serverChecksum: false,
+					conditionalWrite: false,
+				},
+				access: 'local-path',
+			},
+		});
 	}
 
 	interface Sink {
@@ -407,12 +569,27 @@ describe('paired offload atomicity (local + s3)', () => {
 		trashed: string[];
 	}
 
-	function pairedDeps(local: StorageBackend, s3: StorageBackend, sink: Sink): OffloadDeps {
+	function pairedDeps(
+		local: StorageBackend,
+		s3: StorageBackend,
+		sink: Sink,
+	): OffloadDeps {
 		return {
 			// local first = preferred read; s3 second = durable fallback.
 			targets: [
-				{ backend: local, toRef: (key) => ({ type: 'local', path: key }) },
-				{ backend: s3, toRef: (key) => ({ type: 's3', bucket: 's3-dev-test', key, keyKind: 'hash' }) },
+				{
+					backend: local,
+					toRef: (key) => ({ type: 'local', path: key }),
+				},
+				{
+					backend: s3,
+					toRef: (key) => ({
+						type: 's3',
+						bucket: 's3-dev-test',
+						key,
+						keyKind: 'hash',
+					}),
+				},
 			],
 			bucket: 's3-dev-test',
 			vaultPrefix: 'charles-main',
@@ -430,7 +607,11 @@ describe('paired offload atomicity (local + s3)', () => {
 		};
 	}
 
-	const file: OffloadFile = { path: 'books/x.pdf', bytes: bytesOf('paired payload'), contentType: 'application/pdf' };
+	const file: OffloadFile = {
+		path: 'books/x.pdf',
+		bytes: bytesOf('paired payload'),
+		contentType: 'application/pdf',
+	};
 
 	it('writes both backends, records both refs local-first, trashes the original', async () => {
 		const local = localLike();
@@ -471,7 +652,10 @@ describe('paired offload atomicity (local + s3)', () => {
 
 	it('refuses an empty target list without committing a pointer or trashing the original', async () => {
 		const sink: Sink = { pointers: new Map(), trashed: [] };
-		const deps: OffloadDeps = { ...pairedDeps(localLike(), new MemoryBackend(), sink), targets: [] };
+		const deps: OffloadDeps = {
+			...pairedDeps(localLike(), new MemoryBackend(), sink),
+			targets: [],
+		};
 		const result = await offloadFile(file, deps);
 		expect(result.ok).toBe(false);
 		expect(sink.pointers.size).toBe(0);
@@ -487,7 +671,12 @@ describe('paired offload atomicity (local + s3)', () => {
 		const deps = pairedDeps(local, s3, sink);
 		deps.verify = (backend, key, expectation) =>
 			backend.capabilities.upload.serverChecksum
-				? Promise.resolve({ ok: false, tier: 'existence', remoteChecksum: null, reason: 'drift' })
+				? Promise.resolve({
+						ok: false,
+						tier: 'existence',
+						remoteChecksum: null,
+						reason: 'drift',
+					})
 				: ladderVerifier(local, key, expectation);
 		const result = await offloadFile(file, deps);
 

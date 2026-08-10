@@ -52,7 +52,12 @@ interface StoredObject {
 }
 
 const DEFAULT_CAPABILITIES: Capabilities = {
-	upload: { presign: true, range: true, serverChecksum: true, conditionalWrite: true },
+	upload: {
+		presign: true,
+		range: true,
+		serverChecksum: true,
+		conditionalWrite: true,
+	},
 	access: 'presigned-url',
 };
 
@@ -70,20 +75,34 @@ export class MemoryBackend implements StorageBackend {
 		this.capabilities = opts.capabilities ?? DEFAULT_CAPABILITIES;
 	}
 
-	async put(key: string, body: PutBody, size: number, opts: PutOptions = {}): Promise<PutResult> {
+	async put(
+		key: string,
+		body: PutBody,
+		size: number,
+		opts: PutOptions = {},
+	): Promise<PutResult> {
 		this.trip('put', key);
 		const bytes = await normalizeBody(body);
 		if (size !== bytes.length) {
 			// A declared size that disagrees with the body models a truncated or
 			// over-declared upload; reject it rather than store a wrong-length object.
-			throw new BackendError('network', `declared size ${size} != body length ${bytes.length} for ${key}`);
+			throw new BackendError(
+				'network',
+				`declared size ${size} != body length ${bytes.length} for ${key}`,
+			);
 		}
 		const checksumSha256 = await sha256Base64(bytes);
-		if (opts.checksumSha256 !== undefined && this.capabilities.upload.serverChecksum) {
+		if (
+			opts.checksumSha256 !== undefined &&
+			this.capabilities.upload.serverChecksum
+		) {
 			if (opts.checksumSha256 !== checksumSha256) {
 				// The server validated received bytes against the client checksum and
 				// rejected the mismatch; nothing is stored (spec section 10 F1 rung 1).
-				throw new BackendError('checksum-mismatch', `checksum mismatch for ${key}`);
+				throw new BackendError(
+					'checksum-mismatch',
+					`checksum mismatch for ${key}`,
+				);
 			}
 		}
 		const etag = `"mem-${++this.etagCounter}"`;
@@ -97,44 +116,75 @@ export class MemoryBackend implements StorageBackend {
 		});
 		return {
 			etag,
-			checksumSha256: this.capabilities.upload.serverChecksum ? checksumSha256 : undefined,
+			checksumSha256: this.capabilities.upload.serverChecksum
+				? checksumSha256
+				: undefined,
 		};
 	}
 
-	async get(key: string, range?: GetRange): Promise<GetResult> {
-		this.trip('get', key);
-		const object = this.require(key);
-		if (range !== undefined) {
-			const slice = object.bytes.slice(range.start, range.end + 1);
-			return makeGetResult(206, slice, `bytes ${range.start}-${range.end}/${object.bytes.length}`, object.checksumSha256);
-		}
-		return makeGetResult(200, object.bytes, undefined, object.checksumSha256);
+	// Non-async but Promise-returning: this in-memory backend satisfies the async
+	// StorageBackend interface (the real S3 backend genuinely awaits network I/O)
+	// without any I/O of its own. The body is deferred through defer() so a throw
+	// from trip() or require() surfaces as a rejected promise, matching the async
+	// contract, rather than a synchronous throw. Same pattern for head/delete/list.
+	get(key: string, range?: GetRange): Promise<GetResult> {
+		return this.defer(() => {
+			this.trip('get', key);
+			const object = this.require(key);
+			if (range !== undefined) {
+				const slice = object.bytes.slice(range.start, range.end + 1);
+				return makeGetResult(
+					206,
+					slice,
+					`bytes ${range.start}-${range.end}/${object.bytes.length}`,
+					object.checksumSha256,
+				);
+			}
+			return makeGetResult(
+				200,
+				object.bytes,
+				undefined,
+				object.checksumSha256,
+			);
+		});
 	}
 
-	async head(key: string): Promise<HeadResult> {
-		this.trip('head', key);
-		const object = this.require(key);
-		return {
-			size: object.bytes.length,
-			etag: object.etag,
-			checksumSha256: this.capabilities.upload.serverChecksum ? object.checksumSha256 : undefined,
-			lastModified: object.lastModified,
-			metadata: { ...object.metadata },
-		};
+	head(key: string): Promise<HeadResult> {
+		return this.defer(() => {
+			this.trip('head', key);
+			const object = this.require(key);
+			return {
+				size: object.bytes.length,
+				etag: object.etag,
+				checksumSha256: this.capabilities.upload.serverChecksum
+					? object.checksumSha256
+					: undefined,
+				lastModified: object.lastModified,
+				metadata: { ...object.metadata },
+			};
+		});
 	}
 
-	async delete(key: string): Promise<void> {
-		this.trip('delete', key);
-		// S3 DELETE is idempotent (a missing key still succeeds); the verify gate
-		// that protects an original lives in the pipeline, not here.
-		this.store.delete(key);
+	delete(key: string): Promise<void> {
+		return this.defer(() => {
+			this.trip('delete', key);
+			// S3 DELETE is idempotent (a missing key still succeeds); the verify gate
+			// that protects an original lives in the pipeline, not here.
+			this.store.delete(key);
+		});
 	}
 
-	async list(prefix = '', opts: ListOptions = {}): Promise<ListPage> {
+	list(prefix = '', opts: ListOptions = {}): Promise<ListPage> {
+		return this.defer(() => this.listSync(prefix, opts));
+	}
+
+	private listSync(prefix: string, opts: ListOptions): ListPage {
 		this.trip('list', prefix);
 		const maxKeys = opts.maxKeys ?? 1000;
 		const delimiter = opts.delimiter;
-		const keys = [...this.store.keys()].filter((k) => k.startsWith(prefix)).sort();
+		const keys = [...this.store.keys()]
+			.filter((k) => k.startsWith(prefix))
+			.sort();
 
 		let index = 0;
 		if (opts.cursor !== undefined) {
@@ -153,7 +203,10 @@ export class MemoryBackend implements StorageBackend {
 			if (key === undefined) {
 				continue;
 			}
-			const groupValue = delimiter !== undefined ? groupPrefix(key, prefix, delimiter) : null;
+			const groupValue =
+				delimiter !== undefined
+					? groupPrefix(key, prefix, delimiter)
+					: null;
 
 			if (groupValue !== null) {
 				if (seenPrefixes.has(groupValue)) {
@@ -178,12 +231,22 @@ export class MemoryBackend implements StorageBackend {
 				if (object === undefined) {
 					continue;
 				}
-				entries.push({ key, size: object.bytes.length, etag: object.etag, lastModified: object.lastModified });
+				entries.push({
+					key,
+					size: object.bytes.length,
+					etag: object.etag,
+					lastModified: object.lastModified,
+				});
 				cursor = key;
 			}
 		}
 
-		return { entries, commonPrefixes, isTruncated: truncated, cursor: truncated ? cursor : null };
+		return {
+			entries,
+			commonPrefixes,
+			isTruncated: truncated,
+			cursor: truncated ? cursor : null,
+		};
 	}
 
 	displayKey(key: string): string {
@@ -194,7 +257,11 @@ export class MemoryBackend implements StorageBackend {
 
 	// --- test seam --------------------------------------------------------------
 
-	async seedObject(key: string, bytes: Uint8Array, opts: SeedOptions = {}): Promise<void> {
+	async seedObject(
+		key: string,
+		bytes: Uint8Array,
+		opts: SeedOptions = {},
+	): Promise<void> {
 		const copy = bytes.slice();
 		this.store.set(key, {
 			bytes: copy,
@@ -211,6 +278,14 @@ export class MemoryBackend implements StorageBackend {
 	}
 
 	// --- internals --------------------------------------------------------------
+
+	// Runs a synchronous computation on a resolved promise so that a throw inside it
+	// (from trip() or require()) becomes a rejected promise rather than a synchronous
+	// throw. Lets get/head/delete/list stay non-async while still honouring the
+	// promise-rejection contract callers rely on.
+	private defer<T>(compute: () => T): Promise<T> {
+		return Promise.resolve().then(compute);
+	}
 
 	private trip(op: FaultOp, key: string): void {
 		const hook = this.faults[op];
@@ -232,7 +307,11 @@ export class MemoryBackend implements StorageBackend {
 	}
 }
 
-function groupPrefix(key: string, prefix: string, delimiter: string): string | null {
+function groupPrefix(
+	key: string,
+	prefix: string,
+	delimiter: string,
+): string | null {
 	const rest = key.slice(prefix.length);
 	const at = rest.indexOf(delimiter);
 	if (at < 0) {
@@ -241,7 +320,12 @@ function groupPrefix(key: string, prefix: string, delimiter: string): string | n
 	return prefix + rest.slice(0, at + delimiter.length);
 }
 
-function makeGetResult(status: number, bytes: Uint8Array, contentRange: string | undefined, checksumSha256: string): GetResult {
+function makeGetResult(
+	status: number,
+	bytes: Uint8Array,
+	contentRange: string | undefined,
+	checksumSha256: string,
+): GetResult {
 	return {
 		status,
 		contentRange,
@@ -254,10 +338,10 @@ function makeGetResult(status: number, bytes: Uint8Array, contentRange: string |
 				},
 			});
 		},
-		async arrayBuffer(): Promise<ArrayBuffer> {
+		arrayBuffer(): Promise<ArrayBuffer> {
 			const out = new Uint8Array(bytes.length);
 			out.set(bytes);
-			return out.buffer;
+			return Promise.resolve(out.buffer);
 		},
 	};
 }
@@ -277,10 +361,9 @@ async function normalizeBody(body: PutBody): Promise<Uint8Array> {
 		if (done) {
 			break;
 		}
-		if (value !== undefined) {
-			chunks.push(value);
-			total += value.length;
-		}
+		// value is defined whenever done is false (ReadableStream contract).
+		chunks.push(value);
+		total += value.length;
 	}
 	const out = new Uint8Array(total);
 	let offset = 0;

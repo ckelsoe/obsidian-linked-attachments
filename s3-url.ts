@@ -16,10 +16,23 @@ export interface ConnectionTestResult {
 	detail: string;
 }
 
+// Trims trailing slashes with a single backward scan; a regex trim (/\/+$/) is
+// super-linear on a long run of slashes because it re-anchors at each position.
+function trimTrailingSlashes(value: string): string {
+	let end = value.length;
+	while (end > 0 && value[end - 1] === '/') {
+		end--;
+	}
+	return value.slice(0, end);
+}
+
 // Resolves the request origin and the path prefix for the bucket. Path style keeps
 // the bucket in the path (/bucket); virtual-hosted moves it into the host.
-export function baseUrl(config: S3ConnectionConfig): { origin: string; pathPrefix: string } {
-	const endpoint = config.endpoint.replace(/\/+$/, '');
+export function baseUrl(config: S3ConnectionConfig): {
+	origin: string;
+	pathPrefix: string;
+} {
+	const endpoint = trimTrailingSlashes(config.endpoint);
 	if (config.addressingStyle === 'path') {
 		return { origin: endpoint, pathPrefix: `/${config.bucket}` };
 	}
@@ -120,7 +133,8 @@ export function parseListContents(xml: string): ListedObject[] {
 // The <CommonPrefixes> values of a delimited listing (folder-like grouping).
 export function parseCommonPrefixes(xml: string): string[] {
 	const prefixes: string[] = [];
-	const re = /<CommonPrefixes>[\s\S]*?<Prefix>([^<]*)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g;
+	const re =
+		/<CommonPrefixes>[\s\S]*?<Prefix>([^<]*)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g;
 	let match: RegExpExecArray | null;
 	while ((match = re.exec(xml)) !== null) {
 		if (match[1] !== undefined) {
@@ -141,13 +155,23 @@ function unescapeXml(value: string): string {
 
 // Turns the HTTP status + S3 error body into a human verdict. S3 returns errors as
 // XML with a <Code> element; the code is far more useful than the bare status.
-export function classifyListResult(status: number, bodyText: string, bucket: string): ConnectionTestResult {
+export function classifyListResult(
+	status: number,
+	bodyText: string,
+	bucket: string,
+): ConnectionTestResult {
 	if (status === 200) {
 		const count = (bodyText.match(/<Key>/g) ?? []).length;
-		return { ok: true, detail: `Connected. Bucket "${bucket}" is reachable (${count} object(s) on the first page).` };
+		return {
+			ok: true,
+			detail: `Connected. Bucket "${bucket}" is reachable (${count} object(s) on the first page).`,
+		};
 	}
 	const code = (/<Code>([^<]+)<\/Code>/.exec(bodyText) ?? [])[1] ?? '';
-	return { ok: false, detail: `HTTP ${status}${code ? ` (${code})` : ''}. ${interpret(status, code)}` };
+	return {
+		ok: false,
+		detail: `HTTP ${status}${code ? ` (${code})` : ''}. ${interpret(status, code)}`,
+	};
 }
 
 // The likely-cause copy for a request that never got an HTTP response (the host
@@ -175,7 +199,11 @@ function interpret(status: number, code: string): string {
 	if (code === 'NoSuchBucket') {
 		return 'There is no bucket by that name at this endpoint.';
 	}
-	if (code === 'PermanentRedirect' || code === 'AuthorizationHeaderMalformed' || status === 301) {
+	if (
+		code === 'PermanentRedirect' ||
+		code === 'AuthorizationHeaderMalformed' ||
+		status === 301
+	) {
 		return 'Wrong region or addressing style for this bucket.';
 	}
 	if (status === 403) {

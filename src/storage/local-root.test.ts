@@ -1,8 +1,16 @@
 import { DEFAULT_SETTINGS, LinkedAttachmentsSettings } from '../../settings';
-import { activeMachine, hasMachineEntry, localMachineView, migratedLocalAttachment, selectActiveRoot } from './local-root';
+import {
+	activeMachine,
+	hasMachineEntry,
+	localMachineView,
+	migratedLocalAttachment,
+	selectActiveRoot,
+} from './local-root';
 import { resolveLocalRoot } from './local-backend';
 
-function settingsWith(overrides: Partial<LinkedAttachmentsSettings>): LinkedAttachmentsSettings {
+function settingsWith(
+	overrides: Partial<LinkedAttachmentsSettings>,
+): LinkedAttachmentsSettings {
 	return { ...DEFAULT_SETTINGS, ...overrides };
 }
 
@@ -15,18 +23,26 @@ describe('activeMachine', () => {
 describe('selectActiveRoot', () => {
 	it('returns the path of the entry matching this machine', () => {
 		const settings = settingsWith({
-			localAttachment: { machines: [
-				{ machine: 'WIN-A', path: 'D:\\Sync\\attachments' },
-				{ machine: 'WIN-B', path: 'E:\\Cloud\\attachments' },
-			] },
+			localAttachment: {
+				machines: [
+					{ machine: 'WIN-A', path: 'D:\\Sync\\attachments' },
+					{ machine: 'WIN-B', path: 'E:\\Cloud\\attachments' },
+				],
+			},
 		});
-		expect(selectActiveRoot(settings, 'WIN-A')).toBe('D:\\Sync\\attachments');
-		expect(selectActiveRoot(settings, 'WIN-B')).toBe('E:\\Cloud\\attachments');
+		expect(selectActiveRoot(settings, 'WIN-A')).toBe(
+			'D:\\Sync\\attachments',
+		);
+		expect(selectActiveRoot(settings, 'WIN-B')).toBe(
+			'E:\\Cloud\\attachments',
+		);
 	});
 
 	it("returns '' when this machine has no entry", () => {
 		const settings = settingsWith({
-			localAttachment: { machines: [{ machine: 'WIN-A', path: 'D:\\Sync' }] },
+			localAttachment: {
+				machines: [{ machine: 'WIN-A', path: 'D:\\Sync' }],
+			},
 		});
 		expect(selectActiveRoot(settings, 'MAC-1')).toBe('');
 	});
@@ -40,7 +56,9 @@ describe('selectActiveRoot', () => {
 
 	it('matches despite surrounding whitespace on either side', () => {
 		const settings = settingsWith({
-			localAttachment: { machines: [{ machine: ' WIN-A ', path: 'D:\\Sync' }] },
+			localAttachment: {
+				machines: [{ machine: ' WIN-A ', path: 'D:\\Sync' }],
+			},
 		});
 		expect(selectActiveRoot(settings, 'WIN-A')).toBe('D:\\Sync');
 	});
@@ -62,17 +80,27 @@ describe('hasMachineEntry', () => {
 
 describe('migratedLocalAttachment', () => {
 	it('maps a non-empty legacy localRoot to an entry for this machine', () => {
-		expect(migratedLocalAttachment(undefined, 'D:\\Sync\\attachments', 'WIN-A')).toEqual({
+		expect(
+			migratedLocalAttachment(
+				undefined,
+				'D:\\Sync\\attachments',
+				'WIN-A',
+			),
+		).toEqual({
 			machines: [{ machine: 'WIN-A', path: 'D:\\Sync\\attachments' }],
 		});
 	});
 
 	it('carries the unreleased per-OS roots shape into an entry for this OS', () => {
 		const raw = { roots: { win: 'D:\\Sync', mac: '/Users/x/Sync' } };
-		expect(migratedLocalAttachment(raw, undefined, 'WIN-A', 'win32')).toEqual({
+		expect(
+			migratedLocalAttachment(raw, undefined, 'WIN-A', 'win32'),
+		).toEqual({
 			machines: [{ machine: 'WIN-A', path: 'D:\\Sync' }],
 		});
-		expect(migratedLocalAttachment(raw, undefined, 'MAC-1', 'darwin')).toEqual({
+		expect(
+			migratedLocalAttachment(raw, undefined, 'MAC-1', 'darwin'),
+		).toEqual({
 			machines: [{ machine: 'MAC-1', path: '/Users/x/Sync' }],
 		});
 	});
@@ -81,7 +109,9 @@ describe('migratedLocalAttachment', () => {
 		// Returning an empty list would be persisted and erase the other OSes' roots
 		// from a synced data.json before those machines migrate.
 		const raw = { roots: { win: 'D:\\Sync' } };
-		expect(migratedLocalAttachment(raw, undefined, 'LNX-1', 'linux')).toBeNull();
+		expect(
+			migratedLocalAttachment(raw, undefined, 'LNX-1', 'linux'),
+		).toBeNull();
 	});
 
 	it('does nothing when the machine-list shape already exists', () => {
@@ -97,13 +127,19 @@ describe('migratedLocalAttachment', () => {
 	it('leaves a blank legacy value blank', () => {
 		expect(migratedLocalAttachment(undefined, '', 'WIN-A')).toBeNull();
 		expect(migratedLocalAttachment(undefined, '   ', 'WIN-A')).toBeNull();
-		expect(migratedLocalAttachment(undefined, undefined, 'WIN-A')).toBeNull();
+		expect(
+			migratedLocalAttachment(undefined, undefined, 'WIN-A'),
+		).toBeNull();
 	});
 });
 
 describe('localMachineView', () => {
 	it('reports the empty-hostname case as unmatchable with Add disabled', () => {
-		const view = localMachineView([{ machine: 'WIN-A', path: 'D:\\x' }], '', '');
+		const view = localMachineView(
+			[{ machine: 'WIN-A', path: 'D:\\x' }],
+			'',
+			'',
+		);
 		expect(view.activeIndex).toBe(-1);
 		expect(view.addDisabled).toBe(true);
 		expect(view.banner.warn).toBe(true);
@@ -111,7 +147,11 @@ describe('localMachineView', () => {
 	});
 
 	it('reports no match: Add enabled, warned, this machine not in the list', () => {
-		const view = localMachineView([{ machine: 'WIN-A', path: 'D:\\x' }], 'MAC-1', '');
+		const view = localMachineView(
+			[{ machine: 'WIN-A', path: 'D:\\x' }],
+			'MAC-1',
+			'',
+		);
 		expect(view.activeIndex).toBe(-1);
 		expect(view.addDisabled).toBe(false);
 		expect(view.banner.warn).toBe(true);
@@ -148,7 +188,11 @@ describe('localMachineView', () => {
 	});
 
 	it('matches despite whitespace on the stored name', () => {
-		const view = localMachineView([{ machine: ' WIN-A ', path: 'D:\\Sync' }], 'WIN-A', 'D:\\Sync');
+		const view = localMachineView(
+			[{ machine: ' WIN-A ', path: 'D:\\Sync' }],
+			'WIN-A',
+			'D:\\Sync',
+		);
 		expect(view.activeIndex).toBe(0);
 	});
 });
@@ -156,7 +200,9 @@ describe('localMachineView', () => {
 describe('resolveLocalRoot on a stored per-machine path', () => {
 	it('resolves an absolute stored path unchanged in shape', () => {
 		const settings = settingsWith({
-			localAttachment: { machines: [{ machine: 'WIN-A', path: '/tmp/synced-root' }] },
+			localAttachment: {
+				machines: [{ machine: 'WIN-A', path: '/tmp/synced-root' }],
+			},
 		});
 		const resolved = resolveLocalRoot(selectActiveRoot(settings, 'WIN-A'));
 		expect(resolved.length).toBeGreaterThan(0);
@@ -165,7 +211,9 @@ describe('resolveLocalRoot on a stored per-machine path', () => {
 
 	it('fails closed to empty when this machine has no entry', () => {
 		const settings = settingsWith({
-			localAttachment: { machines: [{ machine: 'WIN-A', path: '/tmp/x' }] },
+			localAttachment: {
+				machines: [{ machine: 'WIN-A', path: '/tmp/x' }],
+			},
 		});
 		expect(resolveLocalRoot(selectActiveRoot(settings, 'MAC-1'))).toBe('');
 	});

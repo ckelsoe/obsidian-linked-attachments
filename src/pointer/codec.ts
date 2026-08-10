@@ -1,5 +1,9 @@
 import { parseYaml, stringifyYaml } from 'obsidian';
-import { MANAGED_END, MANAGED_START, renderManagedBlock } from './managed-block';
+import {
+	MANAGED_END,
+	MANAGED_START,
+	renderManagedBlock,
+} from './managed-block';
 
 // The pointer-md codec (spec section 5). A pointer note has three regions:
 //
@@ -20,7 +24,12 @@ export type VerificationTier = 'content' | 'md5' | 'existence' | 'asserted';
 export type BackendType = 's3' | 'local';
 
 const KEY_KINDS: readonly KeyKind[] = ['hash', 'external'];
-const VERIFICATION_TIERS: readonly VerificationTier[] = ['content', 'md5', 'existence', 'asserted'];
+const VERIFICATION_TIERS: readonly VerificationTier[] = [
+	'content',
+	'md5',
+	'existence',
+	'asserted',
+];
 
 // The current pointer schema version. v1 = the flat la_bucket/la_key/la_key_kind
 // shape (a single implicit S3 backend). v2 = the la_backends list below, which
@@ -125,7 +134,10 @@ const LEGACY_BACKEND_KEYS = {
 	keyKind: 'la_key_kind',
 } as const;
 
-const KNOWN_FRONTMATTER_KEYS = new Set<string>([...Object.values(FRONTMATTER_KEYS), ...Object.values(LEGACY_BACKEND_KEYS)]);
+const KNOWN_FRONTMATTER_KEYS = new Set<string>([
+	...Object.values(FRONTMATTER_KEYS),
+	...Object.values(LEGACY_BACKEND_KEYS),
+]);
 
 const FENCE = '---\n';
 
@@ -144,12 +156,20 @@ export function extractExtension(name: string): string {
 
 // The S3 backend on a pointer, or null if it has none (a local-only pointer).
 export function s3Backend(record: PointerRecord): S3BackendRef | null {
-	return record.backends.find((backend): backend is S3BackendRef => backend.type === 's3') ?? null;
+	return (
+		record.backends.find(
+			(backend): backend is S3BackendRef => backend.type === 's3',
+		) ?? null
+	);
 }
 
 // The local backend on a pointer, or null if it has none (an S3-only pointer).
 export function localBackend(record: PointerRecord): LocalBackendRef | null {
-	return record.backends.find((backend): backend is LocalBackendRef => backend.type === 'local') ?? null;
+	return (
+		record.backends.find(
+			(backend): backend is LocalBackendRef => backend.type === 'local',
+		) ?? null
+	);
 }
 
 // The S3 backend on a pointer, asserting it has one. For code paths that are
@@ -174,7 +194,11 @@ export function preferredBackend(record: PointerRecord): BackendRef {
 	return first;
 }
 
-export function encodePointer(record: PointerRecord, body: string, extraFrontmatter?: Record<string, unknown>): string {
+export function encodePointer(
+	record: PointerRecord,
+	body: string,
+	extraFrontmatter?: Record<string, unknown>,
+): string {
 	const frontmatter: Record<string, unknown> = {
 		// Always stamp the current version: encode emits the v2 la_backends shape, so a
 		// re-encoded v1 pointer must be labelled v2, never left saying la_version: 1
@@ -205,7 +229,10 @@ export function encodePointer(record: PointerRecord, body: string, extraFrontmat
 	// long paths, quote style) is Obsidian's to decide; decode below is written to
 	// tolerate whatever it emits, so a folded or requoted value still round-trips.
 	const frontmatterText = stringifyYaml(frontmatter);
-	const block = renderManagedBlock({ id: record.id, backends: record.backends.map((backend) => backend.type) });
+	const block = renderManagedBlock({
+		id: record.id,
+		backends: record.backends.map((backend) => backend.type),
+	});
 	// A BLANK line separates the callout from the user body. A callout ends at the
 	// first line that does not start with `>`, so without the blank line a body that
 	// itself starts with `>` (a blockquote) would be swallowed into the callout and
@@ -224,7 +251,9 @@ export function decodePointer(text: string): DecodedPointer {
 		// instead of trusting an `any` off the parser.
 		parsed = parseYaml(frontmatterText) as unknown;
 	} catch (error) {
-		throw new PointerParseError(`frontmatter is not valid YAML: ${describe(error)}`);
+		throw new PointerParseError(
+			`frontmatter is not valid YAML: ${describe(error)}`,
+		);
 	}
 	if (!isPlainObject(parsed)) {
 		throw new PointerParseError('frontmatter is not a mapping');
@@ -239,7 +268,10 @@ export function decodePointer(text: string): DecodedPointer {
 // Regenerate only the managed block, leaving frontmatter and body byte-identical.
 // Used when a pointer's display fields change (e.g. an Obsidian rename) without
 // touching identity.
-export function refreshManagedBlock(text: string, record: PointerRecord): string {
+export function refreshManagedBlock(
+	text: string,
+	record: PointerRecord,
+): string {
 	// The managed block is always the first thing after the frontmatter fence, so
 	// locate it at the start of `rest` and map the replacement back to absolute
 	// indices. Searching the whole note would let marker/callout text in the USER
@@ -247,7 +279,10 @@ export function refreshManagedBlock(text: string, record: PointerRecord): string
 	const { restStart } = splitFrontmatter(text);
 	const rest = text.slice(restStart);
 	const span = locateManagedBlock(rest);
-	const block = renderManagedBlock({ id: record.id, backends: record.backends.map((backend) => backend.type) });
+	const block = renderManagedBlock({
+		id: record.id,
+		backends: record.backends.map((backend) => backend.type),
+	});
 	const body = stripBlockSeparator(rest.slice(span.end), span.format);
 	// The regenerated block is always a callout, joined to the body by a blank line
 	// (encode's convention): a callout ends at the first non-`>` line, so the blank
@@ -271,13 +306,20 @@ interface FrontmatterSplit {
 // so marker/callout text in the USER BODY can never be mistaken for the block.
 function splitFrontmatter(text: string): FrontmatterSplit {
 	if (!text.startsWith(FENCE)) {
-		throw new PointerParseError('not a pointer: file does not begin with a frontmatter fence');
+		throw new PointerParseError(
+			'not a pointer: file does not begin with a frontmatter fence',
+		);
 	}
 	const closingNewline = text.indexOf(`\n${FENCE}`, FENCE.length - 1);
 	if (closingNewline < 0) {
-		throw new PointerParseError('not a pointer: the frontmatter fence is never closed');
+		throw new PointerParseError(
+			'not a pointer: the frontmatter fence is never closed',
+		);
 	}
-	return { frontmatterText: text.slice(FENCE.length, closingNewline + 1), restStart: closingNewline + 1 + FENCE.length };
+	return {
+		frontmatterText: text.slice(FENCE.length, closingNewline + 1),
+		restStart: closingNewline + 1 + FENCE.length,
+	};
 }
 
 // The block is stored in one of two formats: the current `callout` (an Obsidian
@@ -310,14 +352,18 @@ function locateManagedBlock(rest: string): BlockSpan {
 	if (rest.startsWith(MANAGED_START)) {
 		const endMarker = rest.indexOf(MANAGED_END);
 		if (endMarker < 0) {
-			throw new PointerParseError('managed block start marker has no matching end marker');
+			throw new PointerParseError(
+				'managed block start marker has no matching end marker',
+			);
 		}
 		return { end: endMarker + MANAGED_END.length, format: 'legacy' };
 	}
 	// Otherwise the block must be a callout anchored at position 0.
 	const match = CALLOUT_BLOCK_RE.exec(rest);
 	if (match === null) {
-		throw new PointerParseError('expected a managed block (callout or comment markers) at the start of the note body');
+		throw new PointerParseError(
+			'expected a managed block (callout or comment markers) at the start of the note body',
+		);
 	}
 	return { end: match[0].length, format: 'callout' };
 }
@@ -350,7 +396,11 @@ function buildRecord(fm: Record<string, unknown>): PointerRecord {
 		byteSize: requireNumber(fm, FRONTMATTER_KEYS.byteSize),
 		contentType: requireString(fm, FRONTMATTER_KEYS.contentType),
 		copyState: requireString(fm, FRONTMATTER_KEYS.copyState),
-		verificationTier: requireEnum(fm, FRONTMATTER_KEYS.verificationTier, VERIFICATION_TIERS),
+		verificationTier: requireEnum(
+			fm,
+			FRONTMATTER_KEYS.verificationTier,
+			VERIFICATION_TIERS,
+		),
 		remoteChecksum: nullableString(fm, FRONTMATTER_KEYS.remoteChecksum),
 		checksumAlgo: nullableString(fm, FRONTMATTER_KEYS.checksumAlgo),
 		partSize: nullableNumber(fm, FRONTMATTER_KEYS.partSize),
@@ -363,7 +413,12 @@ function buildRecord(fm: Record<string, unknown>): PointerRecord {
 
 function backendToYaml(backend: BackendRef): Record<string, unknown> {
 	if (backend.type === 's3') {
-		return { type: 's3', bucket: backend.bucket, key: backend.key, key_kind: backend.keyKind };
+		return {
+			type: 's3',
+			bucket: backend.bucket,
+			key: backend.key,
+			key_kind: backend.keyKind,
+		};
 	}
 	return { type: 'local', path: backend.path };
 }
@@ -379,12 +434,18 @@ function parseBackends(fm: Record<string, unknown>): BackendRef[] {
 				type: 's3',
 				bucket: requireString(fm, LEGACY_BACKEND_KEYS.bucket),
 				key: requireString(fm, LEGACY_BACKEND_KEYS.key),
-				keyKind: requireEnum(fm, LEGACY_BACKEND_KEYS.keyKind, KEY_KINDS),
+				keyKind: requireEnum(
+					fm,
+					LEGACY_BACKEND_KEYS.keyKind,
+					KEY_KINDS,
+				),
 			},
 		];
 	}
 	if (!Array.isArray(raw) || raw.length === 0) {
-		throw new PointerParseError(`field ${FRONTMATTER_KEYS.backends} must be a non-empty list of backends`);
+		throw new PointerParseError(
+			`field ${FRONTMATTER_KEYS.backends} must be a non-empty list of backends`,
+		);
 	}
 	return raw.map((entry, index) => parseBackendEntry(entry, index));
 }
@@ -403,15 +464,26 @@ function parseBackendEntry(entry: unknown, index: number): BackendRef {
 		};
 	}
 	if (type === 'local') {
-		return { type: 'local', path: requireBackendString(entry, 'path', index) };
+		return {
+			type: 'local',
+			path: requireBackendString(entry, 'path', index),
+		};
 	}
-	throw new PointerParseError(`backend #${index} has unknown type ${String(type)}`);
+	throw new PointerParseError(
+		`backend #${index} has unknown type ${String(type)}`,
+	);
 }
 
-function requireBackendString(entry: Record<string, unknown>, field: string, index: number): string {
+function requireBackendString(
+	entry: Record<string, unknown>,
+	field: string,
+	index: number,
+): string {
 	const value = entry[field];
 	if (typeof value !== 'string' || value.length === 0) {
-		throw new PointerParseError(`backend #${index} field ${field} is required and must be a non-empty string`);
+		throw new PointerParseError(
+			`backend #${index} field ${field} is required and must be a non-empty string`,
+		);
 	}
 	return value;
 }
@@ -420,7 +492,9 @@ function parseKeyKind(value: unknown, index: number): KeyKind {
 	if (value === 'hash' || value === 'external') {
 		return value;
 	}
-	throw new PointerParseError(`backend #${index} key_kind must be one of ${KEY_KINDS.join(', ')}`);
+	throw new PointerParseError(
+		`backend #${index} key_kind must be one of ${KEY_KINDS.join(', ')}`,
+	);
 }
 
 function extractExtras(fm: Record<string, unknown>): Record<string, unknown> {
@@ -442,12 +516,17 @@ function requireString(fm: Record<string, unknown>, key: string): string {
 		return value.toISOString();
 	}
 	if (typeof value !== 'string') {
-		throw new PointerParseError(`field ${key} is required and must be a string`);
+		throw new PointerParseError(
+			`field ${key} is required and must be a string`,
+		);
 	}
 	return value;
 }
 
-function nullableString(fm: Record<string, unknown>, key: string): string | null {
+function nullableString(
+	fm: Record<string, unknown>,
+	key: string,
+): string | null {
 	const value = fm[key];
 	if (value === null || value === undefined) {
 		return null;
@@ -464,12 +543,17 @@ function nullableString(fm: Record<string, unknown>, key: string): string | null
 function requireNumber(fm: Record<string, unknown>, key: string): number {
 	const value = fm[key];
 	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		throw new PointerParseError(`field ${key} is required and must be a number`);
+		throw new PointerParseError(
+			`field ${key} is required and must be a number`,
+		);
 	}
 	return value;
 }
 
-function nullableNumber(fm: Record<string, unknown>, key: string): number | null {
+function nullableNumber(
+	fm: Record<string, unknown>,
+	key: string,
+): number | null {
 	const value = fm[key];
 	if (value === null || value === undefined) {
 		return null;
@@ -480,10 +564,16 @@ function nullableNumber(fm: Record<string, unknown>, key: string): number | null
 	return value;
 }
 
-function requireEnum<T extends string>(fm: Record<string, unknown>, key: string, allowed: readonly T[]): T {
+function requireEnum<T extends string>(
+	fm: Record<string, unknown>,
+	key: string,
+	allowed: readonly T[],
+): T {
 	const value = requireString(fm, key);
 	if (!(allowed as readonly string[]).includes(value)) {
-		throw new PointerParseError(`field ${key} must be one of ${allowed.join(', ')}, got ${value}`);
+		throw new PointerParseError(
+			`field ${key} must be one of ${allowed.join(', ')}, got ${value}`,
+		);
 	}
 	return value as T;
 }

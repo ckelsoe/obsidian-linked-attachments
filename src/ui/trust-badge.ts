@@ -29,18 +29,19 @@ const BADGES: Record<VerificationTier, Omit<TrustBadge, 'unlocksDelete'>> = {
 		kind: 'verified',
 		label: 'Verified',
 		cardLine: 'Confirmed byte-for-byte',
-		tooltip: 'We matched the file\'s MD5 checksum against your storage.',
+		tooltip: "We matched the file's MD5 checksum against your storage.",
 	},
 	existence: {
 		kind: 'found',
 		label: 'Found',
 		cardLine: 'We see it exists',
-		tooltip: 'The file is in your bucket. We have not re-checked its bytes yet.',
+		tooltip:
+			'The file is in your bucket. We have not re-checked its bytes yet.',
 	},
 	asserted: {
 		kind: 'asserted',
 		label: 'Asserted',
-		cardLine: 'You told us it\'s there',
+		cardLine: "You told us it's there",
 		tooltip: 'Recorded from your catalog. Open it once to verify.',
 	},
 };

@@ -38,14 +38,23 @@ export type RuleDecision =
 // Decide whether a file's type + size means it should be offloaded, given the rule
 // table. The first rule matching the (case-insensitive) extension wins;
 // normalizeRules guarantees one rule per type, so "first" is unambiguous.
-export function decideByRules(candidate: RuleCandidate, rules: OffloadRule[]): RuleDecision {
+export function decideByRules(
+	candidate: RuleCandidate,
+	rules: OffloadRule[],
+): RuleDecision {
 	const ext = normalizeExtension(candidate.extension);
 	const matched = rules.find((r) => normalizeExtension(r.extension) === ext);
 	if (matched === undefined) {
-		return { offload: false, reason: `no offload rule is listed for .${ext} files` };
+		return {
+			offload: false,
+			reason: `no offload rule is listed for .${ext} files`,
+		};
 	}
 	if (matched.enabled === false) {
-		return { offload: false, reason: `the offload rule for .${ext} files is turned off` };
+		return {
+			offload: false,
+			reason: `the offload rule for .${ext} files is turned off`,
+		};
 	}
 	if (matched.mode === 'always') {
 		return { offload: true, matched };
@@ -53,7 +62,10 @@ export function decideByRules(candidate: RuleCandidate, rules: OffloadRule[]): R
 	// over-size: inclusive threshold (>=), matching the existing auto-offload boundary.
 	const thresholdBytes = Math.max(0, matched.thresholdMb) * BYTES_PER_MB;
 	if (candidate.size < thresholdBytes) {
-		return { offload: false, reason: `below the ${matched.thresholdMb} MB threshold for .${ext} files` };
+		return {
+			offload: false,
+			reason: `below the ${matched.thresholdMb} MB threshold for .${ext} files`,
+		};
 	}
 	return { offload: true, matched };
 }
@@ -78,7 +90,12 @@ export function normalizeRules(rules: OffloadRule[]): OffloadRule[] {
 		}
 		seen.add(extension);
 		// Persist enabled explicitly (undefined -> true) so stored data is unambiguous.
-		out.push({ extension, mode: rule.mode, thresholdMb: Math.max(0, rule.thresholdMb), enabled: rule.enabled !== false });
+		out.push({
+			extension,
+			mode: rule.mode,
+			thresholdMb: Math.max(0, rule.thresholdMb),
+			enabled: rule.enabled !== false,
+		});
 	}
 	return out;
 }
@@ -88,11 +105,19 @@ export function normalizeRules(rules: OffloadRule[]): OffloadRule[] {
 // carrying the old global threshold, so an upgrade does not change what already
 // qualified. Types the user wants offloaded regardless of size are then a one-click
 // switch to 'always' in the new UI.
-export function rulesFromLegacy(allowlistText: string, globalThresholdMb: number): OffloadRule[] {
+export function rulesFromLegacy(
+	allowlistText: string,
+	globalThresholdMb: number,
+): OffloadRule[] {
 	const rules = allowlistText
 		.split(',')
 		.map((entry) => normalizeExtension(entry))
 		.filter((entry) => entry.length > 0)
-		.map((extension): OffloadRule => ({ extension, mode: 'over-size', thresholdMb: Math.max(0, globalThresholdMb), enabled: true }));
+		.map((extension): OffloadRule => ({
+			extension,
+			mode: 'over-size',
+			thresholdMb: Math.max(0, globalThresholdMb),
+			enabled: true,
+		}));
 	return normalizeRules(rules);
 }

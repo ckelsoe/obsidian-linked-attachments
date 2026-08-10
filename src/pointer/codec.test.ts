@@ -59,7 +59,8 @@ function fullRecord(): PointerRecord {
 	};
 }
 
-const USER_BODY = 'My reading notes on Cranfield.\n\n- chapter 1 is dense\n- see also [[Romans overview]]\n';
+const USER_BODY =
+	'My reading notes on Cranfield.\n\n- chapter 1 is dense\n- see also [[Romans overview]]\n';
 
 describe('pointer codec acceptance (la-p1-02)', () => {
 	// AC1 :: every section-5 la_* field survives encode then decode unchanged.
@@ -113,7 +114,10 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 		const text = encodePointer(record, USER_BODY);
 		const paired: PointerRecord = {
 			...record,
-			backends: [...record.backends, { type: 'local', path: 'books/x.pdf' }],
+			backends: [
+				...record.backends,
+				{ type: 'local', path: 'books/x.pdf' },
+			],
 		};
 		const refreshed = refreshManagedBlock(text, paired);
 		expect(refreshed).toContain('> - Local: [open](');
@@ -188,11 +192,21 @@ describe('pointer codec acceptance (la-p1-02)', () => {
 	// AC6 :: non-la_ frontmatter keys (e.g. user tags) survive the round-trip.
 	it('test_extra_frontmatter_preserved', () => {
 		const record = fullRecord();
-		const text = encodePointer(record, USER_BODY, { tags: ['archive', 'romans'] });
+		const text = encodePointer(record, USER_BODY, {
+			tags: ['archive', 'romans'],
+		});
 		const decoded = decodePointer(text);
-		expect(decoded.extraFrontmatter).toEqual({ tags: ['archive', 'romans'] });
-		const reencoded = encodePointer(decoded.record, decoded.body, decoded.extraFrontmatter);
-		expect(decodePointer(reencoded).extraFrontmatter).toEqual({ tags: ['archive', 'romans'] });
+		expect(decoded.extraFrontmatter).toEqual({
+			tags: ['archive', 'romans'],
+		});
+		const reencoded = encodePointer(
+			decoded.record,
+			decoded.body,
+			decoded.extraFrontmatter,
+		);
+		expect(decodePointer(reencoded).extraFrontmatter).toEqual({
+			tags: ['archive', 'romans'],
+		});
 	});
 });
 
@@ -231,7 +245,12 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 		].join('\n');
 		const decoded = decodePointer(v1);
 		expect(decoded.record.backends).toEqual([
-			{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'e/x--c0f0c5.epub',
+				keyKind: 'hash',
+			},
 		]);
 		expect(decoded.extraFrontmatter).not.toHaveProperty('la_bucket');
 		expect(decoded.extraFrontmatter).not.toHaveProperty('la_key');
@@ -244,13 +263,23 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 		const record: PointerRecord = {
 			...fullRecord(),
 			backends: [
-				{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+				{
+					type: 's3',
+					bucket: 's3-dev-test',
+					key: 'e/x--c0f0c5.epub',
+					keyKind: 'hash',
+				},
 				{ type: 'local', path: 'books/x.pdf' },
 			],
 		};
 		const decoded = decodePointer(encodePointer(record, USER_BODY));
 		expect(decoded.record.backends).toEqual([
-			{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+			{
+				type: 's3',
+				bucket: 's3-dev-test',
+				key: 'e/x--c0f0c5.epub',
+				keyKind: 'hash',
+			},
 			{ type: 'local', path: 'books/x.pdf' },
 		]);
 	});
@@ -267,7 +296,10 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 	// decoded from a v1 pointer, so a re-encoded pointer is never labelled v1 while
 	// carrying the v2 la_backends shape.
 	it('test_encode_stamps_current_version_even_from_v1_record', () => {
-		const text = encodePointer({ ...fullRecord(), laVersion: 1 }, USER_BODY);
+		const text = encodePointer(
+			{ ...fullRecord(), laVersion: 1 },
+			USER_BODY,
+		);
 		expect(text).toContain('la_version: 2');
 		expect(text).not.toContain('la_version: 1');
 	});
@@ -279,7 +311,12 @@ describe('pointer codec backends schema (la-p1-02)', () => {
 		const record: PointerRecord = {
 			...fullRecord(),
 			backends: [
-				{ type: 's3', bucket: 's3-dev-test', key: 'e/x--c0f0c5.epub', keyKind: 'hash' },
+				{
+					type: 's3',
+					bucket: 's3-dev-test',
+					key: 'e/x--c0f0c5.epub',
+					keyKind: 'hash',
+				},
 				{ type: 'local', path: 'books/x.pdf' },
 			],
 		};
@@ -295,12 +332,19 @@ describe('pointer codec property tests (la-p1-02)', () => {
 	// refreshing the managed block leaves the body unchanged.
 	it('prop_user_body_survives_refresh', () => {
 		fc.assert(
-			fc.property(fc.string(), fc.string({ minLength: 1 }), (body, newName) => {
-				const record = fullRecord();
-				const text = encodePointer(record, body);
-				const refreshed = refreshManagedBlock(text, { ...record, originalName: newName });
-				expect(decodePointer(refreshed).body).toBe(body);
-			}),
+			fc.property(
+				fc.string(),
+				fc.string({ minLength: 1 }),
+				(body, newName) => {
+					const record = fullRecord();
+					const text = encodePointer(record, body);
+					const refreshed = refreshManagedBlock(text, {
+						...record,
+						originalName: newName,
+					});
+					expect(decodePointer(refreshed).body).toBe(body);
+				},
+			),
 			{ numRuns: 200 },
 		);
 	});
@@ -309,16 +353,23 @@ describe('pointer codec property tests (la-p1-02)', () => {
 	// (paths with colons, unicode, quotes) survive the YAML round-trip.
 	it('prop_frontmatter_roundtrip_arbitrary', () => {
 		fc.assert(
-			fc.property(fc.string(), fc.string(), fc.string(), (name, path, content) => {
-				const record: PointerRecord = {
-					...fullRecord(),
-					originalName: name,
-					originalPath: path,
-					contentType: content,
-				};
-				const decoded = decodePointer(encodePointer(record, USER_BODY));
-				expect(decoded.record).toEqual(record);
-			}),
+			fc.property(
+				fc.string(),
+				fc.string(),
+				fc.string(),
+				(name, path, content) => {
+					const record: PointerRecord = {
+						...fullRecord(),
+						originalName: name,
+						originalPath: path,
+						contentType: content,
+					};
+					const decoded = decodePointer(
+						encodePointer(record, USER_BODY),
+					);
+					expect(decoded.record).toEqual(record);
+				},
+			),
 			{ numRuns: 200 },
 		);
 	});
@@ -337,7 +388,8 @@ describe('pointer codec failure injection (la-p1-02)', () => {
 	// appear AGAIN lower in a legacy note's body are user content, not a second
 	// managed block: they must survive decode, not trigger a false ambiguity error.
 	it('preserves comment marker strings that reappear in a legacy body', () => {
-		const body = 'notes\n<!-- la:managed:start -->\ninside\n<!-- la:managed:end -->\nmore\n';
+		const body =
+			'notes\n<!-- la:managed:start -->\ninside\n<!-- la:managed:end -->\nmore\n';
 		const decoded = decodePointer(legacyNote(body));
 		expect(decoded.body).toBe(body);
 	});
@@ -352,18 +404,26 @@ describe('pointer codec failure injection (la-p1-02)', () => {
 	// A file with no frontmatter is not a pointer; raise a typed error, never
 	// return a partial record.
 	it('fault_frontmatter_absent_raises', () => {
-		expect(() => decodePointer('just a normal note with no frontmatter\n')).toThrow(PointerParseError);
+		expect(() =>
+			decodePointer('just a normal note with no frontmatter\n'),
+		).toThrow(PointerParseError);
 	});
 
 	// Frontmatter present but missing a required field is malformed; raise.
 	it('fault_missing_required_field_raises', () => {
-		const text = encodePointer(fullRecord(), USER_BODY).replace(/^la_id:.*$/m, '');
+		const text = encodePointer(fullRecord(), USER_BODY).replace(
+			/^la_id:.*$/m,
+			'',
+		);
 		expect(() => decodePointer(text)).toThrow(PointerParseError);
 	});
 
 	// An out-of-range verification tier would mislead the hard-delete gate; raise.
 	it('fault_invalid_verification_tier_raises', () => {
-		const text = encodePointer(fullRecord(), USER_BODY).replace(/^la_verification_tier:.*$/m, 'la_verification_tier: bogus');
+		const text = encodePointer(fullRecord(), USER_BODY).replace(
+			/^la_verification_tier:.*$/m,
+			'la_verification_tier: bogus',
+		);
 		expect(() => decodePointer(text)).toThrow(PointerParseError);
 	});
 });
@@ -375,8 +435,14 @@ describe('pointer codec callout separator round-trip (la-p1-02)', () => {
 	const cases = [
 		{ name: 'an empty body', body: '' },
 		{ name: 'a normal body', body: USER_BODY },
-		{ name: 'a body that starts with a blockquote line', body: '> quoted line\n> still quoted\n\nafter\n' },
-		{ name: 'a body with leading blank lines', body: '\n\nleading blanks then text\n' },
+		{
+			name: 'a body that starts with a blockquote line',
+			body: '> quoted line\n> still quoted\n\nafter\n',
+		},
+		{
+			name: 'a body with leading blank lines',
+			body: '\n\nleading blanks then text\n',
+		},
 	];
 	it.each(cases)('round-trips $name byte-exact', ({ body }) => {
 		const decoded = decodePointer(encodePointer(fullRecord(), body));
@@ -428,14 +494,18 @@ describe('pointer codec legacy migration (la-p1-02)', () => {
 });
 
 describe('pointer codec position-anchored block location (data-integrity)', () => {
-	const BODY_WITH_MARKERS = 'before\n<!-- la:managed:start -->\nmiddle\n<!-- la:managed:end -->\nafter\n';
-	const BODY_WITH_USER_CALLOUT = 'my notes\n\n> [!linked-attachments]- Storage\n> - my own note, not plugin-owned\n\ntail\n';
+	const BODY_WITH_MARKERS =
+		'before\n<!-- la:managed:start -->\nmiddle\n<!-- la:managed:end -->\nafter\n';
+	const BODY_WITH_USER_CALLOUT =
+		'my notes\n\n> [!linked-attachments]- Storage\n> - my own note, not plugin-owned\n\ntail\n';
 
 	// Finding 1: a valid callout note whose USER BODY contains the legacy comment
 	// marker strings must round-trip the FULL body. Block location is anchored to the
 	// start of the region, so body markers are never treated as the managed block.
 	it('round-trips a callout note whose body contains the comment marker strings', () => {
-		const decoded = decodePointer(encodePointer(fullRecord(), BODY_WITH_MARKERS));
+		const decoded = decodePointer(
+			encodePointer(fullRecord(), BODY_WITH_MARKERS),
+		);
 		expect(decoded.body).toBe(BODY_WITH_MARKERS);
 		expect(decoded.record).toEqual(fullRecord());
 	});

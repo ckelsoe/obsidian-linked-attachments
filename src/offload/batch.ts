@@ -5,7 +5,8 @@
 // Pure and injected (the real offload is passed in), so the sequencing, progress,
 // and failure isolation are proven tier-0.
 
-export type BatchItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped';
+export type BatchItemStatus =
+	'queued' | 'running' | 'done' | 'failed' | 'skipped';
 
 export interface BatchItem<T> {
 	id: string;
@@ -33,10 +34,22 @@ export interface RunBatchDeps<I, T> {
 	onProgress?: (item: BatchItem<T>, progress: BatchProgress<T>) => void;
 }
 
-export async function runBatch<I, T>(deps: RunBatchDeps<I, T>): Promise<BatchProgress<T>> {
-	const items: BatchItem<T>[] = deps.items.map((item) => ({ id: deps.idOf(item), status: 'queued', result: null, error: null }));
-	const progress: BatchProgress<T> = { items, total: items.length, completed: 0 };
-	const emit = (item: BatchItem<T>): void => deps.onProgress?.(item, progress);
+export async function runBatch<I, T>(
+	deps: RunBatchDeps<I, T>,
+): Promise<BatchProgress<T>> {
+	const items: BatchItem<T>[] = deps.items.map((item) => ({
+		id: deps.idOf(item),
+		status: 'queued',
+		result: null,
+		error: null,
+	}));
+	const progress: BatchProgress<T> = {
+		items,
+		total: items.length,
+		completed: 0,
+	};
+	const emit = (item: BatchItem<T>): void =>
+		deps.onProgress?.(item, progress);
 
 	for (let i = 0; i < deps.items.length; i++) {
 		const source = deps.items[i];

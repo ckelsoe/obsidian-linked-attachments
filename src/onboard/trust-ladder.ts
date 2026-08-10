@@ -44,12 +44,29 @@ const STAGE_LABELS: Record<TrustStageId, string> = {
 	matched: 'Matches the original',
 };
 
-const STAGE_ORDER: TrustStageId[] = ['uploaded', 'verified', 'retrieved', 'matched'];
+const STAGE_ORDER: TrustStageId[] = [
+	'uploaded',
+	'verified',
+	'retrieved',
+	'matched',
+];
 
-export async function runTrustRehearsal(deps: TrustRehearsalDeps): Promise<TrustRehearsalResult> {
-	const stages: TrustStage[] = STAGE_ORDER.map((id) => ({ id, label: STAGE_LABELS[id], status: 'pending', detail: null }));
-	const byId = (id: TrustStageId): TrustStage => stages.find((s) => s.id === id) as TrustStage;
-	const settle = (id: TrustStageId, status: StageStatus, detail: string | null): void => {
+export async function runTrustRehearsal(
+	deps: TrustRehearsalDeps,
+): Promise<TrustRehearsalResult> {
+	const stages: TrustStage[] = STAGE_ORDER.map((id) => ({
+		id,
+		label: STAGE_LABELS[id],
+		status: 'pending',
+		detail: null,
+	}));
+	const byId = (id: TrustStageId): TrustStage =>
+		stages.find((s) => s.id === id) as TrustStage;
+	const settle = (
+		id: TrustStageId,
+		status: StageStatus,
+		detail: string | null,
+	): void => {
 		const stage = byId(id);
 		stage.status = status;
 		stage.detail = detail;
@@ -77,9 +94,16 @@ export async function runTrustRehearsal(deps: TrustRehearsalDeps): Promise<Trust
 		// stage four is the universal byte proof; this stage is the cheap confirm.
 		const head = await deps.backend.head(deps.key);
 		if (head.size > 0 && head.size !== deps.payload.length) {
-			settle('verified', 'failed', `size ${head.size} != ${deps.payload.length}`);
+			settle(
+				'verified',
+				'failed',
+				`size ${head.size} != ${deps.payload.length}`,
+			);
 			failedStage = 'verified';
-		} else if (head.checksumSha256 !== undefined && head.checksumSha256 !== expectedChecksum) {
+		} else if (
+			head.checksumSha256 !== undefined &&
+			head.checksumSha256 !== expectedChecksum
+		) {
 			settle('verified', 'failed', 'server checksum does not match');
 			failedStage = 'verified';
 		} else if (head.checksumSha256 !== undefined) {

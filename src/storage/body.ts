@@ -18,10 +18,9 @@ export async function bodyToBytes(body: PutBody): Promise<Uint8Array> {
 		if (done) {
 			break;
 		}
-		if (value !== undefined) {
-			chunks.push(value);
-			total += value.length;
-		}
+		// value is defined whenever done is false (ReadableStream contract).
+		chunks.push(value);
+		total += value.length;
 	}
 	const out = new Uint8Array(total);
 	let offset = 0;

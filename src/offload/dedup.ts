@@ -47,9 +47,16 @@ export function rememberObject(index: HashIndex, record: PointerRecord): void {
 	if (s3 === null) {
 		return;
 	}
-	index.set(record.hash, { key: s3.key, bucket: s3.bucket, keyKind: s3.keyKind });
+	index.set(record.hash, {
+		key: s3.key,
+		bucket: s3.bucket,
+		keyKind: s3.keyKind,
+	});
 }
 
-export function lookupByHash(index: HashIndex, hash: string): DedupTarget | null {
+export function lookupByHash(
+	index: HashIndex,
+	hash: string,
+): DedupTarget | null {
 	return index.get(hash) ?? null;
 }
