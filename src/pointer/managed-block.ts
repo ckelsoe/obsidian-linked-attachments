@@ -44,10 +44,14 @@ export function renderManagedBlock(fields: ManagedBlockFields): string {
 		`obsidian://linked-attachments?op=${op}&backend=${backend}&id=${id}`;
 	const rows: string[] = [];
 	if (fields.backends.includes('local')) {
-		rows.push(`> - Local: [open](${link('open', 'local')}) · [reveal](${link('reveal', 'local')})`);
+		rows.push(
+			`> - Local: [open](${link('open', 'local')}) · [reveal](${link('reveal', 'local')})`,
+		);
 	}
 	if (fields.backends.includes('s3')) {
-		rows.push(`> - S3: [open](${link('open', 's3')}) · [copy reference](${link('copy', 's3')})`);
+		rows.push(
+			`> - S3: [open](${link('open', 's3')}) · [copy reference](${link('copy', 's3')})`,
+		);
 	}
 	// A pointer always lists at least one backend, but never emit an empty callout:
 	// fall back to a bare open link row inside the callout.

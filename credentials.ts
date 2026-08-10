@@ -106,16 +106,19 @@ export class CredentialStore {
 export const PROBE_SECRET_ID = 'linked-attachments-secretstorage-probe';
 
 export interface SecretStorageProbe {
-	available: boolean;   // the secretStorage API is present on this platform
+	available: boolean; // the secretStorage API is present on this platform
 	roundTripOk: boolean; // setSecret(id, v) then getSecret(id) returned v
-	detail: string;       // human-readable summary for a notice and the console
+	detail: string; // human-readable summary for a notice and the console
 }
 
 // Proves setSecret -> getSecret round-trips a value. `nonce` is supplied by the
 // caller so the probe stays deterministic and testable. The caller owns the
 // platform-presence check (does app.secretStorage exist); this function assumes a
 // store and reports the round-trip result.
-export function runSecretStorageProbe(store: SecretStore, nonce: string): SecretStorageProbe {
+export function runSecretStorageProbe(
+	store: SecretStore,
+	nonce: string,
+): SecretStorageProbe {
 	try {
 		store.setSecret(PROBE_SECRET_ID, nonce);
 		const readBack = store.getSecret(PROBE_SECRET_ID);
@@ -124,7 +127,10 @@ export function runSecretStorageProbe(store: SecretStore, nonce: string): Secret
 		try {
 			store.setSecret(PROBE_SECRET_ID, '');
 		} catch (scrubError) {
-			console.warn('Linked Attachments: could not scrub the secret storage probe value.', scrubError);
+			console.warn(
+				'Linked Attachments: could not scrub the secret storage probe value.',
+				scrubError,
+			);
 		}
 		return {
 			available: true,

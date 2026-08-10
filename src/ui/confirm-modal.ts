@@ -14,7 +14,10 @@ export interface ConfirmModalOptions {
 export class ConfirmModal extends Modal {
 	private decided = false;
 
-	constructor(app: App, private readonly opts: ConfirmModalOptions) {
+	constructor(
+		app: App,
+		private readonly opts: ConfirmModalOptions,
+	) {
 		super(app);
 	}
 
@@ -22,7 +25,9 @@ export class ConfirmModal extends Modal {
 		this.titleEl.setText(this.opts.title);
 		this.contentEl.createEl('p', { text: this.opts.body });
 		new Setting(this.contentEl)
-			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
 			.addButton((button) =>
 				button
 					.setButtonText(this.opts.cta)

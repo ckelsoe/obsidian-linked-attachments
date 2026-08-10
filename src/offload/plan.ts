@@ -32,9 +32,16 @@ export interface OffloadPlan {
 	hash: string; // the full sha256 the key suffix and the pointer identity come from
 }
 
-export async function planOffload(input: OffloadPlanInput, config: OffloadPlanConfig): Promise<OffloadPlan> {
+export async function planOffload(
+	input: OffloadPlanInput,
+	config: OffloadPlanConfig,
+): Promise<OffloadPlan> {
 	const hash = await sha256Hex(input.bytes);
-	const { key, keyKind } = layoutHashKey({ vaultPrefix: config.vaultPrefix, originalPath: input.path, hash });
+	const { key, keyKind } = layoutHashKey({
+		vaultPrefix: config.vaultPrefix,
+		originalPath: input.path,
+		hash,
+	});
 	const name = basename(input.path);
 	return {
 		bucket: config.bucket,

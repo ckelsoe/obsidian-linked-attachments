@@ -19,17 +19,32 @@ export interface OffloadJournal {
 	items: JournalItem[];
 }
 
-export type JournalParseResult = { ok: true; journal: OffloadJournal } | { ok: false; reason: string };
+export type JournalParseResult =
+	{ ok: true; journal: OffloadJournal } | { ok: false; reason: string };
 
-export function createJournal(batchId: string, paths: string[], startedAt: string): OffloadJournal {
-	return { batchId, startedAt, items: paths.map((path) => ({ path, stage: 'queued' })) };
+export function createJournal(
+	batchId: string,
+	paths: string[],
+	startedAt: string,
+): OffloadJournal {
+	return {
+		batchId,
+		startedAt,
+		items: paths.map((path) => ({ path, stage: 'queued' })),
+	};
 }
 
 // Immutable stage update: a new journal with one item advanced.
-export function setStage(journal: OffloadJournal, path: string, stage: JournalStage): OffloadJournal {
+export function setStage(
+	journal: OffloadJournal,
+	path: string,
+	stage: JournalStage,
+): OffloadJournal {
 	return {
 		...journal,
-		items: journal.items.map((item) => (item.path === path ? { path, stage } : item)),
+		items: journal.items.map((item) =>
+			item.path === path ? { path, stage } : item,
+		),
 	};
 }
 
@@ -48,7 +63,11 @@ export function parseJournal(text: string): JournalParseResult {
 		return { ok: false, reason: 'not an object' };
 	}
 	const obj = raw as Record<string, unknown>;
-	if (typeof obj.batchId !== 'string' || typeof obj.startedAt !== 'string' || !Array.isArray(obj.items)) {
+	if (
+		typeof obj.batchId !== 'string' ||
+		typeof obj.startedAt !== 'string' ||
+		!Array.isArray(obj.items)
+	) {
 		return { ok: false, reason: 'missing or wrong-typed fields' };
 	}
 	const items: JournalItem[] = [];
@@ -62,7 +81,10 @@ export function parseJournal(text: string): JournalParseResult {
 		}
 		items.push({ path: item.path, stage: item.stage as JournalStage });
 	}
-	return { ok: true, journal: { batchId: obj.batchId, startedAt: obj.startedAt, items } };
+	return {
+		ok: true,
+		journal: { batchId: obj.batchId, startedAt: obj.startedAt, items },
+	};
 }
 
 // What recovery must still do: everything not confirmed removed. A removed item is

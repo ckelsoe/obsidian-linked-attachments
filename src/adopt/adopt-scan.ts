@@ -55,7 +55,9 @@ export interface KeyPlacement {
 
 export type AdoptByKeyResult = AdoptedPointer | { collision: true };
 
-export async function scanForAdoption(input: AdoptScanInput): Promise<AdoptScanResult> {
+export async function scanForAdoption(
+	input: AdoptScanInput,
+): Promise<AdoptScanResult> {
 	const prefix = input.prefix ?? '';
 	const pageSize = input.pageSize;
 	const entries: ListEntry[] = [];
@@ -64,7 +66,10 @@ export async function scanForAdoption(input: AdoptScanInput): Promise<AdoptScanR
 
 	// Paginate LIST only. No head/get is ever issued.
 	do {
-		const page = await input.backend.list(prefix, { maxKeys: pageSize, cursor: cursor ?? undefined });
+		const page = await input.backend.list(prefix, {
+			maxKeys: pageSize,
+			cursor: cursor ?? undefined,
+		});
 		listCalls++;
 		entries.push(...page.entries);
 		cursor = page.cursor;
@@ -74,7 +79,10 @@ export async function scanForAdoption(input: AdoptScanInput): Promise<AdoptScanR
 	return { rows, listCalls };
 }
 
-export function buildAdoptedPointer(row: AdoptRow, options: AdoptOptions): AdoptedPointer {
+export function buildAdoptedPointer(
+	row: AdoptRow,
+	options: AdoptOptions,
+): AdoptedPointer {
 	return {
 		pointerPath: row.pointerPath,
 		record: assertedRecord({
@@ -121,17 +129,28 @@ export async function adoptByKey(
 // Mirror a bucket key to a vault path: strip an optional source prefix and place
 // the remainder under an optional destination folder. Shared with the
 // reconciliation scanner's "link it" action so both mirror identically.
-export function mirrorKeyToVaultPath(key: string, opts: { stripPrefix?: string; destinationFolder?: string }): string {
+export function mirrorKeyToVaultPath(
+	key: string,
+	opts: { stripPrefix?: string; destinationFolder?: string },
+): string {
 	const remainder = stripLeadingSlash(stripPrefix(key, opts.stripPrefix));
-	if (opts.destinationFolder !== undefined && opts.destinationFolder.length > 0) {
+	if (
+		opts.destinationFolder !== undefined &&
+		opts.destinationFolder.length > 0
+	) {
 		return `${trimSlashes(opts.destinationFolder)}/${remainder}`;
 	}
 	return remainder;
 }
 
 function classify(entry: ListEntry, input: AdoptScanInput): AdoptRow {
-	const vaultPath = mirrorKeyToVaultPath(entry.key, { stripPrefix: input.stripPrefix, destinationFolder: input.destinationFolder });
-	const remainder = stripLeadingSlash(stripPrefix(entry.key, input.stripPrefix));
+	const vaultPath = mirrorKeyToVaultPath(entry.key, {
+		stripPrefix: input.stripPrefix,
+		destinationFolder: input.destinationFolder,
+	});
+	const remainder = stripLeadingSlash(
+		stripPrefix(entry.key, input.stripPrefix),
+	);
 	const pointerPath = `${vaultPath}.md`;
 
 	let status: AdoptRowStatus = 'adoptable';
@@ -139,11 +158,21 @@ function classify(entry: ListEntry, input: AdoptScanInput): AdoptRow {
 	// simply hidden, regardless of any path collision.
 	if (input.existingPointerKeys.has(entry.key)) {
 		status = 'already-adopted';
-	} else if (input.existingVaultPaths.has(pointerPath) || input.existingVaultPaths.has(vaultPath)) {
+	} else if (
+		input.existingVaultPaths.has(pointerPath) ||
+		input.existingVaultPaths.has(vaultPath)
+	) {
 		status = 'collision';
 	}
 
-	return { key: entry.key, displayName: basename(remainder), size: entry.size, vaultPath, pointerPath, status };
+	return {
+		key: entry.key,
+		displayName: basename(remainder),
+		size: entry.size,
+		vaultPath,
+		pointerPath,
+		status,
+	};
 }
 
 interface AssertedInput {
@@ -163,7 +192,14 @@ function assertedRecord(input: AssertedInput): PointerRecord {
 		laVersion: LA_VERSION,
 		id: input.id,
 		hash: input.hash,
-		backends: [{ type: 's3', bucket: input.bucket, key: input.key, keyKind: input.keyKind }],
+		backends: [
+			{
+				type: 's3',
+				bucket: input.bucket,
+				key: input.key,
+				keyKind: input.keyKind,
+			},
+		],
 		originalName: name,
 		originalExt: extractExtension(name),
 		originalPath: input.vaultPath,
@@ -192,8 +228,18 @@ function stripLeadingSlash(value: string): string {
 	return value.startsWith('/') ? value.slice(1) : value;
 }
 
+// Trims leading and trailing slashes with two boundary scans; the regex form
+// (/^\/+|\/+$/g) is super-linear on a long run of slashes because it re-anchors.
 function trimSlashes(value: string): string {
-	return value.replace(/^\/+|\/+$/g, '');
+	let start = 0;
+	let end = value.length;
+	while (start < end && value[start] === '/') {
+		start++;
+	}
+	while (end > start && value[end - 1] === '/') {
+		end--;
+	}
+	return value.slice(start, end);
 }
 
 function basename(path: string): string {

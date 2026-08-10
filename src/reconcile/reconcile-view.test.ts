@@ -24,17 +24,34 @@ describe('summarizeFindings', () => {
 			finding('unlinked', 'd'),
 			finding('drift', 'e'),
 		];
-		expect(summarizeFindings(findings)).toEqual({ total: 5, healthy: 2, broken: 1, unlinked: 1, drift: 1 });
+		expect(summarizeFindings(findings)).toEqual({
+			total: 5,
+			healthy: 2,
+			broken: 1,
+			unlinked: 1,
+			drift: 1,
+		});
 	});
 
 	it('is all zeros for no findings', () => {
-		expect(summarizeFindings([])).toEqual({ total: 0, healthy: 0, broken: 0, unlinked: 0, drift: 0 });
+		expect(summarizeFindings([])).toEqual({
+			total: 0,
+			healthy: 0,
+			broken: 0,
+			unlinked: 0,
+			drift: 0,
+		});
 	});
 });
 
 describe('outcomeCopy', () => {
 	it('every outcome has a non-empty title and felt line', () => {
-		for (const outcome of ['healthy', 'broken', 'unlinked', 'drift'] as ReconcileOutcome[]) {
+		for (const outcome of [
+			'healthy',
+			'broken',
+			'unlinked',
+			'drift',
+		] as ReconcileOutcome[]) {
 			const copy = outcomeCopy(outcome);
 			expect(copy.title.length).toBeGreaterThan(0);
 			expect(copy.felt.length).toBeGreaterThan(0);

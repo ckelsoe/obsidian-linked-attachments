@@ -1,4 +1,9 @@
-import { S3Backend, S3Request, S3TransportResponse, S3Transport } from './s3-backend';
+import {
+	S3Backend,
+	S3Request,
+	S3TransportResponse,
+	S3Transport,
+} from './s3-backend';
 import { S3ConnectionConfig } from '../../s3-url';
 import { BackendError, ObjectNotFoundError } from './backend';
 import { sha256Base64, sha256Hex } from '../hash/sha256';
@@ -15,18 +20,31 @@ const config: S3ConnectionConfig = {
 	addressingStyle: 'path',
 };
 
-const creds = () => ({ accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'shhh-secret' });
+const creds = () => ({
+	accessKeyId: 'AKIAEXAMPLE',
+	secretAccessKey: 'shhh-secret',
+});
 
-function harness(responder: (request: S3Request) => S3TransportResponse): { backend: S3Backend; requests: S3Request[] } {
+function harness(responder: (request: S3Request) => S3TransportResponse): {
+	backend: S3Backend;
+	requests: S3Request[];
+} {
 	const requests: S3Request[] = [];
 	const transport: S3Transport = (request) => {
 		requests.push(request);
 		return Promise.resolve(responder(request));
 	};
-	return { backend: new S3Backend({ config, getCredentials: creds, transport }), requests };
+	return {
+		backend: new S3Backend({ config, getCredentials: creds, transport }),
+		requests,
+	};
 }
 
-function res(status: number, headers: Record<string, string> = {}, bytes: Uint8Array = new Uint8Array()): S3TransportResponse {
+function res(
+	status: number,
+	headers: Record<string, string> = {},
+	bytes: Uint8Array = new Uint8Array(),
+): S3TransportResponse {
 	return { status, headers, bytes };
 }
 
@@ -37,18 +55,29 @@ function text(s: string): Uint8Array {
 describe('S3Backend request construction (la-p3-11)', () => {
 	it('put signs the binary payload and sends checksum + metadata + content-type', async () => {
 		const body = text('the document bytes');
-		const { backend, requests } = harness(() => res(200, { etag: '"abc"', 'x-amz-checksum-sha256': 'CKSUM' }));
+		const { backend, requests } = harness(() =>
+			res(200, { etag: '"abc"', 'x-amz-checksum-sha256': 'CKSUM' }),
+		);
 		const result = await backend.put('books/x--9f.pdf', body, body.length, {
 			checksumSha256: await sha256Base64(body),
 			contentType: 'application/pdf',
-			metadata: { [OBJECT_METADATA_KEYS.sha256]: 'deadbeef', [OBJECT_METADATA_KEYS.originalPath]: 'books/x.pdf' },
+			metadata: {
+				[OBJECT_METADATA_KEYS.sha256]: 'deadbeef',
+				[OBJECT_METADATA_KEYS.originalPath]: 'books/x.pdf',
+			},
 		});
 		const sent = requests[0];
 		expect(sent?.method).toBe('PUT');
-		expect(sent?.url).toBe('https://acct.r2.cloudflarestorage.com/s3-dev-test/books/x--9f.pdf');
+		expect(sent?.url).toBe(
+			'https://acct.r2.cloudflarestorage.com/s3-dev-test/books/x--9f.pdf',
+		);
 		// the binary payload is signed: x-amz-content-sha256 == sha256(body)
-		expect(sent?.headers['x-amz-content-sha256']).toBe(await sha256Hex(body));
-		expect(sent?.headers['x-amz-checksum-sha256']).toBe(await sha256Base64(body));
+		expect(sent?.headers['x-amz-content-sha256']).toBe(
+			await sha256Hex(body),
+		);
+		expect(sent?.headers['x-amz-checksum-sha256']).toBe(
+			await sha256Base64(body),
+		);
 		expect(sent?.headers['content-type']).toBe('application/pdf');
 		expect(sent?.headers['x-amz-meta-sha256']).toBe('deadbeef');
 		expect(sent?.headers['x-amz-meta-originalpath']).toBe('books/x.pdf');
@@ -77,12 +106,16 @@ describe('S3Backend request construction (la-p3-11)', () => {
 
 	it('head raises ObjectNotFoundError on 404', async () => {
 		const { backend } = harness(() => res(404));
-		await expect(backend.head('missing')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.head('missing')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	it('get returns the bytes and a 206 content-range on a range request', async () => {
 		const body = text('0123456789');
-		const { backend, requests } = harness(() => res(206, { 'content-range': 'bytes 2-5/10' }, text('2345')));
+		const { backend, requests } = harness(() =>
+			res(206, { 'content-range': 'bytes 2-5/10' }, text('2345')),
+		);
 		const got = await backend.get('k', { start: 2, end: 5 });
 		expect(got.status).toBe(206);
 		expect(got.contentRange).toBe('bytes 2-5/10');
@@ -93,7 +126,9 @@ describe('S3Backend request construction (la-p3-11)', () => {
 
 	it('get raises ObjectNotFoundError on 404', async () => {
 		const { backend } = harness(() => res(404));
-		await expect(backend.get('missing')).rejects.toBeInstanceOf(ObjectNotFoundError);
+		await expect(backend.get('missing')).rejects.toBeInstanceOf(
+			ObjectNotFoundError,
+		);
 	});
 
 	it('delete is idempotent: 204 and 404 both succeed', async () => {
@@ -137,12 +172,18 @@ describe('S3Backend error handling (la-p3-11)', () => {
 	it('classifies a 403 AccessDenied as an auth error', async () => {
 		const xml = '<Error><Code>AccessDenied</Code></Error>';
 		const { backend } = harness(() => res(403, {}, text(xml)));
-		await expect(backend.put('k', text('x'), 1)).rejects.toMatchObject({ kind: 'auth' });
+		await expect(backend.put('k', text('x'), 1)).rejects.toMatchObject({
+			kind: 'auth',
+		});
 	});
 
 	it('classifies a 500 as a network error', async () => {
-		const { backend } = harness(() => res(500, {}, text('<Error><Code>InternalError</Code></Error>')));
-		await expect(backend.list('p/')).rejects.toMatchObject({ kind: 'network' });
+		const { backend } = harness(() =>
+			res(500, {}, text('<Error><Code>InternalError</Code></Error>')),
+		);
+		await expect(backend.list('p/')).rejects.toMatchObject({
+			kind: 'network',
+		});
 	});
 
 	it('exposes both capability axes and a passthrough display key', () => {

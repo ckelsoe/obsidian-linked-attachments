@@ -107,7 +107,12 @@ export interface ListPage {
 
 export interface StorageBackend {
 	readonly capabilities: Capabilities;
-	put(key: string, body: PutBody, size: number, opts?: PutOptions): Promise<PutResult>;
+	put(
+		key: string,
+		body: PutBody,
+		size: number,
+		opts?: PutOptions,
+	): Promise<PutResult>;
 	get(key: string, range?: GetRange): Promise<GetResult>;
 	head(key: string): Promise<HeadResult>;
 	delete(key: string): Promise<void>;

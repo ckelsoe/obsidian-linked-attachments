@@ -32,11 +32,15 @@ export class LogViewModal extends Modal {
 		try {
 			text = await this.load();
 		} catch (error) {
-			contentEl.createEl('p', { text: `Could not read the log: ${error instanceof Error ? error.message : String(error)}` });
+			contentEl.createEl('p', {
+				text: `Could not read the log: ${error instanceof Error ? error.message : String(error)}`,
+			});
 			return;
 		}
 
-		const area = contentEl.createEl('textarea', { cls: 'linked-attachments-log-view' });
+		const area = contentEl.createEl('textarea', {
+			cls: 'linked-attachments-log-view',
+		});
 		area.readOnly = true;
 		area.setText(text.length > 0 ? text : 'The log is empty.');
 
@@ -54,6 +58,8 @@ export class LogViewModal extends Modal {
 						new Notice('Log copied to the clipboard.');
 					}),
 			)
-			.addButton((button) => button.setButtonText('Close').onClick(() => this.close()));
+			.addButton((button) =>
+				button.setButtonText('Close').onClick(() => this.close()),
+			);
 	}
 }

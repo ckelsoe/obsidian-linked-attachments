@@ -7,8 +7,12 @@
 // the verb there before it moved to `op`) overrides it, which is why the handler
 // reads `op` first and falls back to `action`. A malformed href yields the bare
 // action, and the handler then no-ops on the missing id.
-export function parsePointerLink(href: string): { action: string } & Record<string, string> {
-	const params: { action: string } & Record<string, string> = { action: 'linked-attachments' };
+export function parsePointerLink(
+	href: string,
+): { action: string } & Record<string, string> {
+	const params: { action: string } & Record<string, string> = {
+		action: 'linked-attachments',
+	};
 	try {
 		new URL(href).searchParams.forEach((value, key) => {
 			params[key] = value;

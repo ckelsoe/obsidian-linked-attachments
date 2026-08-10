@@ -1,7 +1,13 @@
 import { VerificationTier } from '../pointer/codec';
 import { ListEntry, StorageBackend } from '../storage/backend';
 import { ManifestEntry } from '../manifest/manifest';
-import { AdoptedPointer, AdoptOptions, AdoptRow, buildAdoptedPointer, mirrorKeyToVaultPath } from '../adopt/adopt-scan';
+import {
+	AdoptedPointer,
+	AdoptOptions,
+	AdoptRow,
+	buildAdoptedPointer,
+	mirrorKeyToVaultPath,
+} from '../adopt/adopt-scan';
 
 // The reconciliation scanner (spec section 6): the moat made into a button. A
 // bidirectional diff of vault pointers vs bucket objects into four outcomes:
@@ -45,7 +51,10 @@ export interface LinkPlacement {
 }
 
 // Pure diff. No I/O.
-export function reconcile(pointers: ManifestEntry[], objects: BucketObjectInfo[]): ReconcileFinding[] {
+export function reconcile(
+	pointers: ManifestEntry[],
+	objects: BucketObjectInfo[],
+): ReconcileFinding[] {
 	const objectByKey = new Map(objects.map((object) => [object.key, object]));
 	const pointerKeys = new Set(pointers.map((pointer) => pointer.key));
 	const findings: ReconcileFinding[] = [];
@@ -54,23 +63,51 @@ export function reconcile(pointers: ManifestEntry[], objects: BucketObjectInfo[]
 	for (const pointer of pointers) {
 		const object = objectByKey.get(pointer.key);
 		if (object === undefined) {
-			findings.push({ outcome: 'broken', key: pointer.key, pointer, object: null, stampedTier: null, detail: 'pointer has no matching object in the bucket' });
+			findings.push({
+				outcome: 'broken',
+				key: pointer.key,
+				pointer,
+				object: null,
+				stampedTier: null,
+				detail: 'pointer has no matching object in the bucket',
+			});
 			continue;
 		}
 		const drift = driftReason(pointer, object);
 		if (drift !== null) {
-			findings.push({ outcome: 'drift', key: pointer.key, pointer, object, stampedTier: null, detail: drift });
+			findings.push({
+				outcome: 'drift',
+				key: pointer.key,
+				pointer,
+				object,
+				stampedTier: null,
+				detail: drift,
+			});
 		} else {
 			// Cheap LIST/HEAD confirmed the object is present at the expected size:
 			// existence-verified. Content verification stays on-demand (spec section 6).
-			findings.push({ outcome: 'healthy', key: pointer.key, pointer, object, stampedTier: 'existence', detail: 'identity matches (existence-verified)' });
+			findings.push({
+				outcome: 'healthy',
+				key: pointer.key,
+				pointer,
+				object,
+				stampedTier: 'existence',
+				detail: 'identity matches (existence-verified)',
+			});
 		}
 	}
 
 	// Object side: unlinked candidates.
 	for (const object of objects) {
 		if (!pointerKeys.has(object.key)) {
-			findings.push({ outcome: 'unlinked', key: object.key, pointer: null, object, stampedTier: null, detail: 'bucket object has no pointer' });
+			findings.push({
+				outcome: 'unlinked',
+				key: object.key,
+				pointer: null,
+				object,
+				stampedTier: null,
+				detail: 'bucket object has no pointer',
+			});
 		}
 	}
 
@@ -88,14 +125,21 @@ export async function scanReconcile(
 	const entries: ListEntry[] = [];
 	let cursor: string | null = null;
 	do {
-		const page = await backend.list(prefix, { maxKeys: options.pageSize, cursor: cursor ?? undefined });
+		const page = await backend.list(prefix, {
+			maxKeys: options.pageSize,
+			cursor: cursor ?? undefined,
+		});
 		entries.push(...page.entries);
 		cursor = page.cursor;
 	} while (cursor !== null);
 
 	const objects: BucketObjectInfo[] = [];
 	for (const entry of entries) {
-		const info: BucketObjectInfo = { key: entry.key, size: entry.size, etag: entry.etag };
+		const info: BucketObjectInfo = {
+			key: entry.key,
+			size: entry.size,
+			etag: entry.etag,
+		};
 		if (options.deep === true) {
 			const head = await backend.head(entry.key);
 			info.checksumSha256 = head.checksumSha256;
@@ -108,7 +152,11 @@ export async function scanReconcile(
 
 // The single v1 remediation: build an adopted pointer for each unlinked
 // candidate. Never touches broken or drift findings.
-export function linkUnlinked(findings: ReconcileFinding[], placement: LinkPlacement, options: AdoptOptions): AdoptedPointer[] {
+export function linkUnlinked(
+	findings: ReconcileFinding[],
+	placement: LinkPlacement,
+	options: AdoptOptions,
+): AdoptedPointer[] {
 	const pointers: AdoptedPointer[] = [];
 	for (const finding of findings) {
 		if (finding.outcome !== 'unlinked' || finding.object === null) {
@@ -134,11 +182,18 @@ export function linkUnlinked(findings: ReconcileFinding[], placement: LinkPlacem
 // Why a pointer and its object disagree, or null when they match. Size is the
 // always-available cheap signal; a checksum mismatch is checked only when both
 // sides carry one (the object's comes from a deep HEAD).
-function driftReason(pointer: ManifestEntry, object: BucketObjectInfo): string | null {
+function driftReason(
+	pointer: ManifestEntry,
+	object: BucketObjectInfo,
+): string | null {
 	if (object.size !== pointer.byteSize) {
 		return `size mismatch: pointer ${pointer.byteSize} vs object ${object.size}`;
 	}
-	if (object.checksumSha256 !== undefined && pointer.remoteChecksum !== null && object.checksumSha256 !== pointer.remoteChecksum) {
+	if (
+		object.checksumSha256 !== undefined &&
+		pointer.remoteChecksum !== null &&
+		object.checksumSha256 !== pointer.remoteChecksum
+	) {
 		return 'checksum mismatch (possible external overwrite)';
 	}
 	return null;

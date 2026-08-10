@@ -1,11 +1,18 @@
 import fc from 'fast-check';
-import { layoutHashKey, adoptExternalKey, supersedingKey, applyVaultRename } from './layout';
+import {
+	layoutHashKey,
+	adoptExternalKey,
+	supersedingKey,
+	applyVaultRename,
+} from './layout';
 import { PointerRecord, requireS3Backend } from '../pointer/codec';
 
 // Tier 0: pure key derivation. No backend, no network.
 
-const HASH_A = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
-const HASH_B = '60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752';
+const HASH_A =
+	'9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+const HASH_B =
+	'60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752';
 
 function baseRecord(): PointerRecord {
 	return {
@@ -61,15 +68,25 @@ describe('key layout acceptance (la-p1-04)', () => {
 			originalPath: '31-books/Romans/Cranfield.pdf',
 			hash: HASH_A,
 		});
-		expect(assignment.key).toBe('charles-main/31-books/Romans/Cranfield--9f86d0.pdf');
+		expect(assignment.key).toBe(
+			'charles-main/31-books/Romans/Cranfield--9f86d0.pdf',
+		);
 		expect(assignment.keyKind).toBe('hash');
 	});
 
 	// AC2 :: two distinct-byte files at the same path produce distinct keys
 	// (the short-hash suffix; spec section 10 path-11 overwrite self-detect).
 	it('test_hash_suffix_collision_safe', () => {
-		const a = layoutHashKey({ vaultPrefix: 'v', originalPath: 'books/x.pdf', hash: HASH_A });
-		const b = layoutHashKey({ vaultPrefix: 'v', originalPath: 'books/x.pdf', hash: HASH_B });
+		const a = layoutHashKey({
+			vaultPrefix: 'v',
+			originalPath: 'books/x.pdf',
+			hash: HASH_A,
+		});
+		const b = layoutHashKey({
+			vaultPrefix: 'v',
+			originalPath: 'books/x.pdf',
+			hash: HASH_B,
+		});
 		expect(a.key).not.toBe(b.key);
 	});
 
@@ -77,8 +94,13 @@ describe('key layout acceptance (la-p1-04)', () => {
 	// (spec section 3 key born-once, rename never triggers an S3 copy)
 	it('test_key_immutable_vs_rename', () => {
 		const record = baseRecord();
-		const renamed = applyVaultRename(record, '99-archive/Cranfield-moved.pdf');
-		expect(requireS3Backend(renamed).key).toBe(requireS3Backend(record).key);
+		const renamed = applyVaultRename(
+			record,
+			'99-archive/Cranfield-moved.pdf',
+		);
+		expect(requireS3Backend(renamed).key).toBe(
+			requireS3Backend(record).key,
+		);
 		expect(renamed.hash).toBe(record.hash);
 		expect(renamed.originalPath).toBe('99-archive/Cranfield-moved.pdf');
 		expect(renamed.originalName).toBe('Cranfield-moved.pdf');
@@ -88,7 +110,13 @@ describe('key layout acceptance (la-p1-04)', () => {
 	// AC4 :: plugin-placed -> keyKind "hash"; foreign object -> keyKind "external".
 	// (spec section 5)
 	it('test_keyKind_discriminator', () => {
-		expect(layoutHashKey({ vaultPrefix: 'v', originalPath: 'a.pdf', hash: HASH_A }).keyKind).toBe('hash');
+		expect(
+			layoutHashKey({
+				vaultPrefix: 'v',
+				originalPath: 'a.pdf',
+				hash: HASH_A,
+			}).keyKind,
+		).toBe('hash');
 		const foreign = adoptExternalKey('someone-elses/arbitrary-object.bin');
 		expect(foreign.keyKind).toBe('external');
 		expect(foreign.key).toBe('someone-elses/arbitrary-object.bin');
@@ -96,12 +124,24 @@ describe('key layout acceptance (la-p1-04)', () => {
 
 	// A path with no directory mirrors directly under the prefix.
 	it('test_root_level_file', () => {
-		expect(layoutHashKey({ vaultPrefix: 'v', originalPath: 'notes.txt', hash: HASH_A }).key).toBe('v/notes--9f86d0.txt');
+		expect(
+			layoutHashKey({
+				vaultPrefix: 'v',
+				originalPath: 'notes.txt',
+				hash: HASH_A,
+			}).key,
+		).toBe('v/notes--9f86d0.txt');
 	});
 
 	// A file with no extension yields a key with no trailing dot.
 	it('test_no_extension', () => {
-		expect(layoutHashKey({ vaultPrefix: 'v', originalPath: 'docs/LICENSE', hash: HASH_A }).key).toBe('v/docs/LICENSE--9f86d0');
+		expect(
+			layoutHashKey({
+				vaultPrefix: 'v',
+				originalPath: 'docs/LICENSE',
+				hash: HASH_A,
+			}).key,
+		).toBe('v/docs/LICENSE--9f86d0');
 	});
 });
 
@@ -110,19 +150,21 @@ describe('key layout property tests (la-p1-04)', () => {
 	// produces a new key (old retained in the supersedes chain). (spec section 10)
 	it('prop_reupload_is_additive', () => {
 		fc.assert(
-			fc.property(
-				hex64,
-				hex64,
-				(oldHash, newHash) => {
-					fc.pre(oldHash.slice(0, 6) !== newHash.slice(0, 6));
-					const input = { vaultPrefix: 'v', originalPath: 'budget/2026.xlsx' };
-					const oldKey = layoutHashKey({ ...input, hash: oldHash });
-					const next = supersedingKey({ ...input, hash: newHash }, oldKey.key);
-					expect(next.key).not.toBe(oldKey.key);
-					expect(next.supersedes).toBe(oldKey.key);
-					expect(next.keyKind).toBe('hash');
-				},
-			),
+			fc.property(hex64, hex64, (oldHash, newHash) => {
+				fc.pre(oldHash.slice(0, 6) !== newHash.slice(0, 6));
+				const input = {
+					vaultPrefix: 'v',
+					originalPath: 'budget/2026.xlsx',
+				};
+				const oldKey = layoutHashKey({ ...input, hash: oldHash });
+				const next = supersedingKey(
+					{ ...input, hash: newHash },
+					oldKey.key,
+				);
+				expect(next.key).not.toBe(oldKey.key);
+				expect(next.supersedes).toBe(oldKey.key);
+				expect(next.keyKind).toBe('hash');
+			}),
 			{ numRuns: 200 },
 		);
 	});
@@ -131,8 +173,16 @@ describe('key layout property tests (la-p1-04)', () => {
 	it('prop_deterministic', () => {
 		fc.assert(
 			fc.property(fc.string(), hex64, (path, hash) => {
-				const a = layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash });
-				const b = layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash });
+				const a = layoutHashKey({
+					vaultPrefix: 'v',
+					originalPath: path,
+					hash,
+				});
+				const b = layoutHashKey({
+					vaultPrefix: 'v',
+					originalPath: path,
+					hash,
+				});
 				expect(a.key).toBe(b.key);
 			}),
 			{ numRuns: 200 },
@@ -153,12 +203,28 @@ describe('key layout failure injection (la-p1-04)', () => {
 			'   /   .pdf',
 		];
 		for (const path of paths) {
-			expect(() => layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash: HASH_A })).not.toThrow();
-			const key = layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash: HASH_A }).key;
+			expect(() =>
+				layoutHashKey({
+					vaultPrefix: 'v',
+					originalPath: path,
+					hash: HASH_A,
+				}),
+			).not.toThrow();
+			const key = layoutHashKey({
+				vaultPrefix: 'v',
+				originalPath: path,
+				hash: HASH_A,
+			}).key;
 			expect(key.length).toBeGreaterThan(0);
 			expect(hasControlChar(key)).toBe(false);
 			// deterministic
-			expect(layoutHashKey({ vaultPrefix: 'v', originalPath: path, hash: HASH_A }).key).toBe(key);
+			expect(
+				layoutHashKey({
+					vaultPrefix: 'v',
+					originalPath: path,
+					hash: HASH_A,
+				}).key,
+			).toBe(key);
 		}
 	});
 });

@@ -26,21 +26,34 @@ export function evaluateLock(query: LockQuery): LockVerdict {
 		return { state: 'free', message: '' };
 	}
 	if (checkout.host === thisHost) {
-		return { state: 'held-by-me', message: 'You have this checked out on this device.' };
+		return {
+			state: 'held-by-me',
+			message: 'You have this checked out on this device.',
+		};
 	}
 	const atMs = Date.parse(checkout.at);
 	const since = `${checkout.host} since ${checkout.at}`;
 	// An unparseable timestamp cannot be proven stale, so treat it as a live lock.
 	if (Number.isNaN(atMs) || nowMs - atMs <= staleAfterMs) {
-		return { state: 'held-by-other', message: `Checked out on ${since}. Open as read-only to avoid a conflict.` };
+		return {
+			state: 'held-by-other',
+			message: `Checked out on ${since}. Open as read-only to avoid a conflict.`,
+		};
 	}
-	return { state: 'stale', message: `Checked out on ${since}, but that lock looks stale. You can force a checkout.` };
+	return {
+		state: 'stale',
+		message: `Checked out on ${since}, but that lock looks stale. You can force a checkout.`,
+	};
 }
 
 // Name the preserved loser of a conflicting check-in (LWW + detect-and-preserve-both,
 // never a merge engine - spec section 4a). Recognizable like an Obsidian Sync
 // conflict file: the marker is inserted before the extension so the type is kept.
-export function conflictCopyName(originalName: string, host: string, at: string): string {
+export function conflictCopyName(
+	originalName: string,
+	host: string,
+	at: string,
+): string {
 	const stamp = at.replace(/[:.]/g, '-');
 	const dot = originalName.lastIndexOf('.');
 	if (dot <= 0) {

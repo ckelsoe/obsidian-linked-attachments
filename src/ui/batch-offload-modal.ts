@@ -40,53 +40,100 @@ export class BatchOffloadModal extends Modal {
 	private showPreview(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl('p', { text: `${this.files.length} file(s) selected. Nothing has been moved yet. Review, then confirm.` });
+		contentEl.createEl('p', {
+			text: `${this.files.length} file(s) selected. Nothing has been moved yet. Review, then confirm.`,
+		});
 
-		const table = contentEl.createDiv({ cls: 'linked-attachments-filelist' });
+		const table = contentEl.createDiv({
+			cls: 'linked-attachments-filelist',
+		});
 		let total = 0;
 		for (const file of this.files) {
 			total += file.stat.size;
 			this.row(table, file.name, formatBytes(file.stat.size), false);
 		}
-		this.row(table, `Total (${this.files.length})`, formatBytes(total), true);
+		this.row(
+			table,
+			`Total (${this.files.length})`,
+			formatBytes(total),
+			true,
+		);
 
 		new Setting(contentEl)
-			.addButton((button) => button.setButtonText('Cancel').onClick(() => this.close()))
+			.addButton((button) =>
+				button.setButtonText('Cancel').onClick(() => this.close()),
+			)
 			.addButton((button) =>
 				button
 					.setButtonText('Offload all')
 					.setCta()
-					.onClick(() => { void this.runBatch(); }),
+					.onClick(() => {
+						void this.runBatch();
+					}),
 			);
 	}
 
 	private async runBatch(): Promise<void> {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl('p', { text: 'Offloading. Each file is uploaded, verified, then the local original goes to trash.' });
+		contentEl.createEl('p', {
+			text: 'Offloading. Each file is uploaded, verified, then the local original goes to trash.',
+		});
 
 		const list = contentEl.createDiv({ cls: 'linked-attachments-ladder' });
 		this.rowStatus.clear();
 		for (const file of this.files) {
-			const row = list.createDiv({ cls: 'linked-attachments-ladder-row' });
-			row.createSpan({ cls: 'linked-attachments-ladder-label', text: file.name });
-			const status = row.createSpan({ cls: 'linked-attachments-ladder-status', text: 'Queued' });
+			const row = list.createDiv({
+				cls: 'linked-attachments-ladder-row',
+			});
+			row.createSpan({
+				cls: 'linked-attachments-ladder-label',
+				text: file.name,
+			});
+			const status = row.createSpan({
+				cls: 'linked-attachments-ladder-status',
+				text: 'Queued',
+			});
 			this.rowStatus.set(file.path, status);
 		}
-		const summary = contentEl.createDiv({ cls: 'linked-attachments-ladder-verdict' });
+		const summary = contentEl.createDiv({
+			cls: 'linked-attachments-ladder-verdict',
+		});
 
 		try {
-			const progress = await this.service.offloadMany(this.files, (item) => this.applyItem(item));
-			const done = progress.items.filter((i) => i.status === 'done' && i.result?.removed).length;
-			const kept = progress.items.filter((i) => i.status === 'done' && !i.result?.removed).length;
-			const failed = progress.items.filter((i) => i.status === 'failed').length;
-			summary.setText(`Done. ${done} offloaded, ${kept} kept (not at the delete-gate tier), ${failed} failed.`);
-			summary.toggleClass('linked-attachments-ladder-verdict-ok', failed === 0);
-			summary.toggleClass('linked-attachments-ladder-verdict-error', failed > 0);
+			const progress = await this.service.offloadMany(
+				this.files,
+				(item) => this.applyItem(item),
+			);
+			const done = progress.items.filter(
+				(i) => i.status === 'done' && i.result?.removed,
+			).length;
+			const kept = progress.items.filter(
+				(i) => i.status === 'done' && !i.result?.removed,
+			).length;
+			const failed = progress.items.filter(
+				(i) => i.status === 'failed',
+			).length;
+			summary.setText(
+				`Done. ${done} offloaded, ${kept} kept (not at the delete-gate tier), ${failed} failed.`,
+			);
+			summary.toggleClass(
+				'linked-attachments-ladder-verdict-ok',
+				failed === 0,
+			);
+			summary.toggleClass(
+				'linked-attachments-ladder-verdict-error',
+				failed > 0,
+			);
 		} catch (error) {
 			this.onError(error);
-			summary.setText('The batch could not run. See the log for details.');
-			summary.toggleClass('linked-attachments-ladder-verdict-error', true);
+			summary.setText(
+				'The batch could not run. See the log for details.',
+			);
+			summary.toggleClass(
+				'linked-attachments-ladder-verdict-error',
+				true,
+			);
 		}
 	}
 
@@ -100,19 +147,40 @@ export class BatchOffloadModal extends Modal {
 			el.setText('Offloading');
 		} else if (item.status === 'done') {
 			setIcon(el.createSpan(), 'check');
-			el.createSpan({ text: item.result?.removed ? 'Offloaded' : 'Kept' });
+			el.createSpan({
+				text: item.result?.removed ? 'Offloaded' : 'Kept',
+			});
 		} else if (item.status === 'failed') {
 			setIcon(el.createSpan(), 'x');
 			el.createSpan({ text: item.error ?? 'Failed' });
 		}
-		el.toggleClass('linked-attachments-ladder-status-passed', item.status === 'done');
-		el.toggleClass('linked-attachments-ladder-status-failed', item.status === 'failed');
+		el.toggleClass(
+			'linked-attachments-ladder-status-passed',
+			item.status === 'done',
+		);
+		el.toggleClass(
+			'linked-attachments-ladder-status-failed',
+			item.status === 'failed',
+		);
 	}
 
-	private row(parent: HTMLElement, label: string, value: string, emphasize: boolean): void {
-		const row = parent.createDiv({ cls: 'linked-attachments-filelist-row' });
+	private row(
+		parent: HTMLElement,
+		label: string,
+		value: string,
+		emphasize: boolean,
+	): void {
+		const row = parent.createDiv({
+			cls: 'linked-attachments-filelist-row',
+		});
 		row.toggleClass('linked-attachments-filelist-total', emphasize);
-		row.createSpan({ cls: 'linked-attachments-filelist-name', text: label });
-		row.createSpan({ cls: 'linked-attachments-filelist-size', text: value });
+		row.createSpan({
+			cls: 'linked-attachments-filelist-name',
+			text: label,
+		});
+		row.createSpan({
+			cls: 'linked-attachments-filelist-size',
+			text: value,
+		});
 	}
 }

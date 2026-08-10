@@ -49,7 +49,12 @@ import { bodyToBytes, bytesToStream, toArrayBuffer } from './body';
 // disaster-recovery spine lives in the pointer note, not the bytes.
 
 const CAPABILITIES: Capabilities = {
-	upload: { presign: false, range: true, serverChecksum: false, conditionalWrite: false },
+	upload: {
+		presign: false,
+		range: true,
+		serverChecksum: false,
+		conditionalWrite: false,
+	},
 	access: 'local-path',
 };
 
@@ -70,13 +75,21 @@ export class LocalBackend implements StorageBackend {
 	// factory, not here, so this class stays a pure filesystem mapper).
 	constructor(private readonly root: string) {}
 
-	async put(key: string, body: PutBody, size: number, opts: PutOptions = {}): Promise<PutResult> {
+	async put(
+		key: string,
+		body: PutBody,
+		size: number,
+		opts: PutOptions = {},
+	): Promise<PutResult> {
 		const bytes = await bodyToBytes(body);
 		if (size !== bytes.length) {
 			// A declared size that disagrees with the body is a truncated or
 			// over-declared upload; reject it rather than persist a wrong-length file
 			// (mirrors MemoryBackend / the S3 size contract).
-			throw new BackendError('network', `declared size ${size} != body length ${bytes.length} for ${key}`);
+			throw new BackendError(
+				'network',
+				`declared size ${size} != body length ${bytes.length} for ${key}`,
+			);
 		}
 		const filePath = this.keyToPath(key);
 		await fs.mkdir(nodePath.dirname(filePath), { recursive: true });
@@ -124,7 +137,10 @@ export class LocalBackend implements StorageBackend {
 			// unlink reports EISDIR (POSIX) or EPERM (Windows). Swallow it only after
 			// confirming it really is a directory, so a genuine EPERM on a locked or
 			// read-only file still surfaces.
-			if ((isErrnoCode(error, 'EISDIR') || isErrnoCode(error, 'EPERM')) && (await isDirectory(filePath))) {
+			if (
+				(isErrnoCode(error, 'EISDIR') || isErrnoCode(error, 'EPERM')) &&
+				(await isDirectory(filePath))
+			) {
 				return;
 			}
 			throw error;
@@ -161,7 +177,10 @@ export class LocalBackend implements StorageBackend {
 		const filePath = this.keyToPath(key);
 		try {
 			const stat = await fs.stat(filePath);
-			return stat.isFile() && isDatalessStat({ size: stat.size, blocks: stat.blocks });
+			return (
+				stat.isFile() &&
+				isDatalessStat({ size: stat.size, blocks: stat.blocks })
+			);
 		} catch {
 			return false;
 		}
@@ -180,16 +199,32 @@ export class LocalBackend implements StorageBackend {
 			// backslash would alias with the forward-slash form on Windows (a\b vs
 			// a/b resolve to the same file) and could smuggle a `..\` traversal past
 			// the segment check below, so reject it outright.
-			throw new BackendError('network', `invalid key (backslash separator): ${key}`);
+			throw new BackendError(
+				'network',
+				`invalid key (backslash separator): ${key}`,
+			);
 		}
 		const segments = key.split('/');
-		if (segments.some((segment) => segment === '..' || segment === '.' || segment.length === 0)) {
-			throw new BackendError('network', `invalid key (empty or traversal segment): ${key}`);
+		if (
+			segments.some(
+				(segment) =>
+					segment === '..' || segment === '.' || segment.length === 0,
+			)
+		) {
+			throw new BackendError(
+				'network',
+				`invalid key (empty or traversal segment): ${key}`,
+			);
 		}
 		const resolved = nodePath.resolve(this.root, ...segments);
-		const rootWithSep = this.root.endsWith(nodePath.sep) ? this.root : this.root + nodePath.sep;
+		const rootWithSep = this.root.endsWith(nodePath.sep)
+			? this.root
+			: this.root + nodePath.sep;
 		if (resolved !== this.root && !resolved.startsWith(rootWithSep)) {
-			throw new BackendError('network', `key resolves outside the local root: ${key}`);
+			throw new BackendError(
+				'network',
+				`key resolves outside the local root: ${key}`,
+			);
 		}
 		// Windows caps a normal path at 260 chars (MAX_PATH). Refuse a too-long path up
 		// front with an actionable message instead of letting the fs call fail with a
@@ -197,7 +232,10 @@ export class LocalBackend implements StorageBackend {
 		// vault original is kept (no data loss). A shorter local root or vault path, or
 		// enabling long-path support, resolves it.
 		if (platform === 'win32' && resolved.length >= WINDOWS_MAX_PATH) {
-			throw new BackendError('network', `local path exceeds the Windows ${WINDOWS_MAX_PATH}-character limit (${resolved.length} chars); shorten the local root or the vault path: ${resolved}`);
+			throw new BackendError(
+				'network',
+				`local path exceeds the Windows ${WINDOWS_MAX_PATH}-character limit (${resolved.length} chars); shorten the local root or the vault path: ${resolved}`,
+			);
 		}
 		return resolved;
 	}
@@ -210,7 +248,10 @@ export class LocalBackend implements StorageBackend {
 	// returns could lose the offloaded copy while the vault original is already
 	// gone. The temp name carries a random UUID so two processes writing the same
 	// key against one synced folder (two devices) never collide on the temp file.
-	private async writeAtomic(filePath: string, bytes: Uint8Array): Promise<void> {
+	private async writeAtomic(
+		filePath: string,
+		bytes: Uint8Array,
+	): Promise<void> {
 		const tmpPath = `${filePath}.la-tmp-${crypto.randomUUID()}`;
 		try {
 			const handle = await fs.open(tmpPath, 'w');
@@ -230,7 +271,10 @@ export class LocalBackend implements StorageBackend {
 		await fsyncDir(nodePath.dirname(filePath));
 	}
 
-	private async readWhole(filePath: string, key: string): Promise<Uint8Array> {
+	private async readWhole(
+		filePath: string,
+		key: string,
+	): Promise<Uint8Array> {
 		// statOrNotFound also rejects a directory key (a prefix folder is not an
 		// object), so a full GET of "a" when only "a/b" exists is a clean
 		// ObjectNotFoundError, not a raw EISDIR.
@@ -239,7 +283,11 @@ export class LocalBackend implements StorageBackend {
 		return new Uint8Array(buffer);
 	}
 
-	private async getRange(filePath: string, key: string, range: GetRange): Promise<GetResult> {
+	private async getRange(
+		filePath: string,
+		key: string,
+		range: GetRange,
+	): Promise<GetResult> {
 		const stat = await this.statOrNotFound(key);
 		// HTTP Range semantics: end is inclusive. Clamp both ends into [0, size-1]
 		// so an out-of-range or reversed request yields an empty, well-formed 206
@@ -257,7 +305,12 @@ export class LocalBackend implements StorageBackend {
 			try {
 				// Honour the actual bytesRead: if the file was truncated after the
 				// stat, return only what was read, never a zero-padded buffer.
-				const { bytesRead } = await handle.read(buffer, 0, requested, start);
+				const { bytesRead } = await handle.read(
+					buffer,
+					0,
+					requested,
+					start,
+				);
 				bytes = new Uint8Array(buffer.subarray(0, bytesRead));
 			} finally {
 				await handle.close();
@@ -267,7 +320,9 @@ export class LocalBackend implements StorageBackend {
 		return makeGetResult(206, bytes, `bytes ${start}-${lastByte}/${size}`);
 	}
 
-	private async statOrNotFound(key: string): Promise<{ size: number; mtimeMs: number }> {
+	private async statOrNotFound(
+		key: string,
+	): Promise<{ size: number; mtimeMs: number }> {
 		const filePath = this.keyToPath(key);
 		let stat;
 		try {
@@ -312,13 +367,19 @@ export class LocalBackend implements StorageBackend {
 	private async walk(prefix: string): Promise<Map<string, WalkedObject>> {
 		const slash = prefix.lastIndexOf('/');
 		const dirPrefix = slash >= 0 ? prefix.slice(0, slash) : '';
-		const startDir = dirPrefix.length > 0 ? this.keyToPath(dirPrefix) : nodePath.resolve(this.root);
+		const startDir =
+			dirPrefix.length > 0
+				? this.keyToPath(dirPrefix)
+				: nodePath.resolve(this.root);
 		const out = new Map<string, WalkedObject>();
 		await this.walkDir(startDir, out);
 		return out;
 	}
 
-	private async walkDir(dir: string, out: Map<string, WalkedObject>): Promise<void> {
+	private async walkDir(
+		dir: string,
+		out: Map<string, WalkedObject>,
+	): Promise<void> {
 		let dirents;
 		try {
 			dirents = await fs.readdir(dir, { withFileTypes: true });
@@ -339,9 +400,16 @@ export class LocalBackend implements StorageBackend {
 					continue;
 				}
 				const stat = await fs.stat(full);
-				const relative = nodePath.relative(nodePath.resolve(this.root), full);
+				const relative = nodePath.relative(
+					nodePath.resolve(this.root),
+					full,
+				);
 				const key = relative.split(nodePath.sep).join('/');
-				out.set(key, { size: stat.size, etag: statEtag(stat.size, stat.mtimeMs), lastModified: new Date(stat.mtimeMs).toISOString() });
+				out.set(key, {
+					size: stat.size,
+					etag: statEtag(stat.size, stat.mtimeMs),
+					lastModified: new Date(stat.mtimeMs).toISOString(),
+				});
 			}
 		}
 	}
@@ -378,7 +446,11 @@ export function resolveLocalRoot(raw: string): string {
 }
 
 function stripSurroundingQuotes(value: string): string {
-	if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+	if (
+		value.length >= 2 &&
+		((value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'")))
+	) {
 		return value.slice(1, -1);
 	}
 	return value;
@@ -391,9 +463,18 @@ export function osTempDir(): string {
 }
 
 function expandEnv(input: string): string {
-	let out = input.replace(/%([^%]+)%/g, (whole: string, name: string) => env[name] ?? whole);
-	out = out.replace(/\$\{([^}]+)\}/g, (whole: string, name: string) => env[name] ?? whole);
-	out = out.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole: string, name: string) => env[name] ?? whole);
+	let out = input.replace(
+		/%([^%]+)%/g,
+		(whole: string, name: string) => env[name] ?? whole,
+	);
+	out = out.replace(
+		/\$\{([^}]+)\}/g,
+		(whole: string, name: string) => env[name] ?? whole,
+	);
+	out = out.replace(
+		/\$([A-Za-z_][A-Za-z0-9_]*)/g,
+		(whole: string, name: string) => env[name] ?? whole,
+	);
 	if (out === '~' || out.startsWith('~/') || out.startsWith('~\\')) {
 		out = os.homedir() + out.slice(1);
 	}
@@ -434,7 +515,10 @@ async function isDirectory(path: string): Promise<boolean> {
 // platform does not report blocks (undefined), this returns false so the file is
 // treated as present, never wrongly hidden. The heuristic is portable across
 // OneDrive Files On-Demand, iCloud, and Dropbox smart-sync placeholders.
-export function isDatalessStat(stat: { size: number; blocks?: number }): boolean {
+export function isDatalessStat(stat: {
+	size: number;
+	blocks?: number;
+}): boolean {
 	// blocks is optional: a platform that does not report block allocation leaves it
 	// undefined, and `undefined === 0` is false, so the file is treated as present.
 	return stat.size > 0 && stat.blocks === 0;
@@ -451,10 +535,19 @@ function isErrnoCode(error: unknown, code: string): boolean {
 	// Duck-type the errno `code` rather than `instanceof Error`: a Node fs rejection
 	// can cross a module/realm boundary (jest, bundlers) where instanceof silently
 	// fails, and the errno code is the only thing actually being asserted.
-	return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'code' in error &&
+		error.code === code
+	);
 }
 
-function makeGetResult(status: number, bytes: Uint8Array, contentRange: string | undefined): GetResult {
+function makeGetResult(
+	status: number,
+	bytes: Uint8Array,
+	contentRange: string | undefined,
+): GetResult {
 	return {
 		status,
 		contentRange,
@@ -474,11 +567,16 @@ function makeGetResult(status: number, bytes: Uint8Array, contentRange: string |
 // across backends (the "second copy is the moment to parameterize" rule; kept a
 // copy here rather than exported to avoid coupling the in-memory test double to
 // the production filesystem module).
-function pageObjects(objects: Map<string, WalkedObject>, prefix: string, opts: ListOptions): ListPage {
+function pageObjects(
+	objects: Map<string, WalkedObject>,
+	prefix: string,
+	opts: ListOptions,
+): ListPage {
 	// A non-positive maxKeys would make the loop truncate before emitting anything
 	// (isTruncated:true, cursor:null), which a "loop until cursor === null" caller
 	// reads as "done" while it silently got nothing. Clamp to the S3 default.
-	const maxKeys = opts.maxKeys !== undefined && opts.maxKeys > 0 ? opts.maxKeys : 1000;
+	const maxKeys =
+		opts.maxKeys !== undefined && opts.maxKeys > 0 ? opts.maxKeys : 1000;
 	const delimiter = opts.delimiter;
 	const keys = [...objects.keys()].filter((k) => k.startsWith(prefix)).sort();
 
@@ -503,7 +601,10 @@ function pageObjects(objects: Map<string, WalkedObject>, prefix: string, opts: L
 		if (key === undefined) {
 			continue;
 		}
-		const groupValue = delimiter !== undefined ? groupPrefix(key, prefix, delimiter) : null;
+		const groupValue =
+			delimiter !== undefined
+				? groupPrefix(key, prefix, delimiter)
+				: null;
 
 		if (groupValue !== null) {
 			if (seenPrefixes.has(groupValue)) {
@@ -526,15 +627,29 @@ function pageObjects(objects: Map<string, WalkedObject>, prefix: string, opts: L
 			if (object === undefined) {
 				continue;
 			}
-			entries.push({ key, size: object.size, etag: object.etag, lastModified: object.lastModified });
+			entries.push({
+				key,
+				size: object.size,
+				etag: object.etag,
+				lastModified: object.lastModified,
+			});
 			cursor = key;
 		}
 	}
 
-	return { entries, commonPrefixes, isTruncated: truncated, cursor: truncated ? cursor : null };
+	return {
+		entries,
+		commonPrefixes,
+		isTruncated: truncated,
+		cursor: truncated ? cursor : null,
+	};
 }
 
-function groupPrefix(key: string, prefix: string, delimiter: string): string | null {
+function groupPrefix(
+	key: string,
+	prefix: string,
+	delimiter: string,
+): string | null {
 	const rest = key.slice(prefix.length);
 	const at = rest.indexOf(delimiter);
 	if (at < 0) {

@@ -11,7 +11,12 @@ const NOW = Date.parse('2026-06-18T12:00:00.000Z');
 describe('advisory lock evaluation (la-p6-30)', () => {
 	// AC1 :: no checkout markers -> free.
 	it('test_free_when_no_checkout', () => {
-		const v = evaluateLock({ checkout: null, thisHost: 'mbp', nowMs: NOW, staleAfterMs: 24 * HOUR });
+		const v = evaluateLock({
+			checkout: null,
+			thisHost: 'mbp',
+			nowMs: NOW,
+			staleAfterMs: 24 * HOUR,
+		});
 		expect(v.state).toBe('free');
 	});
 
@@ -69,7 +74,11 @@ describe('conflict copy naming (la-p6-30)', () => {
 	// AC6 :: a conflicting check-in preserves the loser as a recognizable .conflict
 	// copy (LWW + detect-and-preserve-both, never a merge engine - section 4a).
 	it('test_conflict_copy_name_keeps_extension', () => {
-		const name = conflictCopyName('budget.xlsx', 'work-pc', '2026-06-18T11:00:00.000Z');
+		const name = conflictCopyName(
+			'budget.xlsx',
+			'work-pc',
+			'2026-06-18T11:00:00.000Z',
+		);
 		expect(name).toContain('budget');
 		expect(name).toContain('conflict');
 		expect(name).toContain('work-pc');
@@ -77,7 +86,11 @@ describe('conflict copy naming (la-p6-30)', () => {
 	});
 
 	it('test_conflict_copy_name_no_extension', () => {
-		const name = conflictCopyName('README', 'h', '2026-06-18T11:00:00.000Z');
+		const name = conflictCopyName(
+			'README',
+			'h',
+			'2026-06-18T11:00:00.000Z',
+		);
 		expect(name).toContain('README');
 		expect(name).toContain('conflict');
 	});

@@ -1,4 +1,9 @@
-import { AdoptRow, AdoptedPointer, AdoptOptions, buildAdoptedPointer } from './adopt-scan';
+import {
+	AdoptRow,
+	AdoptedPointer,
+	AdoptOptions,
+	buildAdoptedPointer,
+} from './adopt-scan';
 
 // The adopt UI's safety guard over the proven engine. planAdoption builds a pointer
 // only for rows that are actually adoptable, so a collision or already-adopted row
@@ -12,8 +17,13 @@ export interface AdoptSummary {
 	alreadyAdopted: number;
 }
 
-export function planAdoption(rows: AdoptRow[], options: AdoptOptions): AdoptedPointer[] {
-	return rows.filter((row) => row.status === 'adoptable').map((row) => buildAdoptedPointer(row, options));
+export function planAdoption(
+	rows: AdoptRow[],
+	options: AdoptOptions,
+): AdoptedPointer[] {
+	return rows
+		.filter((row) => row.status === 'adoptable')
+		.map((row) => buildAdoptedPointer(row, options));
 }
 
 export function summarizeRows(rows: AdoptRow[]): AdoptSummary {
@@ -21,6 +31,7 @@ export function summarizeRows(rows: AdoptRow[]): AdoptSummary {
 		total: rows.length,
 		adoptable: rows.filter((r) => r.status === 'adoptable').length,
 		collision: rows.filter((r) => r.status === 'collision').length,
-		alreadyAdopted: rows.filter((r) => r.status === 'already-adopted').length,
+		alreadyAdopted: rows.filter((r) => r.status === 'already-adopted')
+			.length,
 	};
 }

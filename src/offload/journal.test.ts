@@ -1,4 +1,11 @@
-import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItems, isComplete } from './journal';
+import {
+	createJournal,
+	setStage,
+	serializeJournal,
+	parseJournal,
+	unfinishedItems,
+	isComplete,
+} from './journal';
 
 // The offload-session journal (spec section 4 worst-day recovery; the MINIMAL slice
 // of O3 - not resumable-multipart, not a background queue). A per-batch record of
@@ -9,19 +16,35 @@ import { createJournal, setStage, serializeJournal, parseJournal, unfinishedItem
 
 describe('offload journal', () => {
 	it('createJournal :: every file starts queued', () => {
-		const journal = createJournal('batch-1', ['a.pdf', 'b.pdf'], '2026-06-17T00:00:00.000Z');
+		const journal = createJournal(
+			'batch-1',
+			['a.pdf', 'b.pdf'],
+			'2026-06-17T00:00:00.000Z',
+		);
 		expect(journal.batchId).toBe('batch-1');
 		expect(journal.items.map((i) => i.stage)).toEqual(['queued', 'queued']);
 	});
 
 	it('setStage :: updates one item, leaves the rest', () => {
-		const journal = setStage(createJournal('b', ['a.pdf', 'b.pdf'], 'now'), 'a.pdf', 'committed');
-		expect(journal.items.find((i) => i.path === 'a.pdf')?.stage).toBe('committed');
-		expect(journal.items.find((i) => i.path === 'b.pdf')?.stage).toBe('queued');
+		const journal = setStage(
+			createJournal('b', ['a.pdf', 'b.pdf'], 'now'),
+			'a.pdf',
+			'committed',
+		);
+		expect(journal.items.find((i) => i.path === 'a.pdf')?.stage).toBe(
+			'committed',
+		);
+		expect(journal.items.find((i) => i.path === 'b.pdf')?.stage).toBe(
+			'queued',
+		);
 	});
 
 	it('serialize/parse :: a journal round-trips', () => {
-		const journal = setStage(createJournal('b', ['a.pdf'], 'now'), 'a.pdf', 'uploaded');
+		const journal = setStage(
+			createJournal('b', ['a.pdf'], 'now'),
+			'a.pdf',
+			'uploaded',
+		);
 		const parsed = parseJournal(serializeJournal(journal));
 		expect(parsed.ok).toBe(true);
 		if (parsed.ok) {
@@ -32,14 +55,23 @@ describe('offload journal', () => {
 	it('parse :: a corrupt journal is discardable, never trusted', () => {
 		expect(parseJournal('{ not json').ok).toBe(false);
 		expect(parseJournal('{"batchId":"b"}').ok).toBe(false); // missing items
-		expect(parseJournal('{"batchId":"b","startedAt":"now","items":"bad"}').ok).toBe(false);
+		expect(
+			parseJournal('{"batchId":"b","startedAt":"now","items":"bad"}').ok,
+		).toBe(false);
 	});
 
 	it('unfinishedItems :: everything not removed is unfinished', () => {
-		let journal = createJournal('b', ['done.pdf', 'mid.pdf', 'fresh.pdf'], 'now');
+		let journal = createJournal(
+			'b',
+			['done.pdf', 'mid.pdf', 'fresh.pdf'],
+			'now',
+		);
 		journal = setStage(journal, 'done.pdf', 'removed');
 		journal = setStage(journal, 'mid.pdf', 'uploaded');
-		expect(unfinishedItems(journal).map((i) => i.path)).toEqual(['mid.pdf', 'fresh.pdf']);
+		expect(unfinishedItems(journal).map((i) => i.path)).toEqual([
+			'mid.pdf',
+			'fresh.pdf',
+		]);
 	});
 
 	it('isComplete :: true only when every item is removed', () => {

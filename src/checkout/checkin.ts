@@ -33,7 +33,12 @@ export interface CheckinPlanInput {
 export type CheckinPlan =
 	| { kind: 'no-op' }
 	| { kind: 'version'; record: PointerRecord }
-	| { kind: 'conflict'; record: PointerRecord; conflictName: string; conflictSourceKey: string };
+	| {
+			kind: 'conflict';
+			record: PointerRecord;
+			conflictName: string;
+			conflictSourceKey: string;
+	  };
 
 export function planCheckin(input: CheckinPlanInput): CheckinPlan {
 	const { record, workingHash, checkoutBaseHash } = input;
@@ -50,7 +55,11 @@ export function planCheckin(input: CheckinPlanInput): CheckinPlan {
 		return {
 			kind: 'conflict',
 			record: newRecord,
-			conflictName: conflictCopyName(record.originalName, 'another-device', input.now()),
+			conflictName: conflictCopyName(
+				record.originalName,
+				'another-device',
+				input.now(),
+			),
 			conflictSourceKey: requireS3Backend(record).key,
 		};
 	}
@@ -63,7 +72,11 @@ function supersedingRecord(input: CheckinPlanInput): PointerRecord {
 	const { record, workingHash, workingSize } = input;
 	const s3 = requireS3Backend(record);
 	const { key, supersedes } = supersedingKey(
-		{ vaultPrefix: input.vaultPrefix, originalPath: record.originalPath, hash: workingHash },
+		{
+			vaultPrefix: input.vaultPrefix,
+			originalPath: record.originalPath,
+			hash: workingHash,
+		},
 		s3.key,
 	);
 	// Check-in versions the S3 object. A local mirror (if any) still holds the prior

@@ -1,4 +1,7 @@
-import { rewriteEmbedsToPointer, rewriteEmbedsToAttachment } from './references';
+import {
+	rewriteEmbedsToPointer,
+	rewriteEmbedsToAttachment,
+} from './references';
 
 // R14 embed rewriting across the vault. The per-note transform lives in the proven
 // scanner (references.ts); this is the orchestration over many notes: apply the
@@ -38,7 +41,11 @@ export function rewriteEmbedsInNotes(
 				? rewriteEmbedsToPointer(note.content, attachmentName)
 				: rewriteEmbedsToAttachment(note.content, attachmentName);
 		if (result.rewritten > 0) {
-			rewrites.push({ path: note.path, content: result.text, embedsRewritten: result.rewritten });
+			rewrites.push({
+				path: note.path,
+				content: result.text,
+				embedsRewritten: result.rewritten,
+			});
 			embedsRewritten += result.rewritten;
 		}
 	}

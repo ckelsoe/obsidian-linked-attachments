@@ -35,12 +35,17 @@ describe('trustBadge', () => {
 		const badge = trustBadge('asserted');
 		expect(badge.kind).toBe('asserted');
 		expect(badge.label).toBe('Asserted');
-		expect(badge.cardLine).toBe('You told us it\'s there');
+		expect(badge.cardLine).toBe("You told us it's there");
 		expect(badge.unlocksDelete).toBe(false);
 	});
 
 	it('every tier has a non-empty tooltip', () => {
-		for (const tier of ['content', 'md5', 'existence', 'asserted'] as VerificationTier[]) {
+		for (const tier of [
+			'content',
+			'md5',
+			'existence',
+			'asserted',
+		] as VerificationTier[]) {
 			expect(trustBadge(tier).tooltip.length).toBeGreaterThan(0);
 		}
 	});
@@ -48,8 +53,15 @@ describe('trustBadge', () => {
 	// The cross-check that keeps the badge honest: "unlocks one-click delete" is the
 	// real gate, not a parallel opinion that can drift from it.
 	it('unlocksDelete matches the pipeline delete gate for every tier', () => {
-		for (const tier of ['content', 'md5', 'existence', 'asserted'] as VerificationTier[]) {
-			expect(trustBadge(tier).unlocksDelete).toBe(defaultCanRemoveOriginal(tier));
+		for (const tier of [
+			'content',
+			'md5',
+			'existence',
+			'asserted',
+		] as VerificationTier[]) {
+			expect(trustBadge(tier).unlocksDelete).toBe(
+				defaultCanRemoveOriginal(tier),
+			);
 		}
 	});
 });

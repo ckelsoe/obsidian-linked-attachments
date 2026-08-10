@@ -1,4 +1,8 @@
-import { decodePointer, PointerRecord, requireS3Backend } from '../pointer/codec';
+import {
+	decodePointer,
+	PointerRecord,
+	requireS3Backend,
+} from '../pointer/codec';
 import { StorageBackend } from '../storage/backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { sha256Hex, sha256Base64 } from '../hash/sha256';
@@ -70,13 +74,18 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export class CheckoutManager {
 	constructor(private readonly deps: CheckoutDeps) {}
 
-	async checkout(pointerPath: string, opts: { force?: boolean } = {}): Promise<CheckoutResult> {
+	async checkout(
+		pointerPath: string,
+		opts: { force?: boolean } = {},
+	): Promise<CheckoutResult> {
 		const text = await this.deps.readPointer(pointerPath);
 		const decoded = decodePointer(text);
 		const record = decoded.record;
 
 		if (record.hash === null) {
-			return fail('this pointer has no recorded content hash; it cannot be checked out safely');
+			return fail(
+				'this pointer has no recorded content hash; it cannot be checked out safely',
+			);
 		}
 
 		// Advisory cross-device lock: refuse (read-only default) when another device
@@ -87,30 +96,53 @@ export class CheckoutManager {
 			nowMs: Date.parse(this.deps.now()),
 			staleAfterMs: this.deps.staleAfterMs ?? DAY_MS,
 		});
-		if ((verdict.state === 'held-by-other' || verdict.state === 'stale') && opts.force !== true) {
-			return { ok: false, workingCopyPath: null, lockState: verdict.state, error: verdict.message };
+		if (
+			(verdict.state === 'held-by-other' || verdict.state === 'stale') &&
+			opts.force !== true
+		) {
+			return {
+				ok: false,
+				workingCopyPath: null,
+				lockState: verdict.state,
+				error: verdict.message,
+			};
 		}
 
 		// GET the object and confirm its bytes match the recorded identity before we
 		// open it (never hand the user drifted/overwritten bytes).
 		let bytes: Uint8Array;
 		try {
-			bytes = new Uint8Array(await (await this.deps.backend.get(requireS3Backend(record).key)).arrayBuffer());
+			bytes = new Uint8Array(
+				await (
+					await this.deps.backend.get(requireS3Backend(record).key)
+				).arrayBuffer(),
+			);
 		} catch (error) {
 			return fail(`could not download the object: ${describe(error)}`);
 		}
 		if ((await sha256Hex(bytes)) !== record.hash) {
-			return fail('the downloaded bytes do not match the recorded hash; not opening (possible drift)');
+			return fail(
+				'the downloaded bytes do not match the recorded hash; not opening (possible drift)',
+			);
 		}
 
 		const wcPath = workingCopyPath(record.hash, record.originalName);
 		await this.deps.writeWorkingCopy(wcPath, bytes);
 		await this.deps.writePointer(
 			pointerPath,
-			withCheckoutMarkers(text, { host: this.deps.host(), at: this.deps.now(), baseHash: record.hash }),
+			withCheckoutMarkers(text, {
+				host: this.deps.host(),
+				at: this.deps.now(),
+				baseHash: record.hash,
+			}),
 		);
 		await this.deps.openInDefaultApp(wcPath);
-		return { ok: true, workingCopyPath: wcPath, lockState: 'held-by-me', error: null };
+		return {
+			ok: true,
+			workingCopyPath: wcPath,
+			lockState: 'held-by-me',
+			error: null,
+		};
 	}
 
 	async checkin(pointerPath: string): Promise<CheckinResult> {
@@ -123,7 +155,9 @@ export class CheckoutManager {
 		}
 		const wcPath = workingCopyPath(baseHash, record.originalName);
 		if (!(await this.deps.workingCopyExists(wcPath))) {
-			return failCheckin('no working copy was found for this pointer on this device');
+			return failCheckin(
+				'no working copy was found for this pointer on this device',
+			);
 		}
 
 		const working = await this.deps.readWorkingCopy(wcPath);
@@ -139,9 +173,18 @@ export class CheckoutManager {
 
 		if (plan.kind === 'no-op') {
 			// Nothing to upload: just release and discard the stale working copy.
-			await this.deps.writePointer(pointerPath, clearCheckoutMarkers(text));
+			await this.deps.writePointer(
+				pointerPath,
+				clearCheckoutMarkers(text),
+			);
 			await this.deps.removeWorkingCopy(wcPath);
-			return { ok: true, kind: 'no-op', record, conflictPath: null, error: null };
+			return {
+				ok: true,
+				kind: 'no-op',
+				record,
+				conflictPath: null,
+				error: null,
+			};
 		}
 
 		// On a conflict, preserve the superseded cloud version as a visible .conflict
@@ -150,7 +193,11 @@ export class CheckoutManager {
 		if (plan.kind === 'conflict') {
 			conflictPath = `${parentDir(pointerPath)}${plan.conflictName}`;
 			try {
-				const superseded = new Uint8Array(await (await this.deps.backend.get(plan.conflictSourceKey)).arrayBuffer());
+				const superseded = new Uint8Array(
+					await (
+						await this.deps.backend.get(plan.conflictSourceKey)
+					).arrayBuffer(),
+				);
 				await this.deps.writeConflictCopy(conflictPath, superseded);
 			} catch (error) {
 				// If the superseded version cannot be fetched, still preserve the user's
@@ -164,18 +211,26 @@ export class CheckoutManager {
 		// verify keeps the working copy and the checkout markers (the edits are safe).
 		const checksumBase64 = await sha256Base64(working);
 		try {
-			await this.deps.backend.put(requireS3Backend(plan.record).key, working, working.length, {
-				checksumSha256: checksumBase64,
-				contentType: plan.record.contentType,
-				metadata: {
-					[OBJECT_METADATA_KEYS.sha256]: plan.record.hash ?? '',
-					[OBJECT_METADATA_KEYS.id]: plan.record.id,
-					[OBJECT_METADATA_KEYS.originalPath]: plan.record.originalPath,
-					[OBJECT_METADATA_KEYS.originalName]: plan.record.originalName,
-					[OBJECT_METADATA_KEYS.byteSize]: String(working.length),
-					[OBJECT_METADATA_KEYS.contentType]: plan.record.contentType,
+			await this.deps.backend.put(
+				requireS3Backend(plan.record).key,
+				working,
+				working.length,
+				{
+					checksumSha256: checksumBase64,
+					contentType: plan.record.contentType,
+					metadata: {
+						[OBJECT_METADATA_KEYS.sha256]: plan.record.hash ?? '',
+						[OBJECT_METADATA_KEYS.id]: plan.record.id,
+						[OBJECT_METADATA_KEYS.originalPath]:
+							plan.record.originalPath,
+						[OBJECT_METADATA_KEYS.originalName]:
+							plan.record.originalName,
+						[OBJECT_METADATA_KEYS.byteSize]: String(working.length),
+						[OBJECT_METADATA_KEYS.contentType]:
+							plan.record.contentType,
+					},
 				},
-			});
+			);
 		} catch (error) {
 			return failCheckin(`upload failed: ${describe(error)}`);
 		}
@@ -183,27 +238,55 @@ export class CheckoutManager {
 		const verify = this.deps.verify ?? checksumVerifier;
 		let outcome: VerifyOutcome;
 		try {
-			outcome = await verify(this.deps.backend, requireS3Backend(plan.record).key, { hash: plan.record.hash ?? '', checksumBase64, size: working.length });
+			outcome = await verify(
+				this.deps.backend,
+				requireS3Backend(plan.record).key,
+				{
+					hash: plan.record.hash ?? '',
+					checksumBase64,
+					size: working.length,
+				},
+			);
 		} catch (error) {
 			return failCheckin(`verify failed: ${describe(error)}`);
 		}
 		if (!outcome.ok) {
-			return failCheckin(outcome.reason ?? 'the uploaded version could not be verified');
+			return failCheckin(
+				outcome.reason ?? 'the uploaded version could not be verified',
+			);
 		}
 
-		const committed: PointerRecord = { ...plan.record, verificationTier: outcome.tier, remoteChecksum: outcome.remoteChecksum };
-		await this.deps.writePointer(pointerPath, encodeCheckedIn(text, committed));
+		const committed: PointerRecord = {
+			...plan.record,
+			verificationTier: outcome.tier,
+			remoteChecksum: outcome.remoteChecksum,
+		};
+		await this.deps.writePointer(
+			pointerPath,
+			encodeCheckedIn(text, committed),
+		);
 		await this.deps.removeWorkingCopy(wcPath);
-		return { ok: true, kind: plan.kind, record: committed, conflictPath, error: null };
+		return {
+			ok: true,
+			kind: plan.kind,
+			record: committed,
+			conflictPath,
+			error: null,
+		};
 	}
 
-	async discard(pointerPath: string): Promise<{ ok: boolean; error: string | null }> {
+	async discard(
+		pointerPath: string,
+	): Promise<{ ok: boolean; error: string | null }> {
 		const text = await this.deps.readPointer(pointerPath);
 		const decoded = decodePointer(text);
 		const baseHash = readCheckoutBase(decoded) ?? decoded.record.hash;
 		await this.deps.writePointer(pointerPath, clearCheckoutMarkers(text));
 		if (baseHash !== null) {
-			const wcPath = workingCopyPath(baseHash, decoded.record.originalName);
+			const wcPath = workingCopyPath(
+				baseHash,
+				decoded.record.originalName,
+			);
 			if (await this.deps.workingCopyExists(wcPath)) {
 				await this.deps.removeWorkingCopy(wcPath);
 			}

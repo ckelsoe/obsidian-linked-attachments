@@ -59,23 +59,38 @@ export function decideAutoOffload(
 	}
 	const ext = candidate.extension.toLowerCase();
 	if (ext === 'md') {
-		return { qualifies: false, reason: 'markdown notes are never auto-offloaded' };
+		return {
+			qualifies: false,
+			reason: 'markdown notes are never auto-offloaded',
+		};
 	}
 	if (candidate.path.startsWith(CHECKOUT_DIR_PREFIX)) {
-		return { qualifies: false, reason: 'a checked-out working copy is never auto-offloaded' };
+		return {
+			qualifies: false,
+			reason: 'a checked-out working copy is never auto-offloaded',
+		};
 	}
 	// The per-extension rule table decides type + size in one place (the same policy
 	// the vault sweep uses). 'always' types qualify at any size; 'over-size' types
 	// only at/over their own threshold; an unlisted type never qualifies.
-	const ruled = decideByRules({ extension: ext, size: candidate.size }, config.rules);
+	const ruled = decideByRules(
+		{ extension: ext, size: candidate.size },
+		config.rules,
+	);
 	if (!ruled.offload) {
 		return { qualifies: false, reason: ruled.reason };
 	}
-	return { qualifies: true, mode: effectiveTriggerMode(config.triggerMode, isDesktop) };
+	return {
+		qualifies: true,
+		mode: effectiveTriggerMode(config.triggerMode, isDesktop),
+	};
 }
 
 // Idle-debounce only runs on desktop; on mobile it falls back to a prompt.
-export function effectiveTriggerMode(mode: AutoOffloadTriggerMode, isDesktop: boolean): AutoOffloadTriggerMode {
+export function effectiveTriggerMode(
+	mode: AutoOffloadTriggerMode,
+	isDesktop: boolean,
+): AutoOffloadTriggerMode {
 	if (mode === 'idle-debounce' && !isDesktop) {
 		return 'prompt';
 	}

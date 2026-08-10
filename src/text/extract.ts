@@ -17,9 +17,19 @@ export const NO_TEXT_LAYER_MARKER = 'no text layer';
 // a page number). Tunable per call.
 const DEFAULT_MIN_MEANINGFUL_CHARS = 16;
 
-const TEXT_BEARING_EXTENSIONS = new Set(['pdf', 'epub', 'docx', 'txt', 'md', 'rtf', 'html', 'htm']);
+const TEXT_BEARING_EXTENSIONS = new Set([
+	'pdf',
+	'epub',
+	'docx',
+	'txt',
+	'md',
+	'rtf',
+	'html',
+	'htm',
+]);
 
-export type ExtractionState = 'extracted' | 'no-text-layer' | 'unsupported' | 'failed';
+export type ExtractionState =
+	'extracted' | 'no-text-layer' | 'unsupported' | 'failed';
 
 export interface ExtractionResult {
 	state: ExtractionState;
@@ -61,11 +71,17 @@ export async function extractText(
 	} catch (error) {
 		// Contain the failure: a single corrupt file must not abort an offload
 		// batch. The reason carries the detail (spec code-structure rule 7).
-		return { state: 'failed', text: null, meaningfulChars: 0, reason: `extraction failed: ${describe(error)}` };
+		return {
+			state: 'failed',
+			text: null,
+			meaningfulChars: 0,
+			reason: `extraction failed: ${describe(error)}`,
+		};
 	}
 
 	const meaningfulChars = countMeaningful(raw);
-	const threshold = options.minMeaningfulChars ?? DEFAULT_MIN_MEANINGFUL_CHARS;
+	const threshold =
+		options.minMeaningfulChars ?? DEFAULT_MIN_MEANINGFUL_CHARS;
 	if (meaningfulChars < threshold) {
 		return {
 			state: 'no-text-layer',
@@ -82,7 +98,10 @@ export async function extractText(
 // no-text-layer file, an explicit honest marker so a search miss is never
 // silently misleading. Unsupported / failed states write no sidecar (null) so no
 // empty file ever implies searchable content.
-export function renderTextSidecar(result: ExtractionResult, sourceName: string): string | null {
+export function renderTextSidecar(
+	result: ExtractionResult,
+	sourceName: string,
+): string | null {
 	switch (result.state) {
 		case 'extracted':
 			return result.text;

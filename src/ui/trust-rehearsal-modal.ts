@@ -1,6 +1,10 @@
 import { App, Modal, setIcon } from 'obsidian';
 import { AttachmentService } from '../service/attachment-service';
-import { TrustRehearsalResult, TrustStage, TrustStageId } from '../onboard/trust-ladder';
+import {
+	TrustRehearsalResult,
+	TrustStage,
+	TrustStageId,
+} from '../onboard/trust-ladder';
 import { Logger } from '../../logger';
 
 // S6 first-file round-trip trust check, rendered live (development-plan section 8
@@ -38,13 +42,22 @@ export class TrustRehearsalModal extends Modal {
 		];
 		const list = contentEl.createDiv({ cls: 'linked-attachments-ladder' });
 		for (const stage of stages) {
-			const row = list.createDiv({ cls: 'linked-attachments-ladder-row' });
-			row.createSpan({ cls: 'linked-attachments-ladder-label', text: stage.label });
-			const status = row.createSpan({ cls: 'linked-attachments-ladder-status' });
+			const row = list.createDiv({
+				cls: 'linked-attachments-ladder-row',
+			});
+			row.createSpan({
+				cls: 'linked-attachments-ladder-label',
+				text: stage.label,
+			});
+			const status = row.createSpan({
+				cls: 'linked-attachments-ladder-status',
+			});
 			status.setText('Waiting');
 			this.rowStatus.set(stage.id, status);
 		}
-		this.verdictEl = contentEl.createDiv({ cls: 'linked-attachments-ladder-verdict' });
+		this.verdictEl = contentEl.createDiv({
+			cls: 'linked-attachments-ladder-verdict',
+		});
 
 		void this.run();
 	}
@@ -56,21 +69,32 @@ export class TrustRehearsalModal extends Modal {
 	private async run(): Promise<void> {
 		this.logger.info('Trust rehearsal started.');
 		try {
-			const result = await this.service.rehearseTrust((stage) => this.applyStage(stage));
+			const result = await this.service.rehearseTrust((stage) =>
+				this.applyStage(stage),
+			);
 			// Log the outcome including each stage's detail. A failed rehearsal is a
 			// returned result (not a thrown error), so without this an honest stage
 			// failure left no trace in the log.
 			this.logger.info('Trust rehearsal finished.', {
 				ok: result.ok,
 				failedStage: result.failedStage,
-				stages: result.stages.map((s) => ({ id: s.id, status: s.status, detail: s.detail })),
+				stages: result.stages.map((s) => ({
+					id: s.id,
+					status: s.status,
+					detail: s.detail,
+				})),
 			});
 			this.showVerdict(result);
 		} catch (error) {
 			this.onError(error);
 			if (this.verdictEl !== null) {
-				this.verdictEl.setText('The rehearsal could not run. See the log for details.');
-				this.verdictEl.toggleClass('linked-attachments-ladder-verdict-error', true);
+				this.verdictEl.setText(
+					'The rehearsal could not run. See the log for details.',
+				);
+				this.verdictEl.toggleClass(
+					'linked-attachments-ladder-verdict-error',
+					true,
+				);
 			}
 		}
 	}
@@ -90,8 +114,14 @@ export class TrustRehearsalModal extends Modal {
 		} else {
 			el.setText('Running');
 		}
-		el.toggleClass('linked-attachments-ladder-status-passed', stage.status === 'passed');
-		el.toggleClass('linked-attachments-ladder-status-failed', stage.status === 'failed');
+		el.toggleClass(
+			'linked-attachments-ladder-status-passed',
+			stage.status === 'passed',
+		);
+		el.toggleClass(
+			'linked-attachments-ladder-status-failed',
+			stage.status === 'failed',
+		);
 	}
 
 	private showVerdict(result: TrustRehearsalResult): void {
@@ -99,13 +129,25 @@ export class TrustRehearsalModal extends Modal {
 			return;
 		}
 		if (result.ok) {
-			this.verdictEl.setText('All four checks passed. Your bucket round-trips correctly, so an offload here is safe.');
+			this.verdictEl.setText(
+				'All four checks passed. Your bucket round-trips correctly, so an offload here is safe.',
+			);
 		} else {
-			const stage = result.stages.find((s) => s.id === result.failedStage);
+			const stage = result.stages.find(
+				(s) => s.id === result.failedStage,
+			);
 			const reason = stage?.detail ?? result.error ?? 'unknown reason';
-			this.verdictEl.setText(`Stopped at "${stage?.label ?? 'a check'}": ${reason}. Fix this before offloading a real file.`);
+			this.verdictEl.setText(
+				`Stopped at "${stage?.label ?? 'a check'}": ${reason}. Fix this before offloading a real file.`,
+			);
 		}
-		this.verdictEl.toggleClass('linked-attachments-ladder-verdict-ok', result.ok);
-		this.verdictEl.toggleClass('linked-attachments-ladder-verdict-error', !result.ok);
+		this.verdictEl.toggleClass(
+			'linked-attachments-ladder-verdict-ok',
+			result.ok,
+		);
+		this.verdictEl.toggleClass(
+			'linked-attachments-ladder-verdict-error',
+			!result.ok,
+		);
 	}
 }

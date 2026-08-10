@@ -31,10 +31,14 @@ export interface SupersedingKeyAssignment extends KeyAssignment {
 const DEFAULT_SHORT_HASH_LENGTH = 6;
 
 export function layoutHashKey(input: KeyInput): KeyAssignment {
-	const shortHash = input.hash.slice(0, input.hashLength ?? DEFAULT_SHORT_HASH_LENGTH);
+	const shortHash = input.hash.slice(
+		0,
+		input.hashLength ?? DEFAULT_SHORT_HASH_LENGTH,
+	);
 	const { dir, name } = splitPath(input.originalPath);
 	const ext = extractExtension(name);
-	const stem = ext.length > 0 ? name.slice(0, name.length - ext.length - 1) : name;
+	const stem =
+		ext.length > 0 ? name.slice(0, name.length - ext.length - 1) : name;
 
 	const segments = [
 		...splitSegments(input.vaultPrefix),
@@ -53,14 +57,20 @@ export function adoptExternalKey(rawKey: string): KeyAssignment {
 // Re-upload of different bytes at the same path: a NEW content-addressed key,
 // with the prior key retained in the supersedes chain (additive, never an
 // overwrite; spec section 10).
-export function supersedingKey(input: KeyInput, supersedesKey: string): SupersedingKeyAssignment {
+export function supersedingKey(
+	input: KeyInput,
+	supersedesKey: string,
+): SupersedingKeyAssignment {
 	const assignment = layoutHashKey(input);
 	return { ...assignment, supersedes: supersedesKey };
 }
 
 // A vault rename / move: metadata-only. Updates the pointer's path, name, and
 // ext; leaves the key, hash, bucket, and id untouched.
-export function applyVaultRename(record: PointerRecord, newOriginalPath: string): PointerRecord {
+export function applyVaultRename(
+	record: PointerRecord,
+	newOriginalPath: string,
+): PointerRecord {
 	const { name } = splitPath(newOriginalPath);
 	return {
 		...record,
@@ -102,6 +112,13 @@ function sanitizeSegment(segment: string): string {
 			safe += ch;
 		}
 	}
-	safe = safe.replace(/\s+/g, ' ').trim().replace(/\.+$/, '').trim();
+	safe = safe.replace(/\s+/g, ' ').trim();
+	// Drop trailing dots with a single backward scan; /\.+$/ is super-linear on a
+	// long run of dots. The final trim removes any space a dot-strip exposes.
+	let end = safe.length;
+	while (end > 0 && safe[end - 1] === '.') {
+		end--;
+	}
+	safe = safe.slice(0, end).trim();
 	return safe.length > 0 ? safe : '_';
 }

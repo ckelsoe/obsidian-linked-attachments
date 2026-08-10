@@ -20,7 +20,9 @@ export interface OutcomeCopy {
 	canAct: boolean;
 }
 
-export function summarizeFindings(findings: ReconcileFinding[]): ReconcileSummary {
+export function summarizeFindings(
+	findings: ReconcileFinding[],
+): ReconcileSummary {
 	return {
 		total: findings.length,
 		healthy: findings.filter((f) => f.outcome === 'healthy').length,

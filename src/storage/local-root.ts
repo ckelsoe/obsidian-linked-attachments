@@ -1,10 +1,25 @@
 import * as os from 'os';
 import { platform as currentPlatform } from 'node:process';
-import type { LinkedAttachmentsSettings, LocalAttachmentSettings, LocalMachineRoot } from '../../settings';
+import type {
+	LinkedAttachmentsSettings,
+	LocalAttachmentSettings,
+	LocalMachineRoot,
+} from '../../settings';
 
 // The Node platform union, defined locally rather than via the `NodeJS.Platform`
 // global so the plugin does not depend on that ambient type being present.
-type NodePlatform = 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
+type NodePlatform =
+	| 'aix'
+	| 'android'
+	| 'darwin'
+	| 'freebsd'
+	| 'haiku'
+	| 'linux'
+	| 'openbsd'
+	| 'sunos'
+	| 'win32'
+	| 'cygwin'
+	| 'netbsd';
 
 // Cross-machine resolution of the local attachment root (2026-07-07). The pointer
 // keeps a portable key; this module picks the right absolute folder for the machine
@@ -23,9 +38,16 @@ export function activeMachine(hostname: string = os.hostname()): string {
 // Matches by hostname against the per-machine list; falls back to the legacy single
 // `localRoot` only when the new shape is absent entirely (an un-migrated settings
 // object).
-export function selectActiveRoot(settings: LinkedAttachmentsSettings, machine: string = activeMachine()): string {
-	const local: LocalAttachmentSettings | undefined = settings.localAttachment;
-	if (local === undefined || !Array.isArray(local.machines)) {
+export function selectActiveRoot(
+	settings: LinkedAttachmentsSettings,
+	machine: string = activeMachine(),
+): string {
+	// Optional-chained rather than an `=== undefined` check: the type says
+	// localAttachment is always present, but persisted data.json from before this
+	// field existed does not have it (see the migration note below), so this
+	// defends that real runtime shape without a comparison the type calls dead.
+	const machines = settings.localAttachment?.machines;
+	if (!Array.isArray(machines)) {
 		return settings.localRoot ?? '';
 	}
 	const key = machine.trim();
@@ -35,7 +57,7 @@ export function selectActiveRoot(settings: LinkedAttachmentsSettings, machine: s
 		// to add or activate a row for an empty machine name).
 		return '';
 	}
-	const entry = local.machines.find((row) => row.machine.trim() === key);
+	const entry = machines.find((row) => row.machine.trim() === key);
 	return entry?.path ?? '';
 }
 
@@ -64,7 +86,12 @@ export function migratedLocalAttachment(
 		return null;
 	}
 	if (existingRaw !== undefined && existingRaw.roots !== undefined) {
-		const osKey = platform === 'win32' ? 'win' : platform === 'darwin' ? 'mac' : 'linux';
+		const osKey =
+			platform === 'win32'
+				? 'win'
+				: platform === 'darwin'
+					? 'mac'
+					: 'linux';
 		const path = existingRaw.roots[osKey];
 		// Only migrate when this OS actually has a slot. Returning an empty list here
 		// would be persisted and wipe the other OSes' roots from a synced data.json
@@ -83,7 +110,10 @@ export function migratedLocalAttachment(
 
 // Whether a machine entry for this machine already exists in the list (so the
 // settings UI can avoid adding a duplicate when the user clicks Add this machine).
-export function hasMachineEntry(machines: LocalMachineRoot[], machine: string): boolean {
+export function hasMachineEntry(
+	machines: LocalMachineRoot[],
+	machine: string,
+): boolean {
 	const key = machine.trim();
 	return machines.some((row) => row.machine.trim() === key);
 }
@@ -101,7 +131,11 @@ export interface MachineListView {
 	banner: { text: string; warn: boolean };
 }
 
-export function localMachineView(machines: LocalMachineRoot[], thisMachine: string, resolvedRoot: string): MachineListView {
+export function localMachineView(
+	machines: LocalMachineRoot[],
+	thisMachine: string,
+	resolvedRoot: string,
+): MachineListView {
 	const key = thisMachine.trim();
 	if (key.length === 0) {
 		return {
@@ -109,7 +143,7 @@ export function localMachineView(machines: LocalMachineRoot[], thisMachine: stri
 			addDisabled: true,
 			duplicateActive: false,
 			banner: {
-				text: 'Could not read this machine\'s name, so it cannot be matched automatically. Add a row and set its folder path by hand.',
+				text: "Could not read this machine's name, so it cannot be matched automatically. Add a row and set its folder path by hand.",
 				warn: true,
 			},
 		};
@@ -135,8 +169,14 @@ export function localMachineView(machines: LocalMachineRoot[], thisMachine: stri
 		warn = false;
 	}
 	if (matches > 1) {
-		text += ' Warning: more than one row uses this name; only the first is used. Rename one machine so each has a unique name.';
+		text +=
+			' Warning: more than one row uses this name; only the first is used. Rename one machine so each has a unique name.';
 		warn = true;
 	}
-	return { activeIndex, addDisabled: matches > 0, duplicateActive: matches > 1, banner: { text, warn } };
+	return {
+		activeIndex,
+		addDisabled: matches > 0,
+		duplicateActive: matches > 1,
+		banner: { text, warn },
+	};
 }

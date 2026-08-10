@@ -2,7 +2,12 @@ import { CheckoutManager, CheckoutDeps } from './checkout-manager';
 import { workingCopyPath } from './checkout-state';
 import { MemoryBackend } from '../storage/memory-backend';
 import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
-import { encodePointer, decodePointer, PointerRecord, requireS3Backend } from '../pointer/codec';
+import {
+	encodePointer,
+	decodePointer,
+	PointerRecord,
+	requireS3Backend,
+} from '../pointer/codec';
 import { sha256Hex, sha256Base64 } from '../hash/sha256';
 
 // Tier 0: the checkout-manager runs against MemoryBackend with injected vault I/O
@@ -105,7 +110,10 @@ function makeHarness(host = 'mbp'): Harness {
 }
 
 // Seed an offloaded object + its pointer note, returning the pointer path + record.
-async function seedOffloaded(h: Harness, content: string): Promise<{ pointerPath: string; rec: PointerRecord }> {
+async function seedOffloaded(
+	h: Harness,
+	content: string,
+): Promise<{ pointerPath: string; rec: PointerRecord }> {
 	const bytes = bytesOf(content);
 	const hash = await sha256Hex(bytes);
 	const rec = record({ hash, byteSize: bytes.length });
@@ -121,28 +129,45 @@ async function seedOffloaded(h: Harness, content: string): Promise<{ pointerPath
 describe('checkout (la-p6-32)', () => {
 	it('test_checkout_writes_working_copy_and_opens', async () => {
 		const h = makeHarness();
-		const { pointerPath, rec } = await seedOffloaded(h, 'budget v1 contents');
+		const { pointerPath, rec } = await seedOffloaded(
+			h,
+			'budget v1 contents',
+		);
 		const manager = new CheckoutManager(h.deps);
 		const result = await manager.checkout(pointerPath);
 		expect(result.ok).toBe(true);
 		const wcPath = workingCopyPath(rec.hash as string, rec.originalName);
 		expect(h.working.has(wcPath)).toBe(true);
-		expect(new TextDecoder().decode(h.working.get(wcPath))).toBe('budget v1 contents');
+		expect(new TextDecoder().decode(h.working.get(wcPath))).toBe(
+			'budget v1 contents',
+		);
 		expect(h.opened).toEqual([wcPath]);
 		// the pointer is now checked out (markers set), still the visible anchor
-		expect(decodePointer(h.pointers.get(pointerPath) as string).record.copyState).toBe('checked-out');
+		expect(
+			decodePointer(h.pointers.get(pointerPath) as string).record
+				.copyState,
+		).toBe('checked-out');
 	});
 
 	// F1 in reverse: never open drifted bytes - verify the GET against the recorded hash.
 	it('test_checkout_refuses_drifted_bytes', async () => {
 		const h = makeHarness();
-		const { pointerPath, rec } = await seedOffloaded(h, 'budget v1 contents');
-		await h.backend.seedObject(requireS3Backend(rec).key, bytesOf('tampered different bytes')); // drift
+		const { pointerPath, rec } = await seedOffloaded(
+			h,
+			'budget v1 contents',
+		);
+		await h.backend.seedObject(
+			requireS3Backend(rec).key,
+			bytesOf('tampered different bytes'),
+		); // drift
 		const manager = new CheckoutManager(h.deps);
 		const result = await manager.checkout(pointerPath);
 		expect(result.ok).toBe(false);
 		expect(h.working.size).toBe(0);
-		expect(decodePointer(h.pointers.get(pointerPath) as string).record.copyState).toBe('offloaded');
+		expect(
+			decodePointer(h.pointers.get(pointerPath) as string).record
+				.copyState,
+		).toBe('offloaded');
 	});
 
 	// Advisory lock: another host holds it -> refuse without force; force overrides.
@@ -151,7 +176,10 @@ describe('checkout (la-p6-32)', () => {
 		const { pointerPath } = await seedOffloaded(h, 'shared doc');
 		// simulate another device's checkout by writing its markers onto the shared
 		// pointer (same maps + backend, a different host).
-		const otherManager = new CheckoutManager({ ...h.deps, host: () => 'work-pc' });
+		const otherManager = new CheckoutManager({
+			...h.deps,
+			host: () => 'work-pc',
+		});
 		await otherManager.checkout(pointerPath);
 		// now THIS device (mbp) tries
 		const manager = new CheckoutManager(h.deps);
@@ -173,8 +201,15 @@ describe('check-in (la-p6-32)', () => {
 		expect(result.ok).toBe(true);
 		expect(result.kind).toBe('no-op');
 		// markers cleared, working copy gone, no new object
-		expect(decodePointer(h.pointers.get(pointerPath) as string).record.copyState).toBe('offloaded');
-		expect(h.working.has(workingCopyPath(rec.hash as string, rec.originalName))).toBe(false);
+		expect(
+			decodePointer(h.pointers.get(pointerPath) as string).record
+				.copyState,
+		).toBe('offloaded');
+		expect(
+			h.working.has(
+				workingCopyPath(rec.hash as string, rec.originalName),
+			),
+		).toBe(false);
 		const list = await h.backend.list('charles-main');
 		expect(list.entries).toHaveLength(1);
 	});
@@ -193,17 +228,25 @@ describe('check-in (la-p6-32)', () => {
 		expect(result.ok).toBe(true);
 		expect(result.kind).toBe('version');
 
-		const updated = decodePointer(h.pointers.get(pointerPath) as string).record;
+		const updated = decodePointer(
+			h.pointers.get(pointerPath) as string,
+		).record;
 		expect(updated.hash).toBe(await sha256Hex(edited));
-		expect(requireS3Backend(updated).key).not.toBe(requireS3Backend(rec).key);
+		expect(requireS3Backend(updated).key).not.toBe(
+			requireS3Backend(rec).key,
+		);
 		expect(updated.supersedes).toBe(requireS3Backend(rec).key);
 		expect(updated.copyState).toBe('offloaded');
 		expect(updated.verificationTier).toBe('content');
 		expect(updated.id).toBe('ptr-1'); // stable lineage anchor
 
 		// additive: the OLD object is retained AND the new one exists
-		expect((await h.backend.head(requireS3Backend(rec).key)).size).toBe(bytesOf('budget v1').length);
-		expect((await h.backend.head(requireS3Backend(updated).key)).size).toBe(edited.length);
+		expect((await h.backend.head(requireS3Backend(rec).key)).size).toBe(
+			bytesOf('budget v1').length,
+		);
+		expect((await h.backend.head(requireS3Backend(updated).key)).size).toBe(
+			edited.length,
+		);
 		// working copy removed
 		expect(h.working.has(wcPath)).toBe(false);
 	});
@@ -214,7 +257,13 @@ describe('check-in (la-p6-32)', () => {
 		const manager = new CheckoutManager({
 			...h.deps,
 			// a verifier that always rejects: the upload cannot be proven
-			verify: () => Promise.resolve({ ok: false, tier: 'existence', remoteChecksum: null, reason: 'forced mismatch' }),
+			verify: () =>
+				Promise.resolve({
+					ok: false,
+					tier: 'existence',
+					remoteChecksum: null,
+					reason: 'forced mismatch',
+				}),
 		});
 		await manager.checkout(pointerPath);
 		const wcPath = workingCopyPath(rec.hash as string, rec.originalName);
@@ -224,7 +273,10 @@ describe('check-in (la-p6-32)', () => {
 		expect(result.ok).toBe(false);
 		// working copy and checkout markers are kept (the edits are safe locally)
 		expect(h.working.has(wcPath)).toBe(true);
-		expect(decodePointer(h.pointers.get(pointerPath) as string).record.copyState).toBe('checked-out');
+		expect(
+			decodePointer(h.pointers.get(pointerPath) as string).record
+				.copyState,
+		).toBe('checked-out');
 	});
 
 	it('test_checkin_conflict_preserves_and_supersedes', async () => {
@@ -251,7 +303,18 @@ describe('check-in (la-p6-32)', () => {
 		h.pointers.set(
 			pointerPath,
 			encodePointer(
-				{ ...decoded.record, hash: v2Hash, backends: [{ type: 's3', bucket: 's3-dev-test', key: v2Key, keyKind: 'hash' }] },
+				{
+					...decoded.record,
+					hash: v2Hash,
+					backends: [
+						{
+							type: 's3',
+							bucket: 's3-dev-test',
+							key: v2Key,
+							keyKind: 'hash',
+						},
+					],
+				},
 				decoded.body,
 				decoded.extraFrontmatter,
 			),
@@ -263,9 +326,13 @@ describe('check-in (la-p6-32)', () => {
 		// the diverged cloud version was preserved as a visible conflict copy
 		expect(h.conflicts.size).toBe(1);
 		// the new version supersedes the CURRENT (diverged) key, so both survive
-		const updated = decodePointer(h.pointers.get(pointerPath) as string).record;
+		const updated = decodePointer(
+			h.pointers.get(pointerPath) as string,
+		).record;
 		expect(updated.supersedes).toBe(v2Key);
-		expect(updated.hash).toBe(await sha256Hex(bytesOf('budget v3 my edits')));
+		expect(updated.hash).toBe(
+			await sha256Hex(bytesOf('budget v3 my edits')),
+		);
 	});
 });
 
@@ -281,7 +348,10 @@ describe('discard (la-p6-32)', () => {
 		const result = await manager.discard(pointerPath);
 		expect(result.ok).toBe(true);
 		expect(h.working.has(wcPath)).toBe(false);
-		expect(decodePointer(h.pointers.get(pointerPath) as string).record.copyState).toBe('offloaded');
+		expect(
+			decodePointer(h.pointers.get(pointerPath) as string).record
+				.copyState,
+		).toBe('offloaded');
 		// no new object uploaded
 		const list = await h.backend.list('charles-main');
 		expect(list.entries).toHaveLength(1);

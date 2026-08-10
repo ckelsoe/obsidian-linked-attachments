@@ -1,4 +1,13 @@
-import { App, ButtonComponent, Notice, PluginSettingTab, Setting, SettingDefinitionItem, SettingGroupItem, SecretComponent } from 'obsidian';
+import {
+	App,
+	ButtonComponent,
+	Notice,
+	PluginSettingTab,
+	Setting,
+	SettingDefinitionItem,
+	SettingGroupItem,
+	SecretComponent,
+} from 'obsidian';
 import type LinkedAttachmentsPlugin from './main';
 
 // Community discussion for this plugin. This must stay a never-expiring
@@ -7,8 +16,16 @@ import type LinkedAttachmentsPlugin from './main';
 // invite expires after 7 days and would rot in a shipped release.
 const DISCORD_URL = 'https://discord.gg/gd6tKJDPj4';
 import { describeError } from './credentials';
-import { DEFAULT_ACCESS_KEY_SECRET_ID, DEFAULT_SECRET_KEY_SECRET_ID } from './settings';
-import { activeMachine, localMachineView, MachineListView, selectActiveRoot } from './src/storage/local-root';
+import {
+	DEFAULT_ACCESS_KEY_SECRET_ID,
+	DEFAULT_SECRET_KEY_SECRET_ID,
+} from './settings';
+import {
+	activeMachine,
+	localMachineView,
+	MachineListView,
+	selectActiveRoot,
+} from './src/storage/local-root';
 import { resolveLocalRoot } from './src/storage/local-backend';
 import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
@@ -48,7 +65,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						name: 'Local folders per machine',
 						desc: 'Where the local and paired modes write, resolved per machine. Click Add this machine, then Browse to the offload folder on this machine. If you sync settings across machines, each one adds its own row and reads its own folder, so two machines with different drive letters both work. The bytes only appear on a machine after its sync client (OneDrive, Dropbox, and so on) downloads them, and the pointer note must have synced too, so a just-added file can lag on a second machine.',
 						searchable: false,
-						render: (setting: Setting) => { this.renderLocalMachineRows(setting); },
+						render: (setting: Setting) => {
+							this.renderLocalMachineRows(setting);
+						},
 					},
 				],
 			},
@@ -59,17 +78,29 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Endpoint',
 						desc: 'Base URL of your S3-compatible service, e.g. https://<account>.r2.cloudflarestorage.com or https://s3.us-east-1.amazonaws.com. Not a secret.',
-						control: { type: 'text', key: 'endpoint', placeholder: 'https://...' },
+						control: {
+							type: 'text',
+							key: 'endpoint',
+							placeholder: 'https://...',
+						},
 					},
 					{
 						name: 'Region',
 						desc: 'Bucket region, e.g. us-east-1. Use auto for Cloudflare R2. Not a secret.',
-						control: { type: 'text', key: 'region', placeholder: 'us-east-1' },
+						control: {
+							type: 'text',
+							key: 'region',
+							placeholder: 'us-east-1',
+						},
 					},
 					{
 						name: 'Bucket',
 						desc: 'Name of the bucket that holds your offloaded files. Not a secret.',
-						control: { type: 'text', key: 'bucket', placeholder: 'my-vault-attachments' },
+						control: {
+							type: 'text',
+							key: 'bucket',
+							placeholder: 'my-vault-attachments',
+						},
 					},
 					{
 						name: 'Addressing style',
@@ -78,8 +109,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 							type: 'dropdown',
 							key: 'addressingStyle',
 							options: {
-								'virtual-hosted': 'Virtual-hosted - bucket.endpoint',
-								'path': 'Path - endpoint/bucket',
+								'virtual-hosted':
+									'Virtual-hosted - bucket.endpoint',
+								path: 'Path - endpoint/bucket',
 							},
 						},
 					},
@@ -96,9 +128,13 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
 								new SecretComponent(this.app, el)
-									.setValue(this.plugin.settings.accessKeyIdSecretName)
+									.setValue(
+										this.plugin.settings
+											.accessKeyIdSecretName,
+									)
 									.onChange(async (id) => {
-										this.plugin.settings.accessKeyIdSecretName = id;
+										this.plugin.settings.accessKeyIdSecretName =
+											id;
 										await this.plugin.saveSettings();
 										this.refreshCredentialHint();
 									}),
@@ -112,9 +148,13 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
 								new SecretComponent(this.app, el)
-									.setValue(this.plugin.settings.secretAccessKeySecretName)
+									.setValue(
+										this.plugin.settings
+											.secretAccessKeySecretName,
+									)
 									.onChange(async (id) => {
-										this.plugin.settings.secretAccessKeySecretName = id;
+										this.plugin.settings.secretAccessKeySecretName =
+											id;
 										await this.plugin.saveSettings();
 										this.refreshCredentialHint();
 									}),
@@ -125,7 +165,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						name: 'Connection',
 						desc: 'Verify the endpoint, region, bucket, and credentials by listing the bucket.',
 						searchable: false,
-						render: (setting: Setting) => { this.renderConnectionTestRow(setting); },
+						render: (setting: Setting) => {
+							this.renderConnectionTestRow(setting);
+						},
 					},
 				],
 			},
@@ -144,16 +186,38 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						searchable: false,
 						render: (setting: Setting) => {
 							setting.addButton((btn) =>
-								btn.setButtonText('Rehearse').setCta().onClick(() => {
-									const ready = this.plugin.settings.endpoint.length > 0 && this.plugin.settings.bucket.length > 0 && this.plugin.credentials.hasCompleteCredentials();
-									if (!ready) {
-										new Notice('Set the endpoint, bucket, and credentials first.');
-										return;
-									}
-									new TrustRehearsalModal(this.app, this.plugin.attachments, this.plugin.logger, (error) => {
-										this.plugin.logger.error('Trust rehearsal threw.', { error: describeError(error) });
-									}).open();
-								}),
+								btn
+									.setButtonText('Rehearse')
+									.setCta()
+									.onClick(() => {
+										const ready =
+											this.plugin.settings.endpoint
+												.length > 0 &&
+											this.plugin.settings.bucket.length >
+												0 &&
+											this.plugin.credentials.hasCompleteCredentials();
+										if (!ready) {
+											new Notice(
+												'Set the endpoint, bucket, and credentials first.',
+											);
+											return;
+										}
+										new TrustRehearsalModal(
+											this.app,
+											this.plugin.attachments,
+											this.plugin.logger,
+											(error) => {
+												this.plugin.logger.error(
+													'Trust rehearsal threw.',
+													{
+														error: describeError(
+															error,
+														),
+													},
+												);
+											},
+										).open();
+									}),
 							);
 						},
 					},
@@ -167,7 +231,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						name: 'Types to offload',
 						desc: 'Each file type is offloaded either always (any size) or only when larger than its own size in MB. A type that is not listed here is never offloaded. Turn a row off with its checkbox to keep the rule configured without offloading those files, for example while testing. These rules drive both automatic offload of new files and the scan below.',
 						searchable: false,
-						render: (setting: Setting) => { this.renderRuleTable(setting); },
+						render: (setting: Setting) => {
+							this.renderRuleTable(setting);
+						},
 					},
 					{
 						name: 'Scan the whole vault now',
@@ -175,9 +241,11 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						searchable: false,
 						render: (setting: Setting) => {
 							setting.addButton((btn) =>
-								btn.setButtonText('Scan and offload').onClick(() => {
-									this.plugin.runVaultSweep();
-								}),
+								btn
+									.setButtonText('Scan and offload')
+									.onClick(() => {
+										this.plugin.runVaultSweep();
+									}),
 							);
 						},
 					},
@@ -199,7 +267,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 							type: 'dropdown',
 							key: 'autoOffloadTriggerMode',
 							options: {
-								'prompt': 'Prompt me on add',
+								prompt: 'Prompt me on add',
 								'idle-debounce': 'Offload when idle',
 							},
 						},
@@ -207,7 +275,10 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Idle window in minutes',
 						desc: 'Used only when the trigger is offload when idle: how long a file must be untouched before it is offloaded.',
-						control: { type: 'number', key: 'autoOffloadIdleMinutes' },
+						control: {
+							type: 'number',
+							key: 'autoOffloadIdleMinutes',
+						},
 					},
 				],
 			},
@@ -227,7 +298,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 						render: (setting: Setting) => {
 							setting.addButton((btn) =>
 								btn.setButtonText('View log').onClick(() => {
-									new LogViewModal(this.app, () => this.plugin.logger.readRecent()).open();
+									new LogViewModal(this.app, () =>
+										this.plugin.logger.readRecent(),
+									).open();
 								}),
 							);
 						},
@@ -237,7 +310,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			{
 				name: 'About',
 				searchable: false,
-				render: (setting: Setting) => { this.renderFooter(setting); },
+				render: (setting: Setting) => {
+					this.renderFooter(setting);
+				},
 			},
 		];
 	}
@@ -258,8 +333,14 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		const manifestVersion = this.plugin.manifest.version || '0.0.0';
 		inner.createSpan({ text: `Version ${manifestVersion}` });
 
-		const createExternalLink = (text: string, url: string): HTMLAnchorElement => {
-			inner.createSpan({ cls: 'linked-attachments-footer-separator', text: '|' });
+		const createExternalLink = (
+			text: string,
+			url: string,
+		): HTMLAnchorElement => {
+			inner.createSpan({
+				cls: 'linked-attachments-footer-separator',
+				text: '|',
+			});
 			return inner.createEl('a', {
 				text,
 				href: url,
@@ -267,19 +348,28 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			});
 		};
 
-		createExternalLink('GitHub', 'https://github.com/ckelsoe/obsidian-linked-attachments');
+		createExternalLink(
+			'GitHub',
+			'https://github.com/ckelsoe/obsidian-linked-attachments',
+		);
 		createExternalLink('Discord', DISCORD_URL);
-		createExternalLink('Report issues', 'https://github.com/ckelsoe/obsidian-linked-attachments/issues');
+		createExternalLink(
+			'Report issues',
+			'https://github.com/ckelsoe/obsidian-linked-attachments/issues',
+		);
 	}
 
 	// Routes declarative control reads/writes to the plugin's own settings store so
 	// a change persists through saveSettings().
 	getControlValue(key: string): unknown {
-		return (this.plugin.settings as unknown as Record<string, unknown>)[key];
+		return (this.plugin.settings as unknown as Record<string, unknown>)[
+			key
+		];
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
-		(this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
+		(this.plugin.settings as unknown as Record<string, unknown>)[key] =
+			value;
 		await this.plugin.saveSettings();
 		// The backfill group's buttons are derived from storageMode, so a mode change
 		// adds or removes items. update() re-runs getSettingDefinitions() and rebuilds
@@ -296,7 +386,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	// number edits update the model in place and persist; add/remove redraw the rows.
 	private renderRuleTable(setting: Setting): void {
 		setting.settingEl.addClass('linked-attachments-rule-setting');
-		const table = setting.settingEl.createDiv({ cls: 'linked-attachments-rule-table' });
+		const table = setting.settingEl.createDiv({
+			cls: 'linked-attachments-rule-table',
+		});
 		this.drawRuleRows(table);
 	}
 
@@ -309,10 +401,16 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			// A disabled rule stays configured but offloads nothing; the row dims so
 			// its paused state is visible at a glance.
 			const syncEnabledState = (): void => {
-				row.toggleClass('linked-attachments-rule-disabled', rule.enabled === false);
+				row.toggleClass(
+					'linked-attachments-rule-disabled',
+					rule.enabled === false,
+				);
 			};
 
-			const toggle = row.createEl('input', { cls: 'linked-attachments-rule-enabled', type: 'checkbox' });
+			const toggle = row.createEl('input', {
+				cls: 'linked-attachments-rule-enabled',
+				type: 'checkbox',
+			});
 			toggle.checked = rule.enabled !== false;
 			toggle.setAttribute('aria-label', 'Enable this rule');
 			toggle.addEventListener('change', () => {
@@ -321,7 +419,10 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				void this.plugin.saveSettings();
 			});
 
-			const ext = row.createEl('input', { cls: 'linked-attachments-rule-ext', type: 'text' });
+			const ext = row.createEl('input', {
+				cls: 'linked-attachments-rule-ext',
+				type: 'text',
+			});
 			ext.value = rule.extension;
 			ext.placeholder = 'Extension';
 			ext.addEventListener('change', () => {
@@ -329,20 +430,39 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				void this.plugin.saveSettings();
 			});
 
-			const mode = row.createEl('select', { cls: 'dropdown linked-attachments-rule-mode' });
-			mode.createEl('option', { value: 'always', text: 'Always offload' });
-			mode.createEl('option', { value: 'over-size', text: 'Offload when larger than' });
+			const mode = row.createEl('select', {
+				cls: 'dropdown linked-attachments-rule-mode',
+			});
+			mode.createEl('option', {
+				value: 'always',
+				text: 'Always offload',
+			});
+			mode.createEl('option', {
+				value: 'over-size',
+				text: 'Offload when larger than',
+			});
 			mode.value = rule.mode;
 
-			const sizeWrap = row.createDiv({ cls: 'linked-attachments-rule-size' });
-			const mb = sizeWrap.createEl('input', { cls: 'linked-attachments-rule-mb', type: 'number' });
+			const sizeWrap = row.createDiv({
+				cls: 'linked-attachments-rule-size',
+			});
+			const mb = sizeWrap.createEl('input', {
+				cls: 'linked-attachments-rule-mb',
+				type: 'number',
+			});
 			mb.value = String(rule.thresholdMb);
 			mb.min = '0';
-			sizeWrap.createSpan({ cls: 'linked-attachments-rule-unit', text: 'MB' });
+			sizeWrap.createSpan({
+				cls: 'linked-attachments-rule-unit',
+				text: 'MB',
+			});
 
 			// 'always' rules have no threshold, so the MB field is hidden for them.
 			const syncSizeVisibility = (): void => {
-				sizeWrap.toggleClass('linked-attachments-hidden', rule.mode !== 'over-size');
+				sizeWrap.toggleClass(
+					'linked-attachments-hidden',
+					rule.mode !== 'over-size',
+				);
 			};
 			syncSizeVisibility();
 
@@ -356,8 +476,14 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				void this.plugin.saveSettings();
 			});
 
-			const remove = row.createEl('button', { cls: 'linked-attachments-rule-remove', text: 'Remove' });
-			remove.setAttribute('aria-label', `Remove the ${rule.extension || 'blank'} rule`);
+			const remove = row.createEl('button', {
+				cls: 'linked-attachments-rule-remove',
+				text: 'Remove',
+			});
+			remove.setAttribute(
+				'aria-label',
+				`Remove the ${rule.extension || 'blank'} rule`,
+			);
 			remove.addEventListener('click', () => {
 				this.plugin.settings.offloadRules.splice(index, 1);
 				void this.plugin.saveSettings();
@@ -367,9 +493,17 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			syncEnabledState();
 		});
 
-		const add = table.createEl('button', { cls: 'linked-attachments-rule-add', text: 'Add file type' });
+		const add = table.createEl('button', {
+			cls: 'linked-attachments-rule-add',
+			text: 'Add file type',
+		});
 		add.addEventListener('click', () => {
-			this.plugin.settings.offloadRules.push({ extension: '', mode: 'over-size', thresholdMb: 5, enabled: true });
+			this.plugin.settings.offloadRules.push({
+				extension: '',
+				mode: 'over-size',
+				thresholdMb: 5,
+				enabled: true,
+			});
 			void this.plugin.saveSettings();
 			this.drawRuleRows(table);
 		});
@@ -385,23 +519,39 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	// machine reads its own by matching its hostname.
 	private renderLocalMachineRows(setting: Setting): void {
 		setting.settingEl.addClass('linked-attachments-local-setting');
-		const wrap = setting.settingEl.createDiv({ cls: 'linked-attachments-local' });
+		const wrap = setting.settingEl.createDiv({
+			cls: 'linked-attachments-local',
+		});
 		const thisMachine = activeMachine();
-		const machines = (): typeof this.plugin.settings.localAttachment.machines => this.plugin.settings.localAttachment.machines;
+		const machines =
+			(): typeof this.plugin.settings.localAttachment.machines =>
+				this.plugin.settings.localAttachment.machines;
 
-		const banner = wrap.createDiv({ cls: 'linked-attachments-local-banner' });
+		const banner = wrap.createDiv({
+			cls: 'linked-attachments-local-banner',
+		});
 		const table = wrap.createDiv({ cls: 'linked-attachments-local-table' });
-		const add = wrap.createEl('button', { text: 'Add this machine', cls: 'linked-attachments-local-add' });
+		const add = wrap.createEl('button', {
+			text: 'Add this machine',
+			cls: 'linked-attachments-local-add',
+		});
 
 		// One pure view model drives banner text, the active row, and the Add state, so
 		// the rules live in one tested place (localMachineView) rather than inline.
 		const currentView = (): MachineListView =>
-			localMachineView(machines(), thisMachine, resolveLocalRoot(selectActiveRoot(this.plugin.settings)));
+			localMachineView(
+				machines(),
+				thisMachine,
+				resolveLocalRoot(selectActiveRoot(this.plugin.settings)),
+			);
 
 		const refresh = (): void => {
 			const view = currentView();
 			banner.setText(view.banner.text);
-			banner.toggleClass('linked-attachments-local-banner-unset', view.banner.warn);
+			banner.toggleClass(
+				'linked-attachments-local-banner-unset',
+				view.banner.warn,
+			);
 			add.disabled = view.addDisabled;
 			drawRows(view.activeIndex);
 		};
@@ -410,22 +560,33 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			table.empty();
 			const list = machines();
 			if (list.length === 0) {
-				table.createDiv({ cls: 'linked-attachments-local-empty', text: 'No machines configured yet.' });
+				table.createDiv({
+					cls: 'linked-attachments-local-empty',
+					text: 'No machines configured yet.',
+				});
 			}
 			list.forEach((entry, index) => {
 				const isThis = index === activeIndex;
-				const row = table.createDiv({ cls: 'linked-attachments-local-row' });
+				const row = table.createDiv({
+					cls: 'linked-attachments-local-row',
+				});
 				row.toggleClass('linked-attachments-local-active', isThis);
 
 				if (isThis) {
-					row.createSpan({ cls: 'linked-attachments-local-thismarker', text: 'this machine' });
+					row.createSpan({
+						cls: 'linked-attachments-local-thismarker',
+						text: 'this machine',
+					});
 				}
 
 				// The machine name is editable so a row can be renamed to a machine's new
 				// hostname (after a rename or re-image) without losing its folder, and to
 				// disambiguate a name collision. A rename can change which row is active,
 				// so a committed edit re-renders through refresh().
-				const nameInput = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-name-input' });
+				const nameInput = row.createEl('input', {
+					type: 'text',
+					cls: 'linked-attachments-local-name-input',
+				});
 				nameInput.value = entry.machine;
 				nameInput.placeholder = 'Machine name';
 				nameInput.addEventListener('change', () => {
@@ -434,9 +595,13 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					refresh();
 				});
 
-				const pathInput = row.createEl('input', { type: 'text', cls: 'linked-attachments-local-input' });
+				const pathInput = row.createEl('input', {
+					type: 'text',
+					cls: 'linked-attachments-local-input',
+				});
 				pathInput.value = entry.path;
-				pathInput.placeholder = 'Absolute offload folder on this machine';
+				pathInput.placeholder =
+					'Absolute offload folder on this machine';
 				pathInput.addEventListener('change', () => {
 					entry.path = pathInput.value.trim();
 					void this.plugin.saveSettings();
@@ -446,13 +611,18 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				// Browse only on the machine you are physically at (the active one): a
 				// picker here cannot reach another machine's filesystem.
 				if (isThis) {
-					const browse = row.createEl('button', { text: 'Browse', cls: 'linked-attachments-local-browse' });
+					const browse = row.createEl('button', {
+						text: 'Browse',
+						cls: 'linked-attachments-local-browse',
+					});
 					browse.addEventListener('click', () => {
 						void (async (): Promise<void> => {
 							// Seed with the resolved absolute path: a migrated/hand-entered
 							// value may carry ~ or an env-var marker that Electron's
 							// defaultPath cannot expand.
-							const picked = await pickFolder(resolveLocalRoot(entry.path));
+							const picked = await pickFolder(
+								resolveLocalRoot(entry.path),
+							);
 							if (picked === null) {
 								return;
 							}
@@ -464,8 +634,14 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					});
 				}
 
-				const remove = row.createEl('button', { text: 'Remove', cls: 'linked-attachments-local-remove' });
-				remove.setAttribute('aria-label', `Remove ${entry.machine.length > 0 ? entry.machine : 'this'} machine`);
+				const remove = row.createEl('button', {
+					text: 'Remove',
+					cls: 'linked-attachments-local-remove',
+				});
+				remove.setAttribute(
+					'aria-label',
+					`Remove ${entry.machine.length > 0 ? entry.machine : 'this'} machine`,
+				);
 				remove.addEventListener('click', () => {
 					machines().splice(index, 1);
 					void this.plugin.saveSettings();
@@ -501,53 +677,90 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			targets.push('s3');
 		}
 		return targets.map((target) => ({
-			name: target === 'local' ? 'Copy all files to the local mirror now' : 'Copy all files to the S3 mirror now',
+			name:
+				target === 'local'
+					? 'Copy all files to the local mirror now'
+					: 'Copy all files to the S3 mirror now',
 			desc: `Give every existing pointer the ${target === 'local' ? 'local' : 'S3'} copy it is missing, read from its other backend and verified on write. Safe to re-run: a pointer that already has this copy is skipped.`,
 			searchable: false,
-			render: (setting: Setting) => { this.renderBackfillRow(setting, target); },
+			render: (setting: Setting) => {
+				this.renderBackfillRow(setting, target);
+			},
 		}));
 	}
 
 	private renderBackfillRow(setting: Setting, target: 'local' | 's3'): void {
-		const statusEl = setting.descEl.createDiv({ cls: 'linked-attachments-secret-status' });
+		const statusEl = setting.descEl.createDiv({
+			cls: 'linked-attachments-secret-status',
+		});
 		setting.addButton((btn) =>
-			btn.setButtonText(target === 'local' ? 'Copy to local' : 'Copy to S3').onClick(async () => {
-				const gate = this.backfillReady(target);
-				if (!gate.ok) {
-					this.applyStatus(statusEl, gate.reason, 'error');
-					return;
-				}
-				btn.setDisabled(true);
-				this.applyStatus(statusEl, 'Copying...', 'neutral');
-				const result = await this.plugin.runAddMirror(target);
-				btn.setDisabled(false);
-				if (result === null) {
-					this.applyStatus(statusEl, 'Backfill failed; see the notice for details.', 'error');
-					return;
-				}
-				this.applyStatus(statusEl, `${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`, result.failed > 0 ? 'error' : 'ok');
-			}),
+			btn
+				.setButtonText(
+					target === 'local' ? 'Copy to local' : 'Copy to S3',
+				)
+				.onClick(async () => {
+					const gate = this.backfillReady(target);
+					if (!gate.ok) {
+						this.applyStatus(statusEl, gate.reason, 'error');
+						return;
+					}
+					btn.setDisabled(true);
+					this.applyStatus(statusEl, 'Copying...', 'neutral');
+					const result = await this.plugin.runAddMirror(target);
+					btn.setDisabled(false);
+					if (result === null) {
+						this.applyStatus(
+							statusEl,
+							'Backfill failed; see the notice for details.',
+							'error',
+						);
+						return;
+					}
+					this.applyStatus(
+						statusEl,
+						`${result.added} added, ${result.skipped} skipped, ${result.failed} failed.`,
+						result.failed > 0 ? 'error' : 'ok',
+					);
+				}),
 		);
 	}
 
 	// Same readiness gate the add-mirror commands use, so the button matches command
 	// availability. Returns the hint to show inline when a backend is not configured.
-	private backfillReady(target: 'local' | 's3'): { ok: true } | { ok: false; reason: string } {
+	private backfillReady(
+		target: 'local' | 's3',
+	): { ok: true } | { ok: false; reason: string } {
 		if (target === 'local') {
-			return resolveLocalRoot(selectActiveRoot(this.plugin.settings)).length > 0
+			return resolveLocalRoot(selectActiveRoot(this.plugin.settings))
+				.length > 0
 				? { ok: true }
-				: { ok: false, reason: 'Set this machine\'s local folder above first.' };
+				: {
+						ok: false,
+						reason: "Set this machine's local folder above first.",
+					};
 		}
-		const ready = this.plugin.settings.endpoint.length > 0 && this.plugin.settings.bucket.length > 0 && this.plugin.credentials.hasCompleteCredentials();
-		return ready ? { ok: true } : { ok: false, reason: 'Set the endpoint, bucket, and credentials first.' };
+		const ready =
+			this.plugin.settings.endpoint.length > 0 &&
+			this.plugin.settings.bucket.length > 0 &&
+			this.plugin.credentials.hasCompleteCredentials();
+		return ready
+			? { ok: true }
+			: {
+					ok: false,
+					reason: 'Set the endpoint, bucket, and credentials first.',
+				};
 	}
 
 	private renderConnectionTestRow(setting: Setting): void {
 		setting.addButton((btn) => {
 			this.testButton = btn;
-			btn.setButtonText('Test connection').onClick(() => { void this.runConnectionTest(); });
+			btn.setButtonText('Test connection').onClick(() => {
+				void this.runConnectionTest();
+			});
 		});
-		this.statusEl = setting.descEl.createDiv({ cls: 'linked-attachments-secret-status' });
+		this.statusEl = setting.descEl.createDiv({
+			cls: 'linked-attachments-secret-status',
+		});
 		this.refreshCredentialHint();
 	}
 
@@ -582,17 +795,31 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 
 		this.testButton?.setDisabled(true);
 		this.setStatus('Testing connection...', 'neutral');
-		this.plugin.logger.info('Connection test started.', { bucket: s.bucket, addressingStyle: s.addressingStyle });
+		this.plugin.logger.info('Connection test started.', {
+			bucket: s.bucket,
+			addressingStyle: s.addressingStyle,
+		});
 		try {
 			const result = await testConnection(
-				{ endpoint: s.endpoint, region: s.region, bucket: s.bucket, addressingStyle: s.addressingStyle },
+				{
+					endpoint: s.endpoint,
+					region: s.region,
+					bucket: s.bucket,
+					addressingStyle: s.addressingStyle,
+				},
 				creds,
 				this.plugin.logger,
 			);
 			this.setStatus(result.detail, result.ok ? 'ok' : 'error');
-			this.plugin.logger.info('Connection test finished.', { ok: result.ok, detail: result.detail });
+			this.plugin.logger.info('Connection test finished.', {
+				ok: result.ok,
+				detail: result.detail,
+			});
 		} catch (error) {
-			this.setStatus(`Connection test failed: ${describeError(error)}`, 'error');
+			this.setStatus(
+				`Connection test failed: ${describeError(error)}`,
+				'error',
+			);
 		} finally {
 			this.testButton?.setDisabled(false);
 		}
@@ -602,13 +829,20 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		this.applyStatus(this.statusEl, text, kind);
 	}
 
-	private applyStatus(el: HTMLElement | null, text: string, kind: 'ok' | 'error' | 'neutral'): void {
+	private applyStatus(
+		el: HTMLElement | null,
+		text: string,
+		kind: 'ok' | 'error' | 'neutral',
+	): void {
 		if (el === null) {
 			return;
 		}
 		el.setText(text);
 		el.toggleClass('linked-attachments-secret-status-ok', kind === 'ok');
-		el.toggleClass('linked-attachments-secret-status-error', kind === 'error');
+		el.toggleClass(
+			'linked-attachments-secret-status-error',
+			kind === 'error',
+		);
 	}
 }
 
@@ -621,7 +855,10 @@ async function pickFolder(current: string): Promise<string | null> {
 		const start = current.trim();
 		const result = await dialog.showOpenDialog({
 			title: 'Choose the local offload folder',
-			defaultPath: start.length > 0 && !start.includes('%') && !start.includes('$') ? start : undefined,
+			defaultPath:
+				start.length > 0 && !start.includes('%') && !start.includes('$')
+					? start
+					: undefined,
 			properties: ['openDirectory', 'createDirectory'],
 		});
 		if (result.canceled || result.filePaths.length === 0) {
@@ -629,7 +866,9 @@ async function pickFolder(current: string): Promise<string | null> {
 		}
 		return result.filePaths[0] ?? null;
 	} catch {
-		new Notice('Folder picker is unavailable here; type or paste the path instead.');
+		new Notice(
+			'Folder picker is unavailable here; type or paste the path instead.',
+		);
 		return null;
 	}
 }

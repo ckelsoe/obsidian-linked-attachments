@@ -1,4 +1,9 @@
-import { S3ConnectionConfig, baseUrl, objectUrl, parseXmlTag } from '../../s3-url';
+import {
+	S3ConnectionConfig,
+	baseUrl,
+	objectUrl,
+	parseXmlTag,
+} from '../../s3-url';
 
 // Incomplete-multipart abort (spec section 4, data-loss/cost Path 10). A dropped
 // multipart upload leaves parts that keep accruing storage cost and are invisible in
@@ -20,7 +25,11 @@ export function buildListUploadsUrl(config: S3ConnectionConfig): string {
 	return `${origin}${path}?uploads`;
 }
 
-export function buildAbortUploadUrl(config: S3ConnectionConfig, key: string, uploadId: string): string {
+export function buildAbortUploadUrl(
+	config: S3ConnectionConfig,
+	key: string,
+	uploadId: string,
+): string {
 	return `${objectUrl(config, key)}?uploadId=${uploadId}`;
 }
 
@@ -35,7 +44,11 @@ export function parseMultipartUploads(xml: string): MultipartUpload[] {
 		if (key === null || uploadId === null) {
 			continue;
 		}
-		uploads.push({ key, uploadId, initiated: parseXmlTag(block, 'Initiated') });
+		uploads.push({
+			key,
+			uploadId,
+			initiated: parseXmlTag(block, 'Initiated'),
+		});
 	}
 	return uploads;
 }
@@ -51,7 +64,9 @@ export interface CleanupResult {
 	failed: number;
 }
 
-export async function cleanupIncompleteUploads(transport: MultipartTransport): Promise<CleanupResult> {
+export async function cleanupIncompleteUploads(
+	transport: MultipartTransport,
+): Promise<CleanupResult> {
 	const listed = await transport.list();
 	const uploads = parseMultipartUploads(listed.text);
 	let aborted = 0;

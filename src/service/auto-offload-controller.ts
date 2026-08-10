@@ -34,7 +34,11 @@ export class AutoOffloadController {
 		if (!this.deps.isReady()) {
 			return;
 		}
-		const decision = decideAutoOffload(this.candidate(file), this.deps.getConfig(), this.deps.isDesktop);
+		const decision = decideAutoOffload(
+			this.candidate(file),
+			this.deps.getConfig(),
+			this.deps.isDesktop,
+		);
 		if (!decision.qualifies) {
 			return;
 		}
@@ -63,8 +67,16 @@ export class AutoOffloadController {
 
 	// --- internals --------------------------------------------------------------
 
-	private candidate(file: TFile): { path: string; extension: string; size: number } {
-		return { path: file.path, extension: file.extension, size: file.stat.size };
+	private candidate(file: TFile): {
+		path: string;
+		extension: string;
+		size: number;
+	} {
+		return {
+			path: file.path,
+			extension: file.extension,
+			size: file.stat.size,
+		};
 	}
 
 	private scheduleIdle(file: TFile): void {
@@ -73,10 +85,13 @@ export class AutoOffloadController {
 			window.clearTimeout(existing);
 		}
 		const minutes = Math.max(1, this.deps.getConfig().idleMinutes);
-		const id = window.setTimeout(() => {
-			this.idleTimers.delete(file.path);
-			void this.fireIdle(file.path);
-		}, minutes * 60 * 1000);
+		const id = window.setTimeout(
+			() => {
+				this.idleTimers.delete(file.path);
+				void this.fireIdle(file.path);
+			},
+			minutes * 60 * 1000,
+		);
 		this.idleTimers.set(file.path, id);
 	}
 
@@ -90,7 +105,11 @@ export class AutoOffloadController {
 		if (!(file instanceof TFile)) {
 			return;
 		}
-		const decision = decideAutoOffload(this.candidate(file), this.deps.getConfig(), this.deps.isDesktop);
+		const decision = decideAutoOffload(
+			this.candidate(file),
+			this.deps.getConfig(),
+			this.deps.isDesktop,
+		);
 		if (!decision.qualifies) {
 			return;
 		}
@@ -106,8 +125,13 @@ export class AutoOffloadController {
 	private prompt(file: TFile): void {
 		const sizeMb = (file.stat.size / (1024 * 1024)).toFixed(1);
 		const fragment = createFragment();
-		fragment.createSpan({ text: `${file.name} (${sizeMb} MB) will not sync well. ` });
-		const action = fragment.createEl('a', { text: 'Offload it to storage', href: '#' });
+		fragment.createSpan({
+			text: `${file.name} (${sizeMb} MB) will not sync well. `,
+		});
+		const action = fragment.createEl('a', {
+			text: 'Offload it to storage',
+			href: '#',
+		});
 		const notice = new Notice(fragment, 0);
 		action.addEventListener('click', (event) => {
 			event.preventDefault();

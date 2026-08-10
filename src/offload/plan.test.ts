@@ -18,16 +18,33 @@ describe('planOffload', () => {
 	const config = { vaultPrefix: 'charles-main', bucket: 'my-bucket' };
 
 	it('AC1 test_plan_mirrors_key :: key is the readable vault mirror + hash suffix', async () => {
-		const input = { path: '31-books/Romans/Cranfield.pdf', bytes: bytes('content'), contentType: 'application/pdf' };
+		const input = {
+			path: '31-books/Romans/Cranfield.pdf',
+			bytes: bytes('content'),
+			contentType: 'application/pdf',
+		};
 		const plan = await planOffload(input, config);
 		const hash = await sha256Hex(input.bytes);
-		expect(plan.key).toBe(layoutHashKey({ vaultPrefix: 'charles-main', originalPath: input.path, hash }).key);
+		expect(plan.key).toBe(
+			layoutHashKey({
+				vaultPrefix: 'charles-main',
+				originalPath: input.path,
+				hash,
+			}).key,
+		);
 		expect(plan.bucket).toBe('my-bucket');
 		expect(plan.keyKind).toBe('hash');
 	});
 
 	it('AC2 test_plan_pointer_path_is_md_sidecar :: pointer path is the file + .md', async () => {
-		const plan = await planOffload({ path: 'a/b/file.epub', bytes: bytes('x'), contentType: 'application/epub+zip' }, config);
+		const plan = await planOffload(
+			{
+				path: 'a/b/file.epub',
+				bytes: bytes('x'),
+				contentType: 'application/epub+zip',
+			},
+			config,
+		);
 		expect(plan.pointerPath).toBe('a/b/file.epub.md');
 		expect(plan.originalName).toBe('file.epub');
 		expect(plan.byteSize).toBe(1);
@@ -35,42 +52,78 @@ describe('planOffload', () => {
 	});
 
 	it('AC3 test_plan_multidot_ext :: ext is after the last dot', async () => {
-		const plan = await planOffload({ path: 'data/archive.tar.gz', bytes: bytes('z'), contentType: 'application/gzip' }, config);
+		const plan = await planOffload(
+			{
+				path: 'data/archive.tar.gz',
+				bytes: bytes('z'),
+				contentType: 'application/gzip',
+			},
+			config,
+		);
 		expect(plan.originalExt).toBe('gz');
 	});
 
 	it('AC4 test_plan_matches_pipeline :: the preview equals what offload commits', async () => {
-		const input = { path: 'books/Deep Work.pdf', bytes: bytes('the real bytes'), contentType: 'application/pdf' };
+		const input = {
+			path: 'books/Deep Work.pdf',
+			bytes: bytes('the real bytes'),
+			contentType: 'application/pdf',
+		};
 		const plan = await planOffload(input, config);
 
 		const backend = new MemoryBackend();
 		let committed = '';
 		const deps: OffloadDeps = {
-			targets: [{ backend, toRef: (key) => ({ type: 's3', bucket: 'my-bucket', key, keyKind: 'hash' }) }],
+			targets: [
+				{
+					backend,
+					toRef: (key) => ({
+						type: 's3',
+						bucket: 'my-bucket',
+						key,
+						keyKind: 'hash',
+					}),
+				},
+			],
 			bucket: 'my-bucket',
 			vaultPrefix: 'charles-main',
-			writePointer: (_path, content) => { committed = content; return Promise.resolve(); },
+			writePointer: (_path, content) => {
+				committed = content;
+				return Promise.resolve();
+			},
 			trashOriginal: () => Promise.resolve(),
 			newId: () => 'id-1',
 			now: () => '2026-06-17T00:00:00.000Z',
 		};
 		const result = await offloadFile(input, deps);
 		expect(result.ok).toBe(true);
-		expect(result.record && requireS3Backend(result.record).key).toBe(plan.key);
+		expect(result.record && requireS3Backend(result.record).key).toBe(
+			plan.key,
+		);
 		expect(result.pointerPath).toBe(plan.pointerPath);
 		expect(result.record?.hash).toBe(plan.hash);
 		// the actually-committed pointer carries the previewed key (no surprise)
-		expect(requireS3Backend(decodePointer(committed).record).key).toBe(plan.key);
+		expect(requireS3Backend(decodePointer(committed).record).key).toBe(
+			plan.key,
+		);
 	});
 
 	it('prop_plan_deterministic :: same inputs produce an identical plan', async () => {
 		await fc.assert(
-			fc.asyncProperty(fc.string(), fc.string({ minLength: 1 }), async (body, name) => {
-				const input = { path: `f/${name}.bin`, bytes: bytes(body), contentType: 'application/octet-stream' };
-				const a = await planOffload(input, config);
-				const b = await planOffload(input, config);
-				expect(a).toEqual(b);
-			}),
+			fc.asyncProperty(
+				fc.string(),
+				fc.string({ minLength: 1 }),
+				async (body, name) => {
+					const input = {
+						path: `f/${name}.bin`,
+						bytes: bytes(body),
+						contentType: 'application/octet-stream',
+					};
+					const a = await planOffload(input, config);
+					const b = await planOffload(input, config);
+					expect(a).toEqual(b);
+				},
+			),
 			{ numRuns: 30 },
 		);
 	});

@@ -27,30 +27,71 @@ export function classifyError(error: unknown): ErrorState {
 	if (error instanceof BackendError) {
 		return forKind(error.kind);
 	}
-	const text = (error instanceof Error ? error.message : String(error)).toLowerCase();
+	const text = (
+		error instanceof Error ? error.message : String(error)
+	).toLowerCase();
 	if (AUTH_MARKERS.some((marker) => text.includes(marker))) {
 		return forKind('auth');
 	}
 	if (text.includes('could not reach') || text.includes('network')) {
 		return forKind('network');
 	}
-	return { kind: 'unknown', isAuth: false, refuseDestructive: false, message: error instanceof Error ? error.message : String(error) };
+	return {
+		kind: 'unknown',
+		isAuth: false,
+		refuseDestructive: false,
+		message: error instanceof Error ? error.message : String(error),
+	};
 }
 
 function forKind(kind: BackendErrorKind): ErrorState {
 	switch (kind) {
 		case 'auth':
 			// A stale-creds device must never attempt a delete or overwrite.
-			return { kind, isAuth: true, refuseDestructive: true, message: 'Your storage keys look stale on this device. Re-enter them in settings; nothing was changed.' };
+			return {
+				kind,
+				isAuth: true,
+				refuseDestructive: true,
+				message:
+					'Your storage keys look stale on this device. Re-enter them in settings; nothing was changed.',
+			};
 		case 'network':
-			return { kind, isAuth: false, refuseDestructive: false, message: 'Could not reach your storage (network error). Nothing was changed.' };
+			return {
+				kind,
+				isAuth: false,
+				refuseDestructive: false,
+				message:
+					'Could not reach your storage (network error). Nothing was changed.',
+			};
 		case 'checksum-mismatch':
-			return { kind, isAuth: false, refuseDestructive: false, message: 'The upload failed an integrity check, so nothing was removed.' };
+			return {
+				kind,
+				isAuth: false,
+				refuseDestructive: false,
+				message:
+					'The upload failed an integrity check, so nothing was removed.',
+			};
 		case 'precondition-failed':
-			return { kind, isAuth: false, refuseDestructive: false, message: 'The object changed under you, so nothing was overwritten.' };
+			return {
+				kind,
+				isAuth: false,
+				refuseDestructive: false,
+				message:
+					'The object changed under you, so nothing was overwritten.',
+			};
 		case 'not-found':
-			return { kind, isAuth: false, refuseDestructive: false, message: 'The object was not found in your bucket.' };
+			return {
+				kind,
+				isAuth: false,
+				refuseDestructive: false,
+				message: 'The object was not found in your bucket.',
+			};
 		default:
-			return { kind, isAuth: false, refuseDestructive: false, message: 'The storage operation did not complete.' };
+			return {
+				kind,
+				isAuth: false,
+				refuseDestructive: false,
+				message: 'The storage operation did not complete.',
+			};
 	}
 }

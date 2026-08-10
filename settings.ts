@@ -104,7 +104,25 @@ export const DEFAULT_SETTINGS: LinkedAttachmentsSettings = {
 	// 'over-size' at a 5 MB floor (small files sync fine and are left alone) - the
 	// same set and behavior as the pre-2.1 default allowlist. Switch any type to
 	// 'always' in settings to offload it regardless of size.
-	offloadRules: ['pdf', 'epub', 'mp3', 'm4a', 'wav', 'flac', 'zip', 'mp4', 'mov', 'png', 'jpg', 'jpeg', 'tif', 'tiff'].map(
-		(extension) => ({ extension, mode: 'over-size' as const, thresholdMb: 5, enabled: true }),
-	),
+	offloadRules: [
+		'pdf',
+		'epub',
+		'mp3',
+		'm4a',
+		'wav',
+		'flac',
+		'zip',
+		'mp4',
+		'mov',
+		'png',
+		'jpg',
+		'jpeg',
+		'tif',
+		'tiff',
+	].map((extension) => ({
+		extension,
+		mode: 'over-size' as const,
+		thresholdMb: 5,
+		enabled: true,
+	})),
 };

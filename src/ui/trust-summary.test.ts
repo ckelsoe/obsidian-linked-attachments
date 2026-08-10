@@ -37,13 +37,19 @@ const record = (tier: VerificationTier): PointerRecord => ({
 
 describe('pointerTrustLine', () => {
 	it('names the badge and card line for a verified pointer', () => {
-		expect(pointerTrustLine(record('content'))).toBe('Verified: Confirmed byte-for-byte');
+		expect(pointerTrustLine(record('content'))).toBe(
+			'Verified: Confirmed byte-for-byte',
+		);
 	});
 	it('names Found for an existence-verified pointer', () => {
-		expect(pointerTrustLine(record('existence'))).toBe('Found: We see it exists');
+		expect(pointerTrustLine(record('existence'))).toBe(
+			'Found: We see it exists',
+		);
 	});
 	it('names Asserted for an adopted pointer', () => {
-		expect(pointerTrustLine(record('asserted'))).toBe('Asserted: You told us it\'s there');
+		expect(pointerTrustLine(record('asserted'))).toBe(
+			"Asserted: You told us it's there",
+		);
 	});
 });
 
@@ -65,7 +71,11 @@ describe('offloadOutcomeLine', () => {
 	});
 
 	it('reports a kept original when the tier did not clear the gate', () => {
-		const line = offloadOutcomeLine('file.pdf', { ...base, removed: false, reachedStage: 'committed' });
+		const line = offloadOutcomeLine('file.pdf', {
+			...base,
+			removed: false,
+			reachedStage: 'committed',
+		});
 		expect(line).toContain('kept');
 		expect(line).not.toContain('moved to trash');
 	});
@@ -78,14 +88,27 @@ describe('offloadOutcomeLine', () => {
 	});
 
 	it('reports a deduped offload that kept the local copy', () => {
-		const line = offloadOutcomeLine('copy.pdf', { ...base, deduped: true, removed: false, reachedStage: 'committed' });
+		const line = offloadOutcomeLine('copy.pdf', {
+			...base,
+			deduped: true,
+			removed: false,
+			reachedStage: 'committed',
+		});
 		expect(line).toContain('already in storage');
 		expect(line).toContain('kept');
 		expect(line).not.toContain('moved to trash');
 	});
 
 	it('reports a failed offload without claiming any deletion', () => {
-		const line = offloadOutcomeLine('file.pdf', { ok: false, reachedStage: 'uploaded', removed: false, record: record('asserted'), pointerPath: 'file.pdf.md', error: 'verify failed', deduped: false });
+		const line = offloadOutcomeLine('file.pdf', {
+			ok: false,
+			reachedStage: 'uploaded',
+			removed: false,
+			record: record('asserted'),
+			pointerPath: 'file.pdf.md',
+			error: 'verify failed',
+			deduped: false,
+		});
 		expect(line).toContain('not removed');
 		expect(line).toContain('verify failed');
 	});
