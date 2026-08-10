@@ -5,8 +5,7 @@
 // Pure and injected (the real offload is passed in), so the sequencing, progress,
 // and failure isolation are proven tier-0.
 
-export type BatchItemStatus =
-	'queued' | 'running' | 'done' | 'failed' | 'skipped';
+type BatchItemStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped';
 
 export interface BatchItem<T> {
 	id: string;
@@ -21,7 +20,7 @@ export interface BatchProgress<T> {
 	total: number;
 }
 
-export interface BatchRunOutcome<T> {
+interface BatchRunOutcome<T> {
 	ok: boolean;
 	value?: T;
 	error?: string | null;

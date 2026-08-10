@@ -18,7 +18,7 @@ export const MANAGED_END = '<!-- la:managed:end -->';
 // marker (rendered collapsed). Every managed callout begins with this line.
 export const CALLOUT_HEADER = '> [!linked-attachments]- Storage Links';
 
-export type ManagedBackendType = 's3' | 'local';
+type ManagedBackendType = 's3' | 'local';
 
 export interface ManagedBlockFields {
 	id: string;

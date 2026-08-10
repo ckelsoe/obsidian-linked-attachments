@@ -25,7 +25,7 @@
 // --- capability flags (two axes, spec section 3) ----------------------------
 
 // What the backend can DO with an upload.
-export interface UploadCapabilities {
+interface UploadCapabilities {
 	presign: boolean; // can mint a presigned URL for direct transfer
 	range: boolean; // honours a byte-range GET (206)
 	serverChecksum: boolean; // validates x-amz-checksum-sha256 on PUT and returns it on HEAD/GET
@@ -35,7 +35,7 @@ export interface UploadCapabilities {
 // How the user REACHES and opens an object. presigned-url = S3 (presign / S3
 // browser); local-path = a sync folder (OS file explorer, no presign);
 // native-app = a provider's own app (e.g. OneDrive).
-export type AccessModel = 'presigned-url' | 'local-path' | 'native-app';
+type AccessModel = 'presigned-url' | 'local-path' | 'native-app';
 
 export interface Capabilities {
 	upload: UploadCapabilities;

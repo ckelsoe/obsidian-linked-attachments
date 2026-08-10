@@ -14,7 +14,7 @@ import { sha256Base64, sha256Hex } from '../hash/sha256';
 // (best-effort), even when a stage fails, so a rehearsal leaves no trace.
 
 export type TrustStageId = 'uploaded' | 'verified' | 'retrieved' | 'matched';
-export type StageStatus = 'pending' | 'passed' | 'failed';
+type StageStatus = 'pending' | 'passed' | 'failed';
 
 export interface TrustStage {
 	id: TrustStageId;

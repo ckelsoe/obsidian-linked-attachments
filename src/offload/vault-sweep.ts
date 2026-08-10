@@ -20,7 +20,7 @@ export interface SweepFile {
 	size: number; // bytes
 }
 
-export interface SweepGroup {
+interface SweepGroup {
 	extension: string; // normalized
 	count: number;
 	totalBytes: number;

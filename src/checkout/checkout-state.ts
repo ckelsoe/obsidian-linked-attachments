@@ -15,7 +15,7 @@ import {
 // .linked-attachments/checkout/<sha>/ and never becomes a co-equal replica.
 
 export const CHECKED_OUT_STATE = 'checked-out';
-export const OFFLOADED_STATE = 'offloaded';
+const OFFLOADED_STATE = 'offloaded';
 
 // Frontmatter keys for the advisory lock. Namespaced la_* so the codec preserves
 // them as extras (forward-compatible; never a core-record field change).
@@ -29,7 +29,7 @@ const CHECKOUT_BASE_HASH_KEY = 'la_checkout_base_hash';
 
 // The sync-excluded working directory for editable checkouts (spec section 4a). A dot
 // folder, so Obsidian does not index it and the user's sync does not carry it.
-export const CHECKOUT_WORKING_DIR = '.linked-attachments/checkout';
+const CHECKOUT_WORKING_DIR = '.linked-attachments/checkout';
 
 export interface CheckoutInfo {
 	host: string;

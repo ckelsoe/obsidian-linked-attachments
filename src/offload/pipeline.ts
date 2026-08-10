@@ -37,7 +37,7 @@ export interface OffloadFile {
 	contentType: string;
 }
 
-export interface VerifyExpectation {
+interface VerifyExpectation {
 	hash: string;
 	checksumBase64: string;
 	size: number;

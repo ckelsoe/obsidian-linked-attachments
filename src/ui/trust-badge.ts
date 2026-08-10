@@ -8,7 +8,7 @@ import { defaultCanRemoveOriginal } from '../offload/pipeline';
 // gate, so the "one-click delete" promise cannot drift away from what the engine
 // actually permits.
 
-export type BadgeKind = 'verified' | 'found' | 'asserted';
+type BadgeKind = 'verified' | 'found' | 'asserted';
 
 export interface TrustBadge {
 	kind: BadgeKind;
