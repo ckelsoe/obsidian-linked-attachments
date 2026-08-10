@@ -22,7 +22,7 @@
 
 import { OffloadRule, decideByRules } from './offload-rules';
 
-export type AutoOffloadTriggerMode = 'prompt' | 'idle-debounce';
+type AutoOffloadTriggerMode = 'prompt' | 'idle-debounce';
 
 // The plugin's own working directory inside the vault. A checked-out editable copy
 // lives at `.linked-attachments/checkout/<sha>/` (spec section 4a) and is never
@@ -87,7 +87,7 @@ export function decideAutoOffload(
 }
 
 // Idle-debounce only runs on desktop; on mobile it falls back to a prompt.
-export function effectiveTriggerMode(
+function effectiveTriggerMode(
 	mode: AutoOffloadTriggerMode,
 	isDesktop: boolean,
 ): AutoOffloadTriggerMode {

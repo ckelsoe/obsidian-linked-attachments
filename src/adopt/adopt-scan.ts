@@ -12,7 +12,7 @@ import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 // may read our claimed hash. Adoption NEVER yields a verified tier (spec section
 // 4) - VERIFIED always requires bytes through sha256.
 
-export type AdoptRowStatus = 'adoptable' | 'already-adopted' | 'collision';
+type AdoptRowStatus = 'adoptable' | 'already-adopted' | 'collision';
 
 export interface AdoptRow {
 	key: string;

@@ -183,17 +183,6 @@ export function requireS3Backend(record: PointerRecord): S3BackendRef {
 	return s3;
 }
 
-// The preferred read backend: the first entry, in read-preference order. A record
-// always carries at least one backend; a caller that cannot prove that to the
-// type system gets a typed error rather than an undefined.
-export function preferredBackend(record: PointerRecord): BackendRef {
-	const first = record.backends[0];
-	if (first === undefined) {
-		throw new PointerParseError('pointer has no backends');
-	}
-	return first;
-}
-
 export function encodePointer(
 	record: PointerRecord,
 	body: string,

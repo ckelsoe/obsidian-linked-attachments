@@ -18,7 +18,7 @@ import {
 //
 // Ordering of trust: pointers > LIST > any manifest copy.
 
-export const MANIFEST_VERSION = 1;
+const MANIFEST_VERSION = 1;
 
 // The x-amz-meta-* names the plugin writes on offload and reads back when
 // rebuilding the manifest from the bucket. S3 lowercases user-metadata keys, so

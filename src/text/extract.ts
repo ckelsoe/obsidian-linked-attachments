@@ -28,8 +28,7 @@ const TEXT_BEARING_EXTENSIONS = new Set([
 	'htm',
 ]);
 
-export type ExtractionState =
-	'extracted' | 'no-text-layer' | 'unsupported' | 'failed';
+type ExtractionState = 'extracted' | 'no-text-layer' | 'unsupported' | 'failed';
 
 export interface ExtractionResult {
 	state: ExtractionState;

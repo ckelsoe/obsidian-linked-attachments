@@ -17,7 +17,7 @@ export interface NoteContent {
 	content: string;
 }
 
-export interface NoteRewrite {
+interface NoteRewrite {
 	path: string;
 	content: string;
 	embedsRewritten: number;
