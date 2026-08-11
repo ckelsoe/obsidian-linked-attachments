@@ -102,6 +102,7 @@ export default tseslint.config(
 		"package.json",
 		"package-lock.json",
 		"tsconfig.json",
+		"tsconfig.scan.json",
 		"jest.config.cjs",
 		"jest.integration.config.cjs",
 		// The config is inside the type-aware TS project, so recommendedTypeChecked
