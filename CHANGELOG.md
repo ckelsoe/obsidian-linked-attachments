@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The links in the settings footer no longer run together. The separators between them depended on plain whitespace, which the layout dropped, so the row could read `GitHub|Report issues`. They are spaced by the layout now.
+- The marketplace scorecard no longer flags the plugin's use of `URLSearchParams.entries()` as untyped. The TypeScript `lib` declared `DOM` but not `DOM.Iterable`, where the iterator methods on `URLSearchParams` and other web types live, so the developer-dashboard scan, which type-checks without the project's development dependencies, saw the call as `any` and reported a no-unsafe warning in the request signer. The `lib` now includes `DOM.Iterable`. No runtime change: the method already runs on every supported Obsidian version, and the plugin now type-checks against the scan's stricter view as part of its own lint.
 
 ## [3.2.4] - 2026-07-08
 
