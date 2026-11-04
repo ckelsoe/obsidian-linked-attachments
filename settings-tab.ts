@@ -134,7 +134,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 									)
 									.onChange(async (id) => {
 										this.plugin.settings.accessKeyIdSecretName =
-											id;
+											id ?? '';
 										await this.plugin.saveSettings();
 										this.refreshCredentialHint();
 									}),
@@ -154,7 +154,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 									)
 									.onChange(async (id) => {
 										this.plugin.settings.secretAccessKeySecretName =
-											id;
+											id ?? '';
 										await this.plugin.saveSettings();
 										this.refreshCredentialHint();
 									}),

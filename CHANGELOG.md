@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Clearing the **Access key** or **Secret access key** picker no longer breaks the plugin. A cleared picker saved an empty value the plugin could not read: credential checks failed with an error, and after a restart the plugin failed to load. A cleared picker now saves an empty name, which the plugin treats as not configured, and a value already saved that way is reset to the default name when the plugin loads.
+
 ## [3.3.0] - 2026-08-11
 
 ### Added

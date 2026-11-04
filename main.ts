@@ -1458,13 +1458,20 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			this.settings.secretAccessKeySecretName = renamedSecret;
 		}
 
-		// A data.json saved by an earlier build may carry empty secret names.
+		// A data.json saved by an earlier build may carry empty secret names, or
+		// null from a cleared picker (Obsidian 1.14 reports a clear as null).
 		// Coalesce them back to the default names so the picker and the credential
 		// reads always have a canonical name to use.
-		if (this.settings.accessKeyIdSecretName.length === 0) {
+		if (
+			typeof this.settings.accessKeyIdSecretName !== 'string' ||
+			this.settings.accessKeyIdSecretName.length === 0
+		) {
 			this.settings.accessKeyIdSecretName = DEFAULT_ACCESS_KEY_SECRET_ID;
 		}
-		if (this.settings.secretAccessKeySecretName.length === 0) {
+		if (
+			typeof this.settings.secretAccessKeySecretName !== 'string' ||
+			this.settings.secretAccessKeySecretName.length === 0
+		) {
 			this.settings.secretAccessKeySecretName =
 				DEFAULT_SECRET_KEY_SECRET_ID;
 		}
