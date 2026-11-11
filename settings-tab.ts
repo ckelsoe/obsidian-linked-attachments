@@ -31,6 +31,7 @@ import { testConnection } from './s3-connection';
 import { TrustRehearsalModal } from './src/ui/trust-rehearsal-modal';
 import { LogViewModal } from './src/ui/log-view-modal';
 import { OffloadRuleMode } from './src/offload/offload-rules';
+import { removeEntry } from './src/ui/remove-entry';
 
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
@@ -437,7 +438,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	private drawRuleRows(table: HTMLElement): void {
 		table.empty();
 		const rules = this.plugin.settings.offloadRules;
-		rules.forEach((rule, index) => {
+		rules.forEach((rule) => {
 			const row = table.createDiv({ cls: 'linked-attachments-rule-row' });
 
 			// A disabled rule stays configured but offloads nothing; the row dims so
@@ -527,8 +528,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				`Remove the ${rule.extension || 'blank'} rule`,
 			);
 			remove.addEventListener('click', () => {
-				this.plugin.settings.offloadRules.splice(index, 1);
-				void this.plugin.saveSettings();
+				if (removeEntry(this.plugin.settings.offloadRules, rule)) {
+					void this.plugin.saveSettings();
+				}
 				this.drawRuleRows(table);
 			});
 
@@ -685,8 +687,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					`Remove ${entry.machine.length > 0 ? entry.machine : 'this'} machine`,
 				);
 				remove.addEventListener('click', () => {
-					machines().splice(index, 1);
-					void this.plugin.saveSettings();
+					if (removeEntry(machines(), entry)) {
+						void this.plugin.saveSettings();
+					}
 					refresh();
 				});
 			});
