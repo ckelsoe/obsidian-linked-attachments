@@ -66,7 +66,7 @@ export default tseslint.config(
 		files: ["__tests__/**/*.ts", "src/**/*.test.ts"],
 		languageOptions: {
 			globals: {
-				...globals.jest,
+				...globals.vitest,
 			},
 		},
 		rules: {
@@ -103,8 +103,8 @@ export default tseslint.config(
 		"package-lock.json",
 		"tsconfig.json",
 		"tsconfig.scan.json",
-		"jest.config.cjs",
-		"jest.integration.config.cjs",
+		"vitest.config.mts",
+		"vitest.integration.config.mts",
 		// The config is inside the type-aware TS project, so recommendedTypeChecked
 		// lints this file against itself and flags the `...globals.*` / `...obsidianmd`
 		// spreads as unsafe any assignments. Matches the standard template.
