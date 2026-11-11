@@ -155,7 +155,7 @@ export function localMachineView(
 		}
 	});
 	const matches = matchIndexes.length;
-	const activeIndex = matches > 0 ? matchIndexes[0]! : -1;
+	const activeIndex = matchIndexes[0] ?? -1;
 	let text: string;
 	let warn: boolean;
 	if (matches === 0) {

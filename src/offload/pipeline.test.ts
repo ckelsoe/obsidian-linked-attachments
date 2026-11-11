@@ -11,6 +11,7 @@ import { OBJECT_METADATA_KEYS } from '../manifest/manifest';
 import { sha256Base64 } from '../hash/sha256';
 import { decodePointer, requireS3Backend } from '../pointer/codec';
 import { ladderVerifier } from './verify';
+import { defined } from '../../__tests__/helpers/checked';
 
 // Tier 0: the pipeline runs against MemoryBackend with injected vault side
 // effects (writePointer / trashOriginal). No filesystem, no network.
@@ -397,8 +398,9 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		const bytes = 'identical content';
 		const h1 = sharedHarness(backend, index);
 		const r1 = await offloadFile(file('a.pdf', bytes), h1.deps);
-		const s3v = requireS3Backend(r1.record!);
-		index.set(r1.record!.hash!, {
+		const rec1 = defined(r1.record);
+		const s3v = requireS3Backend(rec1);
+		index.set(defined(rec1.hash), {
 			key: s3v.key,
 			bucket: s3v.bucket,
 			keyKind: s3v.keyKind,
@@ -443,7 +445,9 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 		expect(result.ok).toBe(true);
 		expect(result.deduped).toBe(false); // did not link to the drifted object
 		expect(h.events).toContain('upload'); // uploaded a fresh, correct copy
-		const head = await backend.head(requireS3Backend(result.record!).key);
+		const head = await backend.head(
+			requireS3Backend(defined(result.record)).key,
+		);
 		expect(head.checksumSha256).toBe(await sha256Base64(bytesOf(bytes)));
 	});
 
@@ -507,8 +511,9 @@ describe('offload pipeline content-dedup (la-p5-26)', () => {
 						},
 						h1.deps,
 					);
-					const s3one = requireS3Backend(r1.record!);
-					index.set(r1.record!.hash!, {
+					const rec1 = defined(r1.record);
+					const s3one = requireS3Backend(rec1);
+					index.set(defined(rec1.hash), {
 						key: s3one.key,
 						bucket: s3one.bucket,
 						keyKind: s3one.keyKind,
