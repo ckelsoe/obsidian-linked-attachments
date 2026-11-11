@@ -35,7 +35,6 @@ import { OffloadRuleMode } from './src/offload/offload-rules';
 export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	plugin: LinkedAttachmentsPlugin;
 	private statusEl: HTMLElement | null = null;
-	private testButton: ButtonComponent | null = null;
 
 	constructor(app: App, plugin: LinkedAttachmentsPlugin) {
 		super(app, plugin);
@@ -64,7 +63,15 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Local folders per machine',
 						desc: 'Where the local and paired modes write, resolved per machine. Click Add this machine, then Browse to the offload folder on this machine. If you sync settings across machines, each one adds its own row and reads its own folder, so two machines with different drive letters both work. The bytes only appear on a machine after its sync client (OneDrive, Dropbox, and so on) downloads them, and the pointer note must have synced too, so a just-added file can lag on a second machine.',
-						searchable: false,
+						aliases: [
+							'local folder',
+							'machine',
+							'hostname',
+							'OneDrive',
+							'Dropbox',
+							'NAS',
+							'browse',
+						],
 						render: (setting: Setting) => {
 							this.renderLocalMachineRows(setting);
 						},
@@ -124,7 +131,12 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Access key',
 						desc: `Click Link, then Add secret, and name it "${DEFAULT_ACCESS_KEY_SECRET_ID}". Paste your S3 access key ID as the value. Only the secret name is saved to data.json; the value stays in the device secret store. Use a key scoped to only this bucket.`,
-						searchable: false,
+						aliases: [
+							'access key ID',
+							'credentials',
+							'secret',
+							'key',
+						],
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
 								new SecretComponent(this.app, el)
@@ -144,7 +156,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Secret access key',
 						desc: `Click Link, then Add secret, and name it "${DEFAULT_SECRET_KEY_SECRET_ID}". Paste your S3 secret access key as the value. Only the secret name is saved to data.json; the value stays in the device secret store.`,
-						searchable: false,
+						aliases: ['secret key', 'credentials', 'secret'],
 						render: (setting: Setting) => {
 							setting.addComponent((el) =>
 								new SecretComponent(this.app, el)
@@ -164,7 +176,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Connection',
 						desc: 'Verify the endpoint, region, bucket, and credentials by listing the bucket.',
-						searchable: false,
+						aliases: ['test connection', 'verify', 'bucket'],
 						render: (setting: Setting) => {
 							this.renderConnectionTestRow(setting);
 						},
@@ -183,7 +195,13 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Rehearse a round-trip',
 						desc: 'Before you trust a real file, test your bucket end to end on a throwaway object: uploaded, verified byte-for-byte, retrieved, and matched. Nothing in your vault is touched.',
-						searchable: false,
+						aliases: [
+							'rehearsal',
+							'rehearse',
+							'round trip',
+							'test bucket',
+							'trust',
+						],
 						render: (setting: Setting) => {
 							setting.addButton((btn) =>
 								btn
@@ -230,7 +248,13 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Types to offload',
 						desc: 'Each file type is offloaded either always (any size) or only when larger than its own size in MB. A type that is not listed here is never offloaded. Turn a row off with its checkbox to keep the rule configured without offloading those files, for example while testing. These rules drive both automatic offload of new files and the scan below.',
-						searchable: false,
+						aliases: [
+							'file type',
+							'extension',
+							'rule',
+							'size',
+							'threshold',
+						],
 						render: (setting: Setting) => {
 							this.renderRuleTable(setting);
 						},
@@ -238,7 +262,12 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'Scan the whole vault now',
 						desc: 'Apply these rules to every file already in your vault and offload the matches in one batch. You get a preview of every file and the total before anything moves.',
-						searchable: false,
+						aliases: [
+							'scan',
+							'sweep',
+							'existing files',
+							'batch offload',
+						],
 						render: (setting: Setting) => {
 							setting.addButton((btn) =>
 								btn
@@ -262,6 +291,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Trigger',
+						visible: () => this.plugin.settings.autoOffloadEnabled,
 						desc: 'Prompt asks you on every qualifying add. Offload when idle waits until the file has been untouched for the idle window (desktop only; mobile always prompts).',
 						control: {
 							type: 'dropdown',
@@ -274,6 +304,10 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Idle window in minutes',
+						visible: () =>
+							this.plugin.settings.autoOffloadEnabled &&
+							this.plugin.settings.autoOffloadTriggerMode ===
+								'idle-debounce',
 						desc: 'Used only when the trigger is offload when idle: how long a file must be untouched before it is offloaded.',
 						control: {
 							type: 'number',
@@ -294,7 +328,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					{
 						name: 'View log',
 						desc: 'Open the recent activity log and copy it to include in a bug report.',
-						searchable: false,
+						aliases: ['log', 'audit', 'bug report', 'diagnostics'],
 						render: (setting: Setting) => {
 							setting.addButton((btn) =>
 								btn.setButtonText('View log').onClick(() => {
@@ -337,11 +371,16 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 			text: string,
 			url: string,
 		): HTMLAnchorElement => {
-			inner.createSpan({
+			// Each separator and its link are one nowrap item, so a narrow pane
+			// wraps between whole "| Link" units and never leaves a stray "|".
+			const item = inner.createSpan({
+				cls: 'linked-attachments-footer-link',
+			});
+			item.createSpan({
 				cls: 'linked-attachments-footer-separator',
 				text: '|',
 			});
-			return inner.createEl('a', {
+			return item.createEl('a', {
 				text,
 				href: url,
 				attr: { target: '_blank', rel: 'noopener' },
@@ -376,6 +415,9 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 		// (refreshDomState() only re-evaluates predicates, not structure).
 		if (key === 'storageMode') {
 			this.update();
+		} else {
+			// The auto-offload rows show only while they apply.
+			this.refreshDomState();
 		}
 	}
 
@@ -682,7 +724,7 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 					? 'Copy all files to the local mirror now'
 					: 'Copy all files to the S3 mirror now',
 			desc: `Give every existing pointer the ${target === 'local' ? 'local' : 'S3'} copy it is missing, read from its other backend and verified on write. Safe to re-run: a pointer that already has this copy is skipped.`,
-			searchable: false,
+			aliases: ['backfill', 'mirror', 'copy missing', 'missing copy'],
 			render: (setting: Setting) => {
 				this.renderBackfillRow(setting, target);
 			},
@@ -751,16 +793,18 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				};
 	}
 
+	// Obsidian can render this row twice at once (the tab and a settings search
+	// result), so a test keeps its own row's button and status line.
 	private renderConnectionTestRow(setting: Setting): void {
-		setting.addButton((btn) => {
-			this.testButton = btn;
-			btn.setButtonText('Test connection').onClick(() => {
-				void this.runConnectionTest();
-			});
-		});
-		this.statusEl = setting.descEl.createDiv({
+		const statusEl = setting.descEl.createDiv({
 			cls: 'linked-attachments-secret-status',
 		});
+		setting.addButton((btn) => {
+			btn.setButtonText('Test connection').onClick(() => {
+				void this.runConnectionTest(btn, statusEl);
+			});
+		});
+		this.statusEl = statusEl;
 		this.refreshCredentialHint();
 	}
 
@@ -781,20 +825,29 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 	// Signs and sends a ListObjectsV2 against the bucket; the live result is the
 	// authoritative validation of the credentials and configuration. Guarded so a
 	// failure shows as a status line rather than an unhandled rejection.
-	private async runConnectionTest(): Promise<void> {
+	private async runConnectionTest(
+		button: ButtonComponent,
+		statusEl: HTMLElement,
+	): Promise<void> {
+		const setStatus = (
+			text: string,
+			kind: 'ok' | 'error' | 'neutral',
+		): void => {
+			this.applyStatus(statusEl, text, kind);
+		};
 		const creds = this.plugin.credentials.getCredentials();
 		if (creds === null) {
-			this.setStatus('Link both credentials first.', 'error');
+			setStatus('Link both credentials first.', 'error');
 			return;
 		}
 		const s = this.plugin.settings;
 		if (s.endpoint.length === 0 || s.bucket.length === 0) {
-			this.setStatus('Set the endpoint and bucket above first.', 'error');
+			setStatus('Set the endpoint and bucket above first.', 'error');
 			return;
 		}
 
-		this.testButton?.setDisabled(true);
-		this.setStatus('Testing connection...', 'neutral');
+		button.setDisabled(true);
+		setStatus('Testing connection...', 'neutral');
 		this.plugin.logger.info('Connection test started.', {
 			bucket: s.bucket,
 			addressingStyle: s.addressingStyle,
@@ -810,18 +863,18 @@ export class LinkedAttachmentsSettingTab extends PluginSettingTab {
 				creds,
 				this.plugin.logger,
 			);
-			this.setStatus(result.detail, result.ok ? 'ok' : 'error');
+			setStatus(result.detail, result.ok ? 'ok' : 'error');
 			this.plugin.logger.info('Connection test finished.', {
 				ok: result.ok,
 				detail: result.detail,
 			});
 		} catch (error) {
-			this.setStatus(
+			setStatus(
 				`Connection test failed: ${describeError(error)}`,
 				'error',
 			);
 		} finally {
-			this.testButton?.setDisabled(false);
+			button.setDisabled(false);
 		}
 	}
 

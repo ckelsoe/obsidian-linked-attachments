@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Search settings** now finds every setting on the tab. The local folders per machine, both credential pickers, the connection test, the backfill buttons, the round-trip rehearsal, the file type rules, the vault scan, and the log viewer were hidden from search before. Each also answers to the words people type, such as "hostname", "credentials", "extension" or "audit".
+- **Trigger** and **Idle window in minutes** under **Automatic offload** now show only while they apply: the trigger while automatic offload is on, and the idle window only when the trigger is **Offload when idle**.
+
+### Fixed
+
+- In a narrow settings pane the footer could wrap with a stray `|` at the end or start of a line. Each separator now wraps together with the link after it.
+
 ## [3.3.1] - 2026-11-04
 
 ### Fixed

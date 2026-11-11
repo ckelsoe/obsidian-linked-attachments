@@ -318,6 +318,13 @@
 	gap: var(--size-4-2);
 }
 
+.linked-attachments-footer-link {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	white-space: nowrap;
+}
+
 .linked-attachments-footer-separator {
 	color: var(--text-faint);
 }
