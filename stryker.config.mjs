@@ -12,7 +12,7 @@ export default {
 	vitest: {
 		configFile: "vitest.config.mts",
 	},
-	mutate: ["**/*.ts", "!**/*.test.ts", "!**/*.d.ts", "!__mocks__/**"],
+	mutate: ["**/*.ts", "!**/*.test.ts", "!**/*.d.ts", "!__mocks__/**", "!__tests__/helpers/**"],
 	reporters: ["clear-text", "progress"],
 	coverageAnalysis: "perTest",
 	ignorePatterns: ["main.js", "dist"],
