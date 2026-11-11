@@ -4,7 +4,8 @@
 #
 # No active suppressions. The deepmerge advisory left with Jest (2026-11-11):
 # Vitest does not use deepmerge. The minimatch advisory is fixed through
-# version-keyed `overrides` (`minimatch@9`, `minimatch@10` to 11), which leave
+# version-keyed `overrides` (`minimatch@9`, `minimatch@10` to 11, plus a
+# nested one for type-coverage-core, whose range npm 10 skips), which leave
 # eslint's own 3.x copies alone, and eslint-plugin-obsidianmd 0.5 no longer
 # pulls in the 8.x copy (2026-11-11). The glob advisory is fixed through
 # `overrides` (2026-11-04). The braces entry was dropped 2026-11-04: GitHub
