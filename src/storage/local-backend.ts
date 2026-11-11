@@ -533,7 +533,7 @@ function statEtag(size: number, mtimeMs: number): string {
 
 function isErrnoCode(error: unknown, code: string): boolean {
 	// Duck-type the errno `code` rather than `instanceof Error`: a Node fs rejection
-	// can cross a module/realm boundary (jest, bundlers) where instanceof silently
+	// can cross a module/realm boundary (test runners, bundlers) where instanceof silently
 	// fails, and the errno code is the only thing actually being asserted.
 	return (
 		typeof error === 'object' &&

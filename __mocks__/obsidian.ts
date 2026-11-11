@@ -1,4 +1,4 @@
-// Jest mock for the `obsidian` runtime API. The published `obsidian` npm package
+// Test mock for the `obsidian` runtime API. The published `obsidian` npm package
 // is types-only (its `main` is empty), so unit tests running in plain Node have
 // no implementation of the functions the plugin imports. This mock backs
 // parseYaml / stringifyYaml with the `yaml` package so the pure codec's
