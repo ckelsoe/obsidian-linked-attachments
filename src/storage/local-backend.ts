@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, type Dirent, type Stats } from 'fs';
 import * as nodePath from 'path';
 import * as os from 'os';
 import { platform, env } from 'node:process';
@@ -324,7 +324,7 @@ export class LocalBackend implements StorageBackend {
 		key: string,
 	): Promise<{ size: number; mtimeMs: number }> {
 		const filePath = this.keyToPath(key);
-		let stat;
+		let stat: Stats;
 		try {
 			stat = await fs.stat(filePath);
 		} catch (error) {
@@ -380,7 +380,7 @@ export class LocalBackend implements StorageBackend {
 		dir: string,
 		out: Map<string, WalkedObject>,
 	): Promise<void> {
-		let dirents;
+		let dirents: Dirent[];
 		try {
 			dirents = await fs.readdir(dir, { withFileTypes: true });
 		} catch (error) {
@@ -486,7 +486,7 @@ function expandEnv(input: string): string {
 // directory for fsync; that is not an error, so swallow it - the file's own sync
 // in writeAtomic is the load-bearing durability step.
 async function fsyncDir(dir: string): Promise<void> {
-	let handle;
+	let handle: Awaited<ReturnType<typeof fs.open>>;
 	try {
 		handle = await fs.open(dir, 'r');
 	} catch {

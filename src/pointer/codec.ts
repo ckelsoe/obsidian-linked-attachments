@@ -436,7 +436,7 @@ function parseBackends(fm: Record<string, unknown>): BackendRef[] {
 			`field ${FRONTMATTER_KEYS.backends} must be a non-empty list of backends`,
 		);
 	}
-	return raw.map((entry, index) => parseBackendEntry(entry, index));
+	return raw.map((entry: unknown, index) => parseBackendEntry(entry, index));
 }
 
 function parseBackendEntry(entry: unknown, index: number): BackendRef {
