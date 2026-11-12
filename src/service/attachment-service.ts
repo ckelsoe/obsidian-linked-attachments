@@ -70,6 +70,7 @@ import {
 	BackendRef,
 	BackendType,
 	decodePointer,
+	DecodedPointer,
 	encodePointer,
 	localBackend,
 	PointerRecord,
@@ -1166,7 +1167,7 @@ export class AttachmentService {
 		const config = this.getConfig();
 		const result: MirrorResult = { added: 0, skipped: 0, failed: 0 };
 		for (const file of this.app.vault.getMarkdownFiles()) {
-			let decoded;
+			let decoded: DecodedPointer;
 			try {
 				decoded = decodePointer(await this.app.vault.read(file));
 			} catch {

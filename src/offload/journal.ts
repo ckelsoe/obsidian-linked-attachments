@@ -71,7 +71,8 @@ export function parseJournal(text: string): JournalParseResult {
 		return { ok: false, reason: 'missing or wrong-typed fields' };
 	}
 	const items: JournalItem[] = [];
-	for (const entry of obj.items) {
+	const rawItems: unknown[] = obj.items;
+	for (const entry of rawItems) {
 		if (typeof entry !== 'object' || entry === null) {
 			return { ok: false, reason: 'malformed item' };
 		}

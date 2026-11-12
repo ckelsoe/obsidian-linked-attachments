@@ -115,7 +115,7 @@ export class Logger implements AuditSink {
 		const line = formatLogLine(entry);
 		this.writeChain = this.writeChain
 			.then(() => this.appendLine(line))
-			.catch((error) => {
+			.catch((error: unknown) => {
 				console.error(
 					'Linked Attachments: failed to write to the log file.',
 					error,

@@ -1,5 +1,5 @@
 import { VerificationTier } from '../pointer/codec';
-import { StorageBackend } from '../storage/backend';
+import { HeadResult, StorageBackend } from '../storage/backend';
 import { sha256Hex } from '../hash/sha256';
 import { Verifier } from './pipeline';
 
@@ -61,7 +61,7 @@ export async function verifyByLadder(
 	key: string,
 	expectation: LadderExpectation,
 ): Promise<LadderResult> {
-	let head;
+	let head: HeadResult;
 	try {
 		head = await backend.head(key);
 	} catch (error) {
