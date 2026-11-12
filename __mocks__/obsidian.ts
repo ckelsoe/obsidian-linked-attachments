@@ -13,3 +13,6 @@ export function parseYaml(yaml: string): unknown {
 export function stringifyYaml(obj: unknown): string {
 	return stringify(obj, { lineWidth: 0 });
 }
+
+// Constructed by the service only through instanceof checks.
+export class TFile {}
