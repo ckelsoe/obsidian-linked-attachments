@@ -75,8 +75,8 @@ function makeHarness(host = 'mbp'): Harness {
 			}
 			return Promise.resolve(t);
 		},
-		writePointer: (p, t) => {
-			pointers.set(p, t);
+		writePointer: (p, update) => {
+			pointers.set(p, update(pointers.get(p) ?? ''));
 			return Promise.resolve();
 		},
 		writeWorkingCopy: (p, b) => {
@@ -147,6 +147,24 @@ describe('checkout (la-p6-32)', () => {
 			decodePointer(h.pointers.get(pointerPath) as string).record
 				.copyState,
 		).toBe('checked-out');
+	});
+
+	it('keeps a pointer edit saved while the working copy was being written', async () => {
+		const h = makeHarness();
+		const { pointerPath } = await seedOffloaded(h, 'budget v1 contents');
+		const write = h.deps.writeWorkingCopy;
+		h.deps.writeWorkingCopy = async (p, b) => {
+			await write(p, b);
+			h.pointers.set(
+				pointerPath,
+				`${h.pointers.get(pointerPath) ?? ''}Edited meanwhile.\n`,
+			);
+		};
+		const result = await new CheckoutManager(h.deps).checkout(pointerPath);
+		expect(result.ok).toBe(true);
+		const decoded = decodePointer(h.pointers.get(pointerPath) as string);
+		expect(decoded.record.copyState).toBe('checked-out');
+		expect(decoded.body).toContain('Edited meanwhile.');
 	});
 
 	// F1 in reverse: never open drifted bytes - verify the GET against the recorded hash.
@@ -249,6 +267,40 @@ describe('check-in (la-p6-32)', () => {
 		);
 		// working copy removed
 		expect(h.working.has(wcPath)).toBe(false);
+	});
+
+	it('stops a check-in when the pointer record changed during the upload', async () => {
+		const h = makeHarness();
+		const { pointerPath, rec } = await seedOffloaded(h, 'budget v1');
+		const manager = new CheckoutManager(h.deps);
+		await manager.checkout(pointerPath);
+		const wcPath = workingCopyPath(rec.hash as string, rec.originalName);
+		h.working.set(wcPath, bytesOf('budget v2 EDITED'));
+		// Another check-in lands while this one uploads.
+		const put = h.backend.put.bind(h.backend);
+		h.backend.put = async (...args) => {
+			const res = await put(...args);
+			const current = h.pointers.get(pointerPath) as string;
+			h.pointers.set(
+				pointerPath,
+				current.replace(
+					/la_original_name: .*/,
+					'la_original_name: renamed.xlsx',
+				),
+			);
+			return res;
+		};
+		const before = () => h.pointers.get(pointerPath);
+
+		const result = await manager.checkin(pointerPath);
+		expect(result.ok).toBe(false);
+		expect(decodePointer(before() as string).record.originalName).toBe(
+			'renamed.xlsx',
+		);
+		expect(decodePointer(before() as string).record.copyState).toBe(
+			'checked-out',
+		);
+		expect(h.working.has(wcPath)).toBe(true);
 	});
 
 	it('test_checkin_verify_failure_keeps_working_copy', async () => {

@@ -578,12 +578,12 @@ export class AttachmentService {
 				}
 				return this.app.vault.read(file);
 			},
-			writePointer: async (path, text) => {
+			writePointer: async (path, update) => {
 				const file = this.app.vault.getAbstractFileByPath(path);
 				if (!(file instanceof TFile)) {
 					throw new Error(`no pointer note at ${path}`);
 				}
-				await this.app.vault.process(file, () => text);
+				await this.app.vault.process(file, update);
 			},
 			writeWorkingCopy: async (path, bytes) => {
 				await this.ensureAdapterDir(parentDir(path));
@@ -1238,15 +1238,18 @@ export class AttachmentService {
 					continue;
 				}
 				// Re-decode at write time, so an edit made during the upload is kept.
-				// A check-in during the upload changes the hash: the mirror holds the
-				// old bytes, so it is not attached (the object is left for reconcile,
+				// A check-in during the upload changes the hash, size or source: the
+				// mirror holds the old bytes, so it is not attached (the object is left for reconcile,
 				// since a content-addressed key may be shared).
 				let outcomeOfWrite: 'added' | 'skipped' | 'stale' = 'added';
 				await this.app.vault.process(file, (current) => {
 					const latest = decodePointer(current);
 					if (
 						latest.record.id !== record.id ||
-						latest.record.hash !== record.hash
+						latest.record.hash !== record.hash ||
+						latest.record.byteSize !== record.byteSize ||
+						JSON.stringify(latest.record.backends[0]) !==
+							JSON.stringify(source)
 					) {
 						outcomeOfWrite = 'stale';
 						return current;
