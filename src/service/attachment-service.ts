@@ -578,12 +578,12 @@ export class AttachmentService {
 				}
 				return this.app.vault.read(file);
 			},
-			writePointer: async (path, text) => {
+			writePointer: async (path, update) => {
 				const file = this.app.vault.getAbstractFileByPath(path);
 				if (!(file instanceof TFile)) {
 					throw new Error(`no pointer note at ${path}`);
 				}
-				await this.app.vault.modify(file, text);
+				await this.app.vault.process(file, update);
 			},
 			writeWorkingCopy: async (path, bytes) => {
 				await this.ensureAdapterDir(parentDir(path));
@@ -705,23 +705,19 @@ export class AttachmentService {
 		if (sourcePaths.length === 0) {
 			return 0;
 		}
-		const notes: Array<{ path: string; content: string }> = [];
+		let embedsRewritten = 0;
 		for (const path of sourcePaths) {
 			const file = this.app.vault.getAbstractFileByPath(path);
-			if (file instanceof TFile) {
-				notes.push({ path, content: await this.app.vault.read(file) });
-			}
-		}
-		const { rewrites, embedsRewritten } = rewriteEmbedsInNotes(
-			notes,
-			attachmentName,
-			direction,
-		);
-		for (const rewrite of rewrites) {
-			const file = this.app.vault.getAbstractFileByPath(rewrite.path);
-			if (file instanceof TFile) {
-				await this.app.vault.modify(file, rewrite.content);
-			}
+			if (!(file instanceof TFile)) continue;
+			await this.app.vault.process(file, (content) => {
+				const result = rewriteEmbedsInNotes(
+					[{ path, content }],
+					attachmentName,
+					direction,
+				);
+				embedsRewritten += result.embedsRewritten;
+				return result.rewrites[0]?.content ?? content;
+			});
 		}
 		return embedsRewritten;
 	}
@@ -940,11 +936,22 @@ export class AttachmentService {
 			} catch {
 				continue; // not a pointer note
 			}
-			const updated = refreshManagedBlock(text, record);
-			if (updated !== text) {
-				await this.app.vault.modify(file, updated);
-				refreshed++;
-			}
+			if (refreshManagedBlock(text, record) === text) continue;
+			// Re-derive from the text at write time, so an edit made since the read is kept.
+			let changed = false;
+			await this.app.vault.process(file, (current) => {
+				try {
+					const updated = refreshManagedBlock(
+						current,
+						decodePointer(current).record,
+					);
+					changed = updated !== current;
+					return updated;
+				} catch {
+					return current; // no longer a pointer note
+				}
+			});
+			if (changed) refreshed++;
 		}
 		return refreshed;
 	}
@@ -1230,19 +1237,39 @@ export class AttachmentService {
 					result.failed++;
 					continue;
 				}
-				const updated: PointerRecord = {
-					...record,
-					backends: [...record.backends, newRef],
-				};
-				await this.app.vault.modify(
-					file,
-					encodePointer(
-						updated,
-						decoded.body,
-						decoded.extraFrontmatter,
-					),
-				);
-				result.added++;
+				// Re-decode at write time, so an edit made during the upload is kept.
+				// A check-in during the upload changes the hash, size or source: the
+				// mirror holds the old bytes, so it is not attached (the object is left for reconcile,
+				// since a content-addressed key may be shared).
+				let outcomeOfWrite: 'added' | 'skipped' | 'stale' = 'added';
+				await this.app.vault.process(file, (current) => {
+					const latest = decodePointer(current);
+					if (
+						latest.record.id !== record.id ||
+						latest.record.hash !== record.hash ||
+						latest.record.byteSize !== record.byteSize ||
+						JSON.stringify(latest.record.backends[0]) !==
+							JSON.stringify(source)
+					) {
+						outcomeOfWrite = 'stale';
+						return current;
+					}
+					if (latest.record.backends.some((b) => b.type === target)) {
+						outcomeOfWrite = 'skipped';
+						return current;
+					}
+					return encodePointer(
+						{
+							...latest.record,
+							backends: [...latest.record.backends, newRef],
+						},
+						latest.body,
+						latest.extraFrontmatter,
+					);
+				});
+				if (outcomeOfWrite === 'added') result.added++;
+				else if (outcomeOfWrite === 'skipped') result.skipped++;
+				else result.failed++;
 			} catch {
 				result.failed++;
 			}

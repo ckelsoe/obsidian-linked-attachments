@@ -41,7 +41,12 @@ export interface CheckoutDeps {
 	backend: StorageBackend;
 	vaultPrefix: string;
 	readPointer: (pointerPath: string) => Promise<string>;
-	writePointer: (pointerPath: string, text: string) => Promise<void>;
+	// Applies `update` to the note's content at write time (vault.process), so an
+	// edit saved while a checkout or check-in was awaiting is kept.
+	writePointer: (
+		pointerPath: string,
+		update: (current: string) => string,
+	) => Promise<void>;
 	writeWorkingCopy: (path: string, bytes: Uint8Array) => Promise<void>;
 	readWorkingCopy: (path: string) => Promise<Uint8Array>;
 	removeWorkingCopy: (path: string) => Promise<void>;
@@ -126,16 +131,26 @@ export class CheckoutManager {
 			);
 		}
 
-		const wcPath = workingCopyPath(record.hash, record.originalName);
+		const baseHash = record.hash;
+		const wcPath = workingCopyPath(baseHash, record.originalName);
 		await this.deps.writeWorkingCopy(wcPath, bytes);
-		await this.deps.writePointer(
+		const changed = await this.updateIfUnchanged(
 			pointerPath,
-			withCheckoutMarkers(text, {
-				host: this.deps.host(),
-				at: this.deps.now(),
-				baseHash: record.hash,
-			}),
+			record,
+			(current) =>
+				withCheckoutMarkers(current, {
+					host: this.deps.host(),
+					at: this.deps.now(),
+					baseHash,
+				}),
 		);
+		if (changed) {
+			// The working copy stays: it holds the verified bytes, and a concurrent
+			// checkout of the same version may be using the same path.
+			return fail(
+				'the pointer note changed during checkout; check it out again',
+			);
+		}
 		await this.deps.openInDefaultApp(wcPath);
 		return {
 			ok: true,
@@ -173,10 +188,15 @@ export class CheckoutManager {
 
 		if (plan.kind === 'no-op') {
 			// Nothing to upload: just release and discard the stale working copy.
-			await this.deps.writePointer(
-				pointerPath,
-				clearCheckoutMarkers(text),
-			);
+			if (
+				await this.updateIfUnchanged(
+					pointerPath,
+					record,
+					clearCheckoutMarkers,
+				)
+			) {
+				return failCheckin(CHANGED_DURING_CHECKIN);
+			}
 			await this.deps.removeWorkingCopy(wcPath);
 			return {
 				ok: true,
@@ -261,10 +281,14 @@ export class CheckoutManager {
 			verificationTier: outcome.tier,
 			remoteChecksum: outcome.remoteChecksum,
 		};
-		await this.deps.writePointer(
-			pointerPath,
-			encodeCheckedIn(text, committed),
-		);
+		// The uploaded object is additive, so stopping here loses nothing.
+		if (
+			await this.updateIfUnchanged(pointerPath, record, (current) =>
+				encodeCheckedIn(current, committed),
+			)
+		) {
+			return failCheckin(CHANGED_DURING_CHECKIN);
+		}
 		await this.deps.removeWorkingCopy(wcPath);
 		return {
 			ok: true,
@@ -275,13 +299,34 @@ export class CheckoutManager {
 		};
 	}
 
+	// Applies `update` only if the pointer's record still equals the one read
+	// before an await (another check-in or a hand edit may land meanwhile).
+	// Returns true, writing nothing, when it changed. The working copy and the
+	// checkout markers then stay, so the user's edits are kept.
+	private async updateIfUnchanged(
+		pointerPath: string,
+		record: PointerRecord,
+		update: (current: string) => string,
+	): Promise<boolean> {
+		const before = JSON.stringify(record);
+		let changed = false;
+		await this.deps.writePointer(pointerPath, (current) => {
+			if (JSON.stringify(decodePointer(current).record) !== before) {
+				changed = true;
+				return current;
+			}
+			return update(current);
+		});
+		return changed;
+	}
+
 	async discard(
 		pointerPath: string,
 	): Promise<{ ok: boolean; error: string | null }> {
 		const text = await this.deps.readPointer(pointerPath);
 		const decoded = decodePointer(text);
 		const baseHash = readCheckoutBase(decoded) ?? decoded.record.hash;
-		await this.deps.writePointer(pointerPath, clearCheckoutMarkers(text));
+		await this.deps.writePointer(pointerPath, clearCheckoutMarkers);
 		if (baseHash !== null) {
 			const wcPath = workingCopyPath(
 				baseHash,
@@ -300,6 +345,9 @@ export class CheckoutManager {
 function fail(error: string): CheckoutResult {
 	return { ok: false, workingCopyPath: null, lockState: null, error };
 }
+
+const CHANGED_DURING_CHECKIN =
+	'the pointer note changed during check-in; your edits are still in the working copy, so check in again';
 
 function failCheckin(error: string): CheckinResult {
 	return { ok: false, kind: null, record: null, conflictPath: null, error };

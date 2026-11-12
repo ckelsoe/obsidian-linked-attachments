@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An edit made to a pointer note while **Add a local mirror to existing pointers**, **Add an S3 mirror to existing pointers** or **Refresh pointer note links** was running is no longer overwritten. These now write through Obsidian's atomic note update and re-read the note at write time.
+- Check out, check in and discard no longer overwrite an edit saved to the pointer note while they were downloading or uploading. If the pointer's own record changed meanwhile (for example, another check-in finished), the check-out or check-in stops with a message. The working copy and its edits are kept, so you can run it again.
 - In a narrow settings pane the footer could wrap with a stray `|` at the end or start of a line. Each separator now wraps together with the link after it.
 
 ## [3.3.1] - 2026-11-04

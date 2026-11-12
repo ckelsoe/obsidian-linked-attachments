@@ -322,7 +322,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'checkout-active-pointer',
 			name: 'Check out the active pointer note to edit',
 			checkCallback: (checking: boolean): boolean => {
-				if (!Platform.isDesktop) {
+				if (!Platform.isDesktopApp) {
 					return false;
 				}
 				const file = this.activePointer();
@@ -344,7 +344,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'checkin-active-pointer',
 			name: 'Check in the active pointer note',
 			checkCallback: (checking: boolean): boolean => {
-				if (!Platform.isDesktop) {
+				if (!Platform.isDesktopApp) {
 					return false;
 				}
 				const file = this.activePointer();
@@ -366,7 +366,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			id: 'discard-active-checkout',
 			name: 'Discard the active checkout',
 			checkCallback: (checking: boolean): boolean => {
-				if (!Platform.isDesktop) {
+				if (!Platform.isDesktopApp) {
 					return false;
 				}
 				const file = this.activePointer();
@@ -457,7 +457,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 						});
 						// Open / reveal the local copy directly (desktop; the local copy
 						// lives outside the vault, so this uses the OS shell).
-						if (Platform.isDesktop) {
+						if (Platform.isDesktopApp) {
 							menu.addItem((item) => {
 								item.setTitle('Open in default app')
 									.setIcon('external-link')
@@ -476,7 +476,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 							});
 						}
 						// Checkout/check-in cycle (spec section 4a), desktop-only.
-						if (Platform.isDesktop) {
+						if (Platform.isDesktopApp) {
 							if (
 								frontmatter['la_copy_state'] === 'checked-out'
 							) {
@@ -545,7 +545,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		// not fire for every existing file during the initial vault index.
 		this.autoOffload = new AutoOffloadController({
 			app: this.app,
-			isDesktop: Platform.isDesktop,
+			isDesktop: Platform.isDesktopApp,
 			getConfig: () => ({
 				enabled: this.settings.autoOffloadEnabled,
 				rules: this.settings.offloadRules,
@@ -576,7 +576,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 			);
 			// Seed the checked-out set (desktop) so the quit guard knows about checkouts
 			// from a previous session, and prime the status indicator.
-			if (Platform.isDesktop) {
+			if (Platform.isDesktopApp) {
 				void this.attachments.checkedOutPointers().then((paths) => {
 					for (const path of paths) {
 						this.checkedOut.add(path);
@@ -588,7 +588,7 @@ export default class LinkedAttachmentsPlugin extends Plugin {
 		});
 
 		// The checkout dirty-state indicator (orange/red/green) for the active pointer.
-		if (Platform.isDesktop) {
+		if (Platform.isDesktopApp) {
 			this.dirtyStatusEl = this.addStatusBarItem();
 			this.registerEvent(
 				this.app.workspace.on('active-leaf-change', () => {
