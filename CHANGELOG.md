@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-11-13
+
 ### Changed
 
 - **Search settings** now finds every setting on the tab. The local folders per machine, both credential pickers, the connection test, the backfill buttons, the round-trip rehearsal, the file type rules, the vault scan, and the log viewer were hidden from search before. Each also answers to the words people type, such as "hostname", "credentials", "extension" or "audit".
